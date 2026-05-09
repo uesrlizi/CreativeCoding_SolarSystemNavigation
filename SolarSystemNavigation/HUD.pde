@@ -18,7 +18,7 @@ class HUD {
   void drawInfoPanel(CameraController cam, double simTime, double timeWarp, double[] WARP_LEVELS) {
     noStroke();
     fill(0, 0, 0, 160);
-    rect(10, 10, 420, 290, 8);
+    rect(10, 10, 420, 150, 8);
 
     fill(220);
     textSize(21);
@@ -27,26 +27,14 @@ class HUD {
 
     textSize(17);
     fill(180);
-    double simDays = simTime / DAY_S;
-    double simYears = simDays / 365.25;
-    text(String.format("Time: %.1f days (%.2f years)", simDays, simYears), 20, 48);
+    text("Time: " + timeManager.getTimeDisplay(), 20, 48);
 
-    String warpStr = formatWarp(timeWarp);
     fill(100, 200, 100);
-    text("Time warp: " + warpStr, 20, 72);
-
-    fill(180);
-    text("[Q/E] Adjust speed  [Space] Pause", 20, 96);
-
-    double auPerPixel = 1.0 / (AU_KM * cam.scale);
-    text(String.format("Zoom: %.4f AU/px", auPerPixel), 20, 120);
+    text("Speed: " + timeManager.getWarpDisplay(), 20, 72);
 
     fill(140);
-    textSize(15);
-    text("[O] Orbits [L] Labels [T] Trails [R] Reset", 20, 144);
-    text("[1-8] Focus planet [0] Focus Sun", 20, 168);
-    text("[V] View Mode [F] Follow Ship", 20, 192);
-    text("Drag to pan, Scroll to zoom", 20, 216);
+    textSize(14);
+    text("[Q/E] Adjust speed  [Space] Pause", 20, 96);
   }
 
   void drawViewModeIndicator() {

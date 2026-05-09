@@ -186,9 +186,11 @@ class TimeManager {
   double timeWarp;
   double[] WARP_LEVELS;
   int warpIndex = 0;
+  int lastMillis;
 
   TimeManager() {
     simTime = 0;
+    lastMillis = millis();
     WARP_LEVELS = new double[8];
     WARP_LEVELS[0] = 1.0;
     WARP_LEVELS[1] = 60.0;
@@ -202,8 +204,28 @@ class TimeManager {
   }
 
   void update() {
-    double dt = (timeWarp * DAY_S) / 60.0;
-    simTime += dt;
+    if (timeWarp > 0) {
+      int currentMillis = millis();
+      double realDelta = (currentMillis - lastMillis) / 1000.0;
+      simTime += timeWarp * realDelta;
+      lastMillis = currentMillis;
+    } else {
+      lastMillis = millis();
+    }
+  }
+
+  String getTimeDisplay() {
+    int totalSeconds = (int)simTime;
+    int days = totalSeconds / 86400;
+    int hours = (totalSeconds % 86400) / 3600;
+    int minutes = (totalSeconds % 3600) / 60;
+    int seconds = totalSeconds % 60;
+    return String.format("T+%d d %02d:%02d:%02d", days, hours, minutes, seconds);
+  }
+
+  String getWarpDisplay() {
+    String[] labels = {"1x", "1m/s", "10m/s", "1h/s", "10h/s", "1d/s", "1w/s", "1mo/s"};
+    return labels[warpIndex];
   }
 
   void togglePause() {
