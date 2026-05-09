@@ -36,6 +36,10 @@ class CameraController {
     }
   }
 
+  ViewMode getMode() {
+    return mode;
+  }
+
   void setViewMode(ViewMode m) {
     mode = m;
     if (m == ViewMode.SHIP_VIEW && followTarget != null) {

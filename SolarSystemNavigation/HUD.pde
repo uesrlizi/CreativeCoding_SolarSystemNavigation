@@ -57,7 +57,7 @@ class HUD {
     fill(200);
     textSize(14);
     textAlign(LEFT, CENTER);
-    String modeText = (camera.mode == ViewMode.MAP_VIEW) ? "MAP VIEW" : "SHIP VIEW";
+    String modeText = (camera.getMode() == ViewMode.MAP_VIEW) ? "MAP VIEW" : "SHIP VIEW";
     text(modeText + " [V]", width - 120, 28);
   }
 

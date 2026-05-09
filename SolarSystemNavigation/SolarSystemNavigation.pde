@@ -274,7 +274,7 @@ void keyPressed() {
   }
 
   if (key == 'v' || key == 'V') {
-    if (camera.mode == ViewMode.MAP_VIEW) {
+    if (camera.getMode() == ViewMode.MAP_VIEW) {
       camera.setViewMode(ViewMode.SHIP_VIEW);
     } else {
       camera.setViewMode(ViewMode.MAP_VIEW);
@@ -282,8 +282,8 @@ void keyPressed() {
   }
 
   if (key == 'f' || key == 'F') {
-    if (launchController.currentShip != null) {
-      camera.followShip(launchController.currentShip);
+    if (launchController.getCurrentShip() != null) {
+      camera.followShip(launchController.getCurrentShip());
       camera.setViewMode(ViewMode.MAP_VIEW);
     }
   }

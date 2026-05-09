@@ -39,6 +39,18 @@ class LaunchController {
     timeManager.timeWarp = timeManager.WARP_LEVELS[0];
   }
 
+  Spacecraft getCurrentShip() {
+    return currentShip;
+  }
+
+  CelestialBody getSelectedTarget() {
+    return selectedTarget;
+  }
+
+  ShipState getState() {
+    return state;
+  }
+
   void selectTarget(CelestialBody target) {
     if (state != ShipState.ORBIT) return;
     selectedTarget = target;

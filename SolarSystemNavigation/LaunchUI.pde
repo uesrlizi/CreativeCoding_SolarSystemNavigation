@@ -42,8 +42,8 @@ class LaunchUI {
   }
 
   void drawTargetPanel() {
-    if (launchController.state != ShipState.ORBIT &&
-        launchController.state != ShipState.TRANSFER) return;
+    if (launchController.getState() != ShipState.ORBIT &&
+        launchController.getState() != ShipState.TRANSFER) return;
 
     int panelX = width - 270;
     int panelY = height - 280;
@@ -63,7 +63,7 @@ class LaunchUI {
       CelestialBody p = solarSystem.planets.get(idx);
       int rowY = panelY + 40 + idx * 30;
 
-      boolean isSelected = (launchController.selectedTarget == p);
+      boolean isSelected = (launchController.getSelectedTarget() == p);
       if (isSelected) {
         fill(50, 80, 50, 200);
         noStroke();
@@ -86,7 +86,7 @@ class LaunchUI {
   }
 
   void drawShipStatus() {
-    if (launchController.currentShip == null) return;
+    if (launchController.getCurrentShip() == null) return;
 
     int panelX = width - 270;
     int panelY = height - 320;
@@ -97,7 +97,7 @@ class LaunchUI {
     fill(0, 0, 0, 180);
     rect(panelX, panelY, panelW, panelH, 8);
 
-    Spacecraft ship = launchController.currentShip;
+    Spacecraft ship = launchController.getCurrentShip();
     fill(100, 200, 100);
     textSize(14);
     textAlign(LEFT, TOP);
@@ -183,17 +183,17 @@ class LaunchUI {
   }
 
   void keyPressed(char keyChar) {
-    if (key == BACKSPACE) {
+    if (keyChar == BACKSPACE) {
       if (shipName.length() > 0) {
         shipName = shipName.substring(0, shipName.length() - 1);
       }
-    } else if (key == ENTER || key == RETURN) {
+    } else if (keyChar == ENTER || keyChar == RETURN) {
       if (launchController.canLaunch() && shipName.length() > 0) {
         launchController.startLaunch(shipName);
       }
-    } else if (key >= 32 && key <= 126) {
+    } else if (keyChar >= 32 && keyChar <= 126) {
       if (shipName.length() < 20) {
-        shipName += key;
+        shipName += keyChar;
       }
     }
   }
