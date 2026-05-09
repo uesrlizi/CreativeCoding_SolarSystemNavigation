@@ -246,6 +246,10 @@ void mouseWheel(MouseEvent event) {
 }
 
 void keyPressed() {
+  if (hud.launchUI.inputFocused) {
+    return;
+  }
+  
   if (key == ' ' || key == 'p' || key == 'P') {
     timeManager.togglePause();
   }
@@ -303,7 +307,9 @@ void keyPressed() {
 }
 
 void keyTyped() {
-  hud.launchUI.keyPressed(key);
+  if (hud.launchUI.inputFocused) {
+    hud.launchUI.keyPressed(key);
+  }
 }
 
 void saveCurrentState() {

@@ -6,6 +6,18 @@ class LaunchUI {
   LaunchUI() {
   }
 
+  boolean isTextInputClicked(int mx, int my) {
+    int panelX = 10;
+    int panelY = height - 160;
+    int inputX = panelX + 10;
+    int inputY = panelY + 60;
+    return mx >= inputX && mx <= inputX + nameInputWidth && my >= inputY && my <= inputY + 30;
+  }
+
+  void setInputFocus(boolean focused) {
+    inputFocused = focused;
+  }
+
   void draw() {
     drawLaunchPanel();
     drawTargetPanel();
@@ -46,7 +58,7 @@ class LaunchUI {
         launchController.getState() != ShipState.TRANSFER) return;
 
     int panelX = width - 270;
-    int panelY = height - 280;
+    int panelY = height - 320;
     int panelW = 260;
     int panelH = 250;
 
@@ -89,7 +101,7 @@ class LaunchUI {
     if (launchController.getCurrentShip() == null) return;
 
     int panelX = width - 270;
-    int panelY = height - 320;
+    int panelY = height - 370;
     int panelW = 260;
     int panelH = 50;
 
@@ -149,18 +161,25 @@ class LaunchUI {
 
   boolean isTargetClicked(int mx, int my, int idx) {
     int panelX = width - 270;
-    int panelY = height - 280;
+    int panelY = height - 320;
     int rowY = panelY + 40 + idx * 30;
     return mx >= panelX && mx <= panelX + 260 && my >= rowY && my <= rowY + 26;
   }
 
   boolean isTransferButtonClicked(int mx, int my) {
     int bx = width - 270 + 10;
-    int by = height - 280 + 220;
+    int by = height - 320 + 220;
     return mx >= bx && mx <= bx + 100 && my >= by && my <= by + 25;
   }
 
   void handleClick(int mx, int my) {
+    boolean wasInputFocused = inputFocused;
+    inputFocused = isTextInputClicked(mx, my);
+    
+    if (inputFocused) {
+      return;
+    }
+    
     if (launchController.canLaunch() && shipName.length() > 0) {
       if (isLaunchButtonClicked(mx, my)) {
         launchController.startLaunch(shipName);
