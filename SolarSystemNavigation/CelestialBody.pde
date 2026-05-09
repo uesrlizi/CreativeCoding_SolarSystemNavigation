@@ -8,12 +8,16 @@ class CelestialBody {
   double M0;
   double period;
   double radius;
+  double gm;
+  double surfaceGravity;
+  double rotationSpeed;
   color col;
 
   double px, py, pz;
 
   CelestialBody(String name, double a_au, double e, double i,
-    double omega, double w, double M0, double T_days, double R_km, color col) {
+    double omega, double w, double M0, double T_days, double R_km,
+    double GM, double rotSpeed, color col) {
     this.name = name;
     this.a = a_au * AU_KM;
     this.e = e;
@@ -23,15 +27,21 @@ class CelestialBody {
     this.M0 = Math.toRadians(M0);
     this.period = T_days * DAY_S;
     this.radius = R_km;
+    this.gm = GM;
+    this.surfaceGravity = GM / (R_km * 1000 * R_km * 1000);
+    this.rotationSpeed = rotSpeed;
     this.col = col;
   }
 
-  CelestialBody(String name, double x, double y, double R_km, color col) {
+  CelestialBody(String name, double x, double y, double R_km, double GM, double rotSpeed, color col) {
     this.name = name;
     this.a = 0; this.e = 0; this.i = 0;
     this.omega = 0; this.w = 0; this.M0 = 0;
     this.period = 1;
     this.radius = R_km;
+    this.gm = GM;
+    this.surfaceGravity = GM / (R_km * 1000 * R_km * 1000);
+    this.rotationSpeed = rotSpeed;
     this.col = col;
     this.px = x; this.py = y; this.pz = 0;
   }
@@ -72,6 +82,6 @@ class CelestialBody {
   }
 
   double[] getPosition() {
-    return new double[]{px, py, pz};
+    return new double[]{px * 1000, py * 1000, pz * 1000};
   }
 }

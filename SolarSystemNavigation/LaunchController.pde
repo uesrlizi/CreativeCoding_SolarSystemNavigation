@@ -1,134 +1,138 @@
-enum ShipState {
-  IDLE,
-  LAUNCHING,
-  ORBIT,
-  TRANSFER
-}
-
 class LaunchController {
-  ShipState state;
+  ShipPhase phase;
   Spacecraft currentShip;
   CelestialBody selectedTarget;
-  double launchStartTime;
-  double transferStartTime;
-  double[] transferOrbitParams;
-  MissionPlanner planner;
+  CelestialBody launchBody;
+  LaunchSimulator launchSim;
+  ManeuverPlanner maneuverPlanner;
+  PhysicsEngine physics;
+  OrbitPredictor orbitPredictor;
+
+  double launchAzimuth;
+  double targetOrbitAltitude;
+  boolean waitingForLaunch;
 
   LaunchController() {
-    state = ShipState.IDLE;
+    phase = ShipPhase.ON_GROUND;
     currentShip = null;
     selectedTarget = null;
-    planner = new MissionPlanner();
+    launchSim = new LaunchSimulator();
+    maneuverPlanner = new ManeuverPlanner();
+    physics = new PhysicsEngine();
+    orbitPredictor = new OrbitPredictor();
+    launchAzimuth = 90;
+    targetOrbitAltitude = 400;
+    waitingForLaunch = false;
+
+    for (CelestialBody p : solarSystem.planets) {
+      if (p.name.equals("Earth")) {
+        launchBody = p;
+        launchSim.setLaunchBody(launchBody);
+        break;
+      }
+    }
+  }
+
+  void setLaunchAzimuth(double azimuth) {
+    this.launchAzimuth = azimuth;
+    launchSim.setLaunchAzimuth(azimuth);
+  }
+
+  void setTargetOrbit(double altitudeKm) {
+    this.targetOrbitAltitude = altitudeKm;
+    launchSim.setTargetOrbit(altitudeKm);
   }
 
   void startLaunch(String name) {
-    if (state != ShipState.IDLE) return;
-    state = ShipState.LAUNCHING;
-    launchStartTime = timeManager.simTime;
+    if (phase != ShipPhase.ON_GROUND) return;
 
-    double leoRadius = planner.getLEORadius() * 1000;
-    Spacecraft ship = new Spacecraft(name, leoRadius, 0.0, 0.0, 0.0, 0.0, 0.0,
-      2 * PI * Math.sqrt(Math.pow(leoRadius, 3) / GM_SUN), color(0, 255, 150));
-    ship.state = ShipState.LAUNCHING;
-    ship.launchStartTime = launchStartTime;
-    currentShip = ship;
-    solarSystem.ships.add(ship);
-
-    camera.followShip(ship);
-    camera.setViewMode(ViewMode.MAP_VIEW);
-    timeManager.timeWarp = timeManager.WARP_LEVELS[0];
-  }
-
-  Spacecraft getCurrentShip() {
-    return currentShip;
-  }
-
-  CelestialBody getSelectedTarget() {
-    return selectedTarget;
-  }
-
-  ShipState getState() {
-    return state;
-  }
-
-  void selectTarget(CelestialBody target) {
-    if (state != ShipState.ORBIT) return;
-    selectedTarget = target;
-  }
-
-  void initiateTransfer() {
-    if (state != ShipState.ORBIT || selectedTarget == null) return;
-    if (currentShip == null) return;
-
-    double r1 = currentShip.a;
-    double r2 = selectedTarget.a;
-    transferOrbitParams = planner.calculateHohmannTransfer(r1 / 1000.0, r2 / 1000.0);
-
-    currentShip.a = transferOrbitParams[0] * 1000.0;
-    currentShip.e = transferOrbitParams[1];
-    currentShip.w = selectedTarget.w;
-    currentShip.period = 2 * PI * Math.sqrt(Math.pow(currentShip.a, 3) / GM_SUN);
-
-    state = ShipState.TRANSFER;
-    transferStartTime = timeManager.simTime;
-    currentShip.state = ShipState.TRANSFER;
+    currentShip = new Spacecraft(name, color(0, 255, 150));
+    launchSim.executeLaunch(currentShip);
+    waitingForLaunch = false;
+    phase = ShipPhase.POWERED_ASCENT;
+    solarSystem.ships.add(currentShip);
   }
 
   void update() {
     if (currentShip == null) return;
 
-    switch (state) {
-      case LAUNCHING:
-        if (timeManager.simTime - launchStartTime > 5 * 86400) {
-          state = ShipState.ORBIT;
-          currentShip.state = ShipState.ORBIT;
+    switch (phase) {
+      case ON_GROUND:
+        break;
+      case POWERED_ASCENT:
+        launchSim.updateLaunch(currentShip, 1.0);
+        if (currentShip.phase == ShipPhase.IN_ORBIT) {
+          phase = ShipPhase.IN_ORBIT;
         }
+        break;
+      case IN_ORBIT:
+        updateOrbital(currentShip, 1.0);
         break;
       case TRANSFER:
-        double transferTime = planner.calculateTransferTime(transferOrbitParams[0], GM_SUN);
-        if (timeManager.simTime - transferStartTime > transferTime) {
-          insertIntoTargetOrbit();
-        }
+        updateOrbital(currentShip, 1.0);
         break;
     }
+
+    orbitPredictor.update(currentShip);
   }
 
-  void insertIntoTargetOrbit() {
-    if (selectedTarget == null || currentShip == null) return;
+  void updateOrbital(Spacecraft ship, double dt) {
+    double[] acc = physics.totalGravity(ship.position);
+    ship.velocity[0] += acc[0] * dt;
+    ship.velocity[1] += acc[1] * dt;
+    ship.velocity[2] += acc[2] * dt;
+    ship.position[0] += ship.velocity[0] * dt;
+    ship.position[1] += ship.velocity[1] * dt;
+    ship.position[2] += ship.velocity[2] * dt;
+  }
 
-    double targetRadius = selectedTarget.a;
-    double captureOrbitRadius = targetRadius * 0.95;
-    currentShip.a = captureOrbitRadius;
-    currentShip.e = 0.0;
-    currentShip.i = selectedTarget.i;
-    currentShip.omega = selectedTarget.omega;
-    currentShip.w = 0.0;
-    currentShip.period = 2 * PI * Math.sqrt(Math.pow(captureOrbitRadius, 3) / GM_SUN);
+  void selectTarget(CelestialBody target) {
+    if (phase != ShipPhase.IN_ORBIT) return;
+    selectedTarget = target;
+  }
 
-    state = ShipState.ORBIT;
-    currentShip.state = ShipState.ORBIT;
-    selectedTarget = null;
+  void initiateTransfer() {
+    if (phase != ShipPhase.IN_ORBIT || selectedTarget == null) return;
+
+    OrbitalManeuver m = OrbitalManeuver.escape(launchBody);
+    maneuverPlanner.addManeuver(m);
+    maneuverPlanner.executeNext(currentShip);
+    phase = ShipPhase.TRANSFER;
   }
 
   boolean canLaunch() {
-    return state == ShipState.IDLE;
+    return phase == ShipPhase.ON_GROUND;
+  }
+
+  boolean canManeuver() {
+    return phase == ShipPhase.IN_ORBIT && currentShip != null;
   }
 
   boolean canSelectTarget() {
-    return state == ShipState.ORBIT;
+    return phase == ShipPhase.IN_ORBIT;
   }
 
   boolean canTransfer() {
-    return state == ShipState.ORBIT && selectedTarget != null;
+    return phase == ShipPhase.IN_ORBIT && selectedTarget != null;
   }
 
   String getStatusText() {
-    switch (state) {
-      case IDLE: return "Ready to Launch";
-      case LAUNCHING: return "Launching...";
-      case ORBIT: return "In Orbit - Select Target";
-      case TRANSFER: return "Transfer in Progress";
+    if (currentShip == null) return "Ready to Launch";
+
+    switch (phase) {
+      case ON_GROUND:
+        return "Configure and Launch";
+      case POWERED_ASCENT:
+        return String.format("Ascent - Alt: %.0f km", currentShip.altitudeAGL(launchBody));
+      case IN_ORBIT:
+        return String.format("In Orbit - Alt: %.0f km", currentShip.altitudeAGL(launchBody));
+      case TRANSFER:
+        return "Escape Maneuver";
     }
     return "";
+  }
+
+  CelestialBody getLaunchBody() {
+    return launchBody;
   }
 }

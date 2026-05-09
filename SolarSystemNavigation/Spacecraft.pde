@@ -1,153 +1,140 @@
+enum ShipPhase {
+  ON_GROUND,
+  POWERED_ASCENT,
+  COASTING,
+  IN_ORBIT,
+  TRANSFER,
+  DECOUPLING
+}
+
 class Spacecraft {
   String name;
-  double a, e, i, omega, w, M0, period;
   color col;
   color trailColor;
 
-  double px, py, pz;
-  double currentNu;
+  double[] position = new double[3];
+  double[] velocity = new double[3];
+  double mass;
+  double fuel;
+  double thrust;
+  double isp;
 
-  ShipState state;
-  double launchStartTime;
-  double transferStartTime;
+  ShipPhase phase;
+  double phaseTimer;
+  double launchAzimuthAngle;
+  double launchPitch;
+  double throttle;
 
-  Spacecraft(String name, double a, double e, double i,
-    double omega, double w, double M0, double period, color col) {
+  ArrayList<double[]> trajectory;
+  ArrayList<double[]> maneuverPlan;
+
+  Spacecraft(String name, color col) {
     this.name = name;
-    this.a = a; this.e = e; this.i = i;
-    this.omega = omega; this.w = w;
-    this.M0 = Math.toRadians(M0);
-    this.period = period;
     this.col = col;
     this.trailColor = col;
-    this.state = ShipState.IDLE;
-    this.launchStartTime = 0;
-    this.transferStartTime = 0;
+    this.mass = 1000.0;
+    this.fuel = 500.0;
+    this.thrust = 1500000.0;
+    this.isp = 300.0;
+    this.phase = ShipPhase.ON_GROUND;
+    this.launchPitch = 90.0;
+    this.launchAzimuthAngle = 90.0;
+    this.throttle = 1.0;
+    this.trajectory = new ArrayList<double[]>();
+    this.maneuverPlan = new ArrayList<double[]>();
+    for (int i = 0; i < 3; i++) {
+      position[i] = 0;
+      velocity[i] = 0;
+    }
   }
 
-  void update(double t) {
-    double n = 2.0 * PI / period;
-    double M = (M0 + n * t) % (2.0 * PI);
-    if (M < 0) M += 2.0 * PI;
-    double E = solveKepler(M, e);
-    currentNu = trueAnomaly(E, e);
-    double[] pos = orbitalToCartesian(a, e, i, omega, w, currentNu);
-    px = pos[0]; py = pos[1]; pz = pos[2];
+  void setStateVector(double[] pos, double[] vel) {
+    position = pos.clone();
+    velocity = vel.clone();
+  }
+
+  void applyDeltaV(double[] dv) {
+    velocity[0] += dv[0];
+    velocity[1] += dv[1];
+    velocity[2] += dv[2];
+  }
+
+  double speed() {
+    return Math.sqrt(velocity[0]*velocity[0] + velocity[1]*velocity[1] + velocity[2]*velocity[2]);
+  }
+
+  double altitudeAGL(CelestialBody body) {
+    double r = Math.sqrt(position[0]*position[0] + position[1]*position[1] + position[2]*position[2]);
+    return (r - body.radius * 1000) / 1000.0;
+  }
+
+  boolean isInOrbit() {
+    return phase == ShipPhase.IN_ORBIT;
+  }
+
+  void consumeFuel(double amount) {
+    fuel = Math.max(0, fuel - amount);
+  }
+
+  double getThrustMagnitude() {
+    if (fuel <= 0) return 0;
+    return thrust * throttle;
+  }
+
+  double getMassFlowRate() {
+    double g0 = 9.81;
+    return getThrustMagnitude() / (isp * g0);
+  }
+
+  double orbitalPeriod(double r, double gm) {
+    return 2 * PI * Math.sqrt(r * r * r / gm);
+  }
+
+  double orbitalApogee(double a, double e) {
+    return a * (1 + e);
+  }
+
+  double orbitalPerigee(double a, double e) {
+    return a * (1 - e);
   }
 
   void draw(CameraController cam) {
-    if (showTrails) {
-      drawOrbitHighlight(cam);
+    double[] sp;
+    if (phase == ShipPhase.ON_GROUND) {
+      CelestialBody earth = null;
+      for (CelestialBody p : solarSystem.planets) {
+        if (p.name.equals("Earth")) {
+          earth = p;
+          break;
+        }
+      }
+      if (earth != null) {
+        double[] earthPos = earth.getPosition();
+        double[] shipPos = new double[]{position[0] + earthPos[0], position[1] + earthPos[1], position[2] + earthPos[2]};
+        sp = cam.worldToScreen(shipPos[0] / 1000, shipPos[1] / 1000);
+      } else {
+        sp = cam.worldToScreen(position[0] / 1000, position[1] / 1000);
+      }
+    } else {
+      sp = cam.worldToScreen(position[0] / 1000, position[1] / 1000);
     }
 
-    double[] sp = cam.worldToScreen(px, py);
-    if (sp[0] < -100 || sp[0] > width + 100 || sp[1] < -100 || sp[1] > height + 100) return;
+    if (sp[0] < -50 || sp[0] > width + 50 || sp[1] < -50 || sp[1] > height + 50) return;
 
-    pushMatrix();
-    translate((float)sp[0], (float)sp[1]);
-
-    float angle = calculateOrientation(cam);
-    rotate(angle);
-
-    drawSpacecraftGraphic();
-
-    popMatrix();
-
-    if (showLabels) {
-      fill(red(col), green(col), blue(col), 220);
-      textSize(15);
-      textAlign(LEFT, CENTER);
-      text(name, (float)sp[0] + 15, (float)sp[1]);
-    }
-  }
-
-  void drawSpacecraftGraphic() {
-    float bodyLen = 10.0;
-    float bodyWid = 5.0;
-    
-    noStroke();
-    
-    for (int g = 3; g >= 1; g--) {
-      fill(red(col), green(col), blue(col), 30 / g);
-      ellipse(0, 0, 18 + g * 4, 18 + g * 4);
-    }
-    
-    fill(red(col) * 0.7, green(col) * 0.7, blue(col) * 0.7);
-    beginShape();
-    vertex(bodyLen * 0.6, 0);
-    vertex(-bodyLen * 0.2, -bodyWid * 0.5);
-    vertex(-bodyLen * 0.5, -bodyWid * 0.3);
-    vertex(-bodyLen * 0.5, bodyWid * 0.3);
-    vertex(-bodyLen * 0.2, bodyWid * 0.5);
-    endShape(CLOSE);
-    
+    float size = 6;
     fill(col);
-    beginShape();
-    vertex(bodyLen * 0.5, 0);
-    vertex(-bodyLen * 0.3, -bodyWid * 0.4);
-    vertex(-bodyLen * 0.5, -bodyWid * 0.25);
-    vertex(-bodyLen * 0.5, bodyWid * 0.25);
-    vertex(-bodyLen * 0.3, bodyWid * 0.4);
-    endShape(CLOSE);
-    
-    pushMatrix();
-    rotate(radians(35));
-    fill(red(col) * 0.8, green(col) * 0.8, blue(col) * 0.8);
-    beginShape();
-    vertex(0, 0);
-    vertex(-bodyLen * 0.3, -2);
-    vertex(-bodyLen * 0.8, -1.5);
-    vertex(-bodyLen * 0.9, 0);
-    endShape(CLOSE);
-    popMatrix();
-    
-    pushMatrix();
-    rotate(radians(-35));
-    fill(red(col) * 0.8, green(col) * 0.8, blue(col) * 0.8);
-    beginShape();
-    vertex(0, 0);
-    vertex(-bodyLen * 0.3, 2);
-    vertex(-bodyLen * 0.8, 1.5);
-    vertex(-bodyLen * 0.9, 0);
-    endShape(CLOSE);
-    popMatrix();
-    
-    fill(255, 140, 30, 150);
-    triangle(-bodyLen * 0.5, -2, -bodyLen * 0.5, 2, -bodyLen * 0.5 - 10, 0);
-    
-    fill(255, 200, 50, 200);
-    triangle(-bodyLen * 0.5, -1.5, -bodyLen * 0.5, 1.5, -bodyLen * 0.5 - 7, 0);
-    
-    fill(255, 255, 200, 230);
-    triangle(-bodyLen * 0.5, -0.8, -bodyLen * 0.5, 0.8, -bodyLen * 0.5 - 4, 0);
-  }
+    noStroke();
+    ellipse((float)sp[0], (float)sp[1], size, size);
 
-  void drawOrbitHighlight(CameraController cam) {
-    double arcLength = 0.3;
-    int steps = 60;
-    
-    noFill();
-    stroke(trailColor);
-    strokeWeight(2.5);
-    beginShape();
-    
-    for (int j = 0; j <= steps; j++) {
-      double nu = currentNu - arcLength + (arcLength * j / steps);
-      double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
-      double[] sp = cam.worldToScreen(pos[0], pos[1]);
-      vertex((float)sp[0], (float)sp[1]);
+    if (phase == ShipPhase.POWERED_ASCENT) {
+      float angle = (float)Math.atan2(-velocity[0], velocity[1]);
+      fill(255, 150, 50, 180);
+      noStroke();
+      pushMatrix();
+      translate((float)sp[0], (float)sp[1]);
+      rotate(angle);
+      triangle(-size * 2, 0, -size * 0.5, -size * 0.5, -size * 0.5, size * 0.5);
+      popMatrix();
     }
-    
-    endShape();
-  }
-
-  float calculateOrientation(CameraController cam) {
-    double nuForward = currentNu + 0.01;
-    double[] posForward = orbitalToCartesian(a, e, i, omega, w, nuForward);
-    
-    double vx = posForward[0] - px;
-    double vy = posForward[1] - py;
-    
-    return (float)Math.atan2(vy, vx);
   }
 }

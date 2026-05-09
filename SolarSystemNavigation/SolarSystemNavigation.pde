@@ -1,36 +1,33 @@
 // ============================================================
-//  Spacecraft Launch Simulator
-//  Processing (Java Mode) · Kepler Orbital Mechanics
-//  Launch from Earth to orbit · Hohmann Transfer · Multi-view
+//  Spacecraft Flight Simulator
+//  Processing (Java Mode) · Newtonian Physics
+//  Launch from Earth · Orbital Maneuvers · Interplanetary
 // ============================================================
 
 import java.util.ArrayList;
 import java.util.List;
 
-// ---------- Physical Constants ----------
-static final double AU_KM       = 1.496e8;
-static final double GM_SUN      = 1.327124e11;
-static final double DAY_S       = 86400.0;
+static final double AU_KM = 1.496e8;
+static final double GM_SUN = 1.327124e11;
+static final double DAY_S = 86400.0;
 
-// ---------- Display Options ----------
 boolean showOrbits = true;
 boolean showLabels = true;
 boolean showTrails = true;
 
-// ---------- Starfield Background ----------
 int[] starSeed;
 
-// ---------- Global Objects ----------
 CameraController camera;
 SolarSystem solarSystem;
 HUD hud;
 TimeManager timeManager;
 SaveDataManager saveManager;
 LaunchController launchController;
+ManeuverPlanner maneuverPlanner;
+OrbitPredictor orbitPredictor;
+TelemetryDisplay telemetryDisplay;
+PhysicsEngine physics;
 
-// ============================================================
-//  setup / draw
-// ============================================================
 void setup() {
   fullScreen();
   camera = new CameraController();
@@ -43,16 +40,13 @@ void setup() {
 
   saveManager = new SaveDataManager();
   timeManager = new TimeManager();
+  physics = new PhysicsEngine();
+  orbitPredictor = new OrbitPredictor();
+  telemetryDisplay = new TelemetryDisplay();
   launchController = new LaunchController();
+  maneuverPlanner = launchController.maneuverPlanner;
 
-  SaveData saved = saveManager.load();
-  if (saved != null) {
-    timeManager.simTime = saved.simTime;
-    timeManager.warpIndex = saved.warpIndex;
-    timeManager.timeWarp = saved.timeWarp;
-  }
-
-  timeManager.timeWarp = 0;
+  timeManager.timeWarp = timeManager.WARP_LEVELS[0];
 
   solarSystem = new SolarSystem();
   solarSystem.initialize();
@@ -74,24 +68,27 @@ void draw() {
   launchController.update();
 
   solarSystem.update(timeManager.simTime);
-  for (Spacecraft s : solarSystem.ships) {
-    s.update(timeManager.simTime);
-  }
 
   drawStars();
-  drawOrbits();
+  if (showOrbits) drawOrbits();
   solarSystem.drawSun(camera);
   solarSystem.drawPlanets(camera);
+
   for (Spacecraft s : solarSystem.ships) {
     s.draw(camera);
   }
-  hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
-           timeManager.WARP_LEVELS, solarSystem.planets);
+
+  orbitPredictor.draw(camera);
+
+  CelestialBody launchBody = launchController.getLaunchBody();
+  if (launchBody != null && launchController.currentShip != null) {
+    telemetryDisplay.draw(launchController.currentShip, launchBody);
+  }
+
+  maneuverPlanner.draw(launchController.currentShip, launchBody);
+  hud.draw(camera, timeManager.simTime, timeManager.timeWarp, launchController.getStatusText());
 }
 
-// ============================================================
-//  Starfield
-// ============================================================
 void drawStars() {
   noStroke();
   for (int i = 0; i < starSeed.length; i++) {
@@ -104,17 +101,10 @@ void drawStars() {
   }
 }
 
-// ============================================================
-//  Orbit Paths
-// ============================================================
 void drawOrbits() {
-  if (!showOrbits) return;
   for (CelestialBody p : solarSystem.planets) {
     if (p.a == 0) continue;
-    drawOrbitPath(p.a, p.e, p.i, p.omega, p.w, color(60, 60, 80, 100));
-  }
-  for (Spacecraft s : solarSystem.ships) {
-    drawOrbitPath(s.a, s.e, s.i, s.omega, s.w, color(red(s.col), green(s.col), blue(s.col), 40));
+    drawOrbitPath(p.a / 1000, p.e, p.i, p.omega, p.w, color(60, 60, 80, 100));
   }
 }
 
@@ -133,9 +123,6 @@ void drawOrbitPath(double a, double e, double i, double omega, double w, color c
   endShape(CLOSE);
 }
 
-// ============================================================
-//  Kepler Equation Solver
-// ============================================================
 double solveKepler(double M, double e) {
   double E = M;
   for (int i = 0; i < 50; i++) {
@@ -150,37 +137,27 @@ double trueAnomaly(double E, double e) {
   return 2.0 * Math.atan2(Math.sqrt(1.0 + e) * Math.sin(E / 2.0), Math.sqrt(1.0 - e) * Math.cos(E / 2.0));
 }
 
-// ============================================================
-//  Coordinate Transformation
-// ============================================================
 double[] orbitalToCartesian(double a, double e, double i_deg,
     double omega_deg, double w_deg, double nu) {
   double r = a * (1.0 - e * e) / (1.0 + e * Math.cos(nu));
   double xOrb = r * Math.cos(nu);
   double yOrb = r * Math.sin(nu);
 
-  double i     = Math.toRadians(i_deg);
+  double i = Math.toRadians(i_deg);
   double omega = Math.toRadians(omega_deg);
-  double w     = Math.toRadians(w_deg);
+  double w = Math.toRadians(w_deg);
 
   double cosO = Math.cos(omega), sinO = Math.sin(omega);
-  double cosW = Math.cos(w),     sinW = Math.sin(w);
-  double cosI = Math.cos(i),     sinI = Math.sin(i);
+  double cosW = Math.cos(w), sinW = Math.sin(w);
+  double cosI = Math.cos(i), sinI = Math.sin(i);
 
-  double x = (cosO * cosW - sinO * sinW * cosI) * xOrb +
-             (-cosO * sinW - sinO * cosW * cosI) * yOrb;
-  double y = (sinO * cosW + cosO * sinW * cosI) * xOrb +
-             (-sinO * sinW + cosO * cosW * cosI) * yOrb;
+  double x = (cosO * cosW - sinO * sinW * cosI) * xOrb + (-cosO * sinW - sinO * cosW * cosI) * yOrb;
+  double y = (sinO * cosW + cosO * sinW * cosI) * xOrb + (-sinO * sinW + cosO * cosW * cosI) * yOrb;
   double z = (sinW * sinI) * xOrb + (cosW * sinI) * yOrb;
 
-  double[] result = new double[3];
-  result[0] = x; result[1] = y; result[2] = z;
-  return result;
+  return new double[]{x, y, z};
 }
 
-// ============================================================
-//  Time Manager
-// ============================================================
 class TimeManager {
   double simTime;
   double timeWarp;
@@ -247,12 +224,12 @@ class TimeManager {
   }
 }
 
-// ============================================================
-//  Controls
-// ============================================================
 void mousePressed() {
   camera.handleMousePressed();
   hud.launchUI.handleClick(mouseX, mouseY);
+
+  CelestialBody launchBody = launchController.getLaunchBody();
+  maneuverPlanner.handleClick(mouseX, mouseY, launchController.currentShip, launchBody);
 }
 
 void mouseDragged() {
@@ -271,7 +248,7 @@ void keyPressed() {
   if (hud.launchUI.inputFocused) {
     return;
   }
-  
+
   if (key == ' ' || key == 'p' || key == 'P') {
     timeManager.togglePause();
   }
@@ -282,17 +259,26 @@ void keyPressed() {
     timeManager.increaseWarp();
   }
 
-  if (key == 'o' || key == 'O') showOrbits = !showOrbits;
   if (key == 'l' || key == 'L') {
-    showLabels = !showLabels;
-  }
-  if (key == 't' || key == 'T') {
-    if (launchController.canTransfer()) {
-      launchController.initiateTransfer();
-    } else {
-      showTrails = !showTrails;
+    if (launchController.canLaunch() && hud.launchUI.shipName.length() > 0) {
+      launchController.startLaunch(hud.launchUI.shipName);
     }
   }
+
+  if (key == 'm' || key == 'M') {
+    if (launchController.canManeuver()) {
+      maneuverPlanner.toggle();
+    }
+  }
+
+  if (key == 'x' || key == 'X') {
+    if (maneuverPlanner.visible && launchController.currentShip != null) {
+      maneuverPlanner.executeNext(launchController.currentShip);
+    }
+  }
+
+  if (key == 'o' || key == 'O') showOrbits = !showOrbits;
+  if (key == 't' || key == 'T') showTrails = !showTrails;
 
   if (key == 'r' || key == 'R') {
     camera.reset();
@@ -308,8 +294,8 @@ void keyPressed() {
   }
 
   if (key == 'f' || key == 'F') {
-    if (launchController.getCurrentShip() != null) {
-      camera.followShip(launchController.getCurrentShip());
+    if (launchController.currentShip != null) {
+      camera.followShip(launchController.currentShip);
       camera.setViewMode(ViewMode.MAP_VIEW);
     }
   }
@@ -318,7 +304,7 @@ void keyPressed() {
     int idx = key - '1';
     if (idx < solarSystem.planets.size()) {
       CelestialBody p = solarSystem.planets.get(idx);
-      camera.focusOn(p.px, p.py, (width * 0.2) / p.a);
+      camera.focusOn(p.px, p.py, (width * 0.2) / (p.a / 1000));
       camera.setViewMode(ViewMode.MAP_VIEW);
     }
   }
@@ -332,6 +318,8 @@ void keyTyped() {
   if (hud.launchUI.inputFocused) {
     hud.launchUI.keyPressed(key);
   }
+  CelestialBody launchBody = launchController.getLaunchBody();
+  maneuverPlanner.handleKey(key, launchController.currentShip, launchBody);
 }
 
 void saveCurrentState() {
