@@ -60,7 +60,7 @@ class LaunchUI {
     int panelX = width - 270;
     int panelY = height - 320;
     int panelW = 260;
-    int panelH = 250;
+    int panelH = 280;
 
     noStroke();
     fill(0, 0, 0, 180);
@@ -73,13 +73,13 @@ class LaunchUI {
 
     for (int idx = 0; idx < solarSystem.planets.size(); idx++) {
       CelestialBody p = solarSystem.planets.get(idx);
-      int rowY = panelY + 40 + idx * 30;
+      int rowY = panelY + 40 + idx * 25;
 
       boolean isSelected = (launchController.getSelectedTarget() == p);
       if (isSelected) {
         fill(50, 80, 50, 200);
         noStroke();
-        rect(panelX + 5, rowY - 3, panelW - 10, 26, 4);
+        rect(panelX + 5, rowY - 3, panelW - 10, 22, 4);
       }
 
       fill(p.col);
@@ -94,7 +94,7 @@ class LaunchUI {
     }
 
     boolean canTransfer = launchController.canTransfer();
-    drawButton("TRANSFER [T]", panelX + 10, panelY + 220, 100, 25, canTransfer);
+    drawButton("TRANSFER [T]", panelX + 10, panelY + 245, 100, 25, canTransfer);
   }
 
   void drawShipStatus() {
@@ -162,13 +162,13 @@ class LaunchUI {
   boolean isTargetClicked(int mx, int my, int idx) {
     int panelX = width - 270;
     int panelY = height - 320;
-    int rowY = panelY + 40 + idx * 30;
-    return mx >= panelX && mx <= panelX + 260 && my >= rowY && my <= rowY + 26;
+    int rowY = panelY + 40 + idx * 25;
+    return mx >= panelX && mx <= panelX + 260 && my >= rowY && my <= rowY + 22;
   }
 
   boolean isTransferButtonClicked(int mx, int my) {
     int bx = width - 270 + 10;
-    int by = height - 320 + 220;
+    int by = height - 320 + 245;
     return mx >= bx && mx <= bx + 100 && my >= by && my <= by + 25;
   }
 
