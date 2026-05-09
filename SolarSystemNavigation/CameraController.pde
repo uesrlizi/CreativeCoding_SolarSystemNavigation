@@ -1,16 +1,26 @@
-class Camera {
+enum ViewMode {
+  MAP_VIEW,
+  SHIP_VIEW
+}
+
+class CameraController {
   double camX, camY;
   double scale;
   double targetScale;
   boolean dragging;
   double dragSX, dragSY, dragCX, dragCY;
 
-  Camera() {
+  ViewMode mode;
+  Spacecraft followTarget;
+
+  CameraController() {
     camX = 0;
     camY = 0;
     scale = 1.0;
     targetScale = 1.0;
     dragging = false;
+    mode = ViewMode.MAP_VIEW;
+    followTarget = null;
   }
 
   void initialize(double initialScale) {
@@ -20,6 +30,31 @@ class Camera {
 
   void update() {
     scale += (targetScale - scale) * 0.1;
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
+      camX = followTarget.px;
+      camY = followTarget.py;
+    }
+  }
+
+  void setViewMode(ViewMode m) {
+    mode = m;
+    if (m == ViewMode.SHIP_VIEW && followTarget != null) {
+      camX = followTarget.px;
+      camY = followTarget.py;
+      targetScale = calculateShipViewScale();
+    }
+  }
+
+  void followShip(Spacecraft ship) {
+    followTarget = ship;
+    if (ship != null) {
+      camX = ship.px;
+      camY = ship.py;
+    }
+  }
+
+  double calculateShipViewScale() {
+    return 5e-6;
   }
 
   void handleMousePressed() {

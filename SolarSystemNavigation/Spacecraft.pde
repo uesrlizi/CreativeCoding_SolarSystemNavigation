@@ -7,6 +7,10 @@ class Spacecraft {
   double px, py, pz;
   double currentNu;
 
+  ShipState state;
+  double launchStartTime;
+  double transferStartTime;
+
   Spacecraft(String name, double a, double e, double i,
     double omega, double w, double M0, double period, color col) {
     this.name = name;
@@ -16,6 +20,9 @@ class Spacecraft {
     this.period = period;
     this.col = col;
     this.trailColor = col;
+    this.state = ShipState.IDLE;
+    this.launchStartTime = 0;
+    this.transferStartTime = 0;
   }
 
   void update(double t) {
@@ -28,7 +35,7 @@ class Spacecraft {
     px = pos[0]; py = pos[1]; pz = pos[2];
   }
 
-  void draw(Camera cam) {
+  void draw(CameraController cam) {
     if (showTrails) {
       drawOrbitHighlight(cam);
     }
@@ -115,7 +122,7 @@ class Spacecraft {
     triangle(-bodyLen * 0.5, -0.8, -bodyLen * 0.5, 0.8, -bodyLen * 0.5 - 4, 0);
   }
 
-  void drawOrbitHighlight(Camera cam) {
+  void drawOrbitHighlight(CameraController cam) {
     double arcLength = 0.3;
     int steps = 60;
     
@@ -134,7 +141,7 @@ class Spacecraft {
     endShape();
   }
 
-  float calculateOrientation(Camera cam) {
+  float calculateOrientation(CameraController cam) {
     double nuForward = currentNu + 0.01;
     double[] posForward = orbitalToCartesian(a, e, i, omega, w, nuForward);
     
