@@ -1,7 +1,7 @@
 // ============================================================
-//  Solar System Navigation Simulator
+//  Spacecraft Launch Simulator
 //  Processing (Java Mode) · Kepler Orbital Mechanics
-//  Real astronomical data · Adjustable time speed · Mouse zoom/pan
+//  Launch from Earth to orbit · Hohmann Transfer · Multi-view
 // ============================================================
 
 import java.util.ArrayList;
@@ -21,18 +21,19 @@ boolean showTrails = true;
 int[] starSeed;
 
 // ---------- Global Objects ----------
-Camera camera;
+CameraController camera;
 SolarSystem solarSystem;
 HUD hud;
 TimeManager timeManager;
 SaveDataManager saveManager;
+LaunchController launchController;
 
 // ============================================================
 //  setup / draw
 // ============================================================
 void setup() {
   fullScreen();
-  camera = new Camera();
+  camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
 
   starSeed = new int[600];
@@ -42,21 +43,22 @@ void setup() {
 
   saveManager = new SaveDataManager();
   timeManager = new TimeManager();
-  
+  launchController = new LaunchController();
+
   SaveData saved = saveManager.load();
   if (saved != null) {
     timeManager.simTime = saved.simTime;
     timeManager.warpIndex = saved.warpIndex;
     timeManager.timeWarp = saved.timeWarp;
   }
-  
+
   timeManager.timeWarp = 0;
 
   solarSystem = new SolarSystem();
   solarSystem.initialize();
 
   hud = new HUD();
-  
+
   Runtime.getRuntime().addShutdownHook(new Thread() {
     public void run() {
       saveCurrentState();
@@ -69,6 +71,7 @@ void draw() {
 
   camera.update();
   timeManager.update();
+  launchController.update();
 
   solarSystem.update(timeManager.simTime);
   for (Spacecraft s : solarSystem.ships) {
@@ -82,7 +85,8 @@ void draw() {
   for (Spacecraft s : solarSystem.ships) {
     s.draw(camera);
   }
-  hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, solarSystem.planets);
+  hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
+           timeManager.WARP_LEVELS, solarSystem.planets);
 }
 
 // ============================================================
@@ -226,6 +230,7 @@ class TimeManager {
 // ============================================================
 void mousePressed() {
   camera.handleMousePressed();
+  hud.launchUI.handleClick(mouseX, mouseY);
 }
 
 void mouseDragged() {
@@ -252,12 +257,35 @@ void keyPressed() {
   }
 
   if (key == 'o' || key == 'O') showOrbits = !showOrbits;
-  if (key == 'l' || key == 'L') showLabels = !showLabels;
-  if (key == 't' || key == 'T') showTrails = !showTrails;
+  if (key == 'l' || key == 'L') {
+    showLabels = !showLabels;
+  }
+  if (key == 't' || key == 'T') {
+    if (launchController.canTransfer()) {
+      launchController.initiateTransfer();
+    } else {
+      showTrails = !showTrails;
+    }
+  }
 
   if (key == 'r' || key == 'R') {
     camera.reset();
     camera.targetScale = (width * 0.15) / AU_KM;
+  }
+
+  if (key == 'v' || key == 'V') {
+    if (camera.getMode() == ViewMode.MAP_VIEW) {
+      camera.setViewMode(ViewMode.SHIP_VIEW);
+    } else {
+      camera.setViewMode(ViewMode.MAP_VIEW);
+    }
+  }
+
+  if (key == 'f' || key == 'F') {
+    if (launchController.getCurrentShip() != null) {
+      camera.followShip(launchController.getCurrentShip());
+      camera.setViewMode(ViewMode.MAP_VIEW);
+    }
   }
 
   if (key >= '1' && key <= '8') {
@@ -265,12 +293,17 @@ void keyPressed() {
     if (idx < solarSystem.planets.size()) {
       CelestialBody p = solarSystem.planets.get(idx);
       camera.focusOn(p.px, p.py, (width * 0.2) / p.a);
+      camera.setViewMode(ViewMode.MAP_VIEW);
     }
   }
   if (key == '0') {
     camera.reset();
     camera.targetScale = (width * 0.15) / AU_KM;
   }
+}
+
+void keyTyped() {
+  hud.launchUI.keyPressed(key);
 }
 
 void saveCurrentState() {

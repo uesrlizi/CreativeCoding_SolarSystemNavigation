@@ -10,7 +10,6 @@ class SolarSystem {
 
   void initialize() {
     initSolarSystem();
-    initSpacecraft();
   }
 
   void initSolarSystem() {
@@ -26,38 +25,13 @@ class SolarSystem {
     planets.add(new CelestialBody("Neptune", 30.11039, 0.00859,  1.770, 131.784, 276.336, 256.228, 60182.00, 24622.0, color(60, 100, 230)));
   }
 
-  void initSpacecraft() {
-    double rE = 1.0 * AU_KM;
-    double rM = 1.52368 * AU_KM;
-    double a_transfer = (rE + rM) / 2.0;
-    double e_transfer = (rM - rE) / (rM + rE);
-    double T_transfer = 2 * PI * Math.sqrt(Math.pow(a_transfer, 3) / GM_SUN);
-
-    Spacecraft s1 = new Spacecraft("Transfer-1", a_transfer, e_transfer,
-      0.0, 0.0, 0.0, 0.0, T_transfer, color(0, 255, 150));
-    s1.trailColor = color(0, 200, 120, 150);
-    ships.add(s1);
-
-    Spacecraft s2 = new Spacecraft("Comet-X", 3.5 * AU_KM, 0.85,
-      15.0, 30.0, 60.0, 0.0,
-      2 * PI * Math.sqrt(Math.pow(3.5 * AU_KM, 3) / GM_SUN), color(255, 100, 255));
-    s2.trailColor = color(200, 80, 200, 120);
-    ships.add(s2);
-
-    Spacecraft s3 = new Spacecraft("Juno-II", 5.2 * AU_KM, 0.35,
-      8.0, 120.0, 200.0, 90.0,
-      2 * PI * Math.sqrt(Math.pow(5.2 * AU_KM, 3) / GM_SUN), color(255, 200, 50));
-    s3.trailColor = color(200, 160, 40, 120);
-    ships.add(s3);
-  }
-
   void update(double t) {
     for (CelestialBody p : planets) {
       p.update(t);
     }
   }
 
-  void drawSun(Camera cam) {
+  void drawSun(CameraController cam) {
     double[] sp = cam.worldToScreen(0, 0);
     float sx = (float)sp[0], sy = (float)sp[1];
 
@@ -74,7 +48,7 @@ class SolarSystem {
     }
   }
 
-  void drawPlanets(Camera cam) {
+  void drawPlanets(CameraController cam) {
     for (CelestialBody p : planets) {
       p.draw(cam);
     }

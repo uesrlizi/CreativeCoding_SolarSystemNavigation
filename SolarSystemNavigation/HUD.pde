@@ -1,13 +1,21 @@
 class HUD {
-  void draw(Camera cam, double simTime, double timeWarp, double[] WARP_LEVELS, List<CelestialBody> planets) {
+  LaunchUI launchUI;
+
+  HUD() {
+    launchUI = new LaunchUI();
+  }
+
+  void draw(CameraController cam, double simTime, double timeWarp,
+            double[] WARP_LEVELS, List<CelestialBody> planets) {
     drawInfoPanel(cam, simTime, timeWarp, WARP_LEVELS);
-    drawPlanetList(planets);
+    drawViewModeIndicator();
+    launchUI.draw();
     if (timeWarp == 0) {
       drawPauseIndicator();
     }
   }
 
-  void drawInfoPanel(Camera cam, double simTime, double timeWarp, double[] WARP_LEVELS) {
+  void drawInfoPanel(CameraController cam, double simTime, double timeWarp, double[] WARP_LEVELS) {
     noStroke();
     fill(0, 0, 0, 160);
     rect(10, 10, 420, 290, 8);
@@ -15,7 +23,7 @@ class HUD {
     fill(220);
     textSize(21);
     textAlign(LEFT, TOP);
-    text("Solar System Navigation Simulator", 20, 18);
+    text("Spacecraft Launch Simulator", 20, 18);
 
     textSize(17);
     fill(180);
@@ -26,7 +34,7 @@ class HUD {
     String warpStr = formatWarp(timeWarp);
     fill(100, 200, 100);
     text("Time warp: " + warpStr, 20, 72);
-    
+
     fill(180);
     text("[Q/E] Adjust speed  [Space] Pause", 20, 96);
 
@@ -37,7 +45,20 @@ class HUD {
     textSize(15);
     text("[O] Orbits [L] Labels [T] Trails [R] Reset", 20, 144);
     text("[1-8] Focus planet [0] Focus Sun", 20, 168);
-    text("Drag to pan, Scroll to zoom", 20, 192);
+    text("[V] View Mode [F] Follow Ship", 20, 192);
+    text("Drag to pan, Scroll to zoom", 20, 216);
+  }
+
+  void drawViewModeIndicator() {
+    noStroke();
+    fill(0, 0, 0, 160);
+    rect(width - 130, 10, 120, 35, 8);
+
+    fill(200);
+    textSize(14);
+    textAlign(LEFT, CENTER);
+    String modeText = (camera.getMode() == ViewMode.MAP_VIEW) ? "MAP VIEW" : "SHIP VIEW";
+    text(modeText + " [V]", width - 120, 28);
   }
 
   void drawPlanetList(List<CelestialBody> planets) {

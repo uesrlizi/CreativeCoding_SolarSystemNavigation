@@ -46,7 +46,7 @@ class CelestialBody {
     px = pos[0]; py = pos[1]; pz = pos[2];
   }
 
-  void draw(Camera cam) {
+  void draw(CameraController cam) {
     double[] sp = cam.worldToScreen(px, py);
     if (sp[0] < -100 || sp[0] > width + 100 || sp[1] < -100 || sp[1] > height + 100) return;
 
