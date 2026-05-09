@@ -190,14 +190,14 @@ class TimeManager {
   TimeManager() {
     simTime = 0;
     WARP_LEVELS = new double[8];
-    WARP_LEVELS[0] = 1.0 / 86400.0;
-    WARP_LEVELS[1] = 1.0 / 3600.0;
-    WARP_LEVELS[2] = 1.0 / 60.0;
-    WARP_LEVELS[3] = 1.0;
-    WARP_LEVELS[4] = 60.0;
-    WARP_LEVELS[5] = 600.0;
-    WARP_LEVELS[6] = 3600.0;
-    WARP_LEVELS[7] = 86400.0;
+    WARP_LEVELS[0] = 1.0;
+    WARP_LEVELS[1] = 60.0;
+    WARP_LEVELS[2] = 600.0;
+    WARP_LEVELS[3] = 3600.0;
+    WARP_LEVELS[4] = 36000.0;
+    WARP_LEVELS[5] = 86400.0;
+    WARP_LEVELS[6] = 604800.0;
+    WARP_LEVELS[7] = 2592000.0;
     timeWarp = WARP_LEVELS[warpIndex];
   }
 
