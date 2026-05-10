@@ -54,8 +54,8 @@ class LaunchUI {
   }
 
   void drawTargetPanel() {
-    if (launchController.getState() != ShipState.ORBIT &&
-        launchController.getState() != ShipState.TRANSFER) return;
+    if (launchController.getState() != ShipPhase.IN_ORBIT &&
+        launchController.getState() != ShipPhase.TRANSFER) return;
 
     int panelX = width - 270;
     int panelY = height - 320;
@@ -117,7 +117,14 @@ class LaunchUI {
 
     fill(180);
     textSize(12);
-    double altitude = (ship.a - 6371000) / 1000.0;
+    CelestialBody earth = null;
+    for (CelestialBody p : solarSystem.planets) {
+      if (p.name.equals("Earth")) {
+        earth = p;
+        break;
+      }
+    }
+    double altitude = earth != null ? ship.altitudeAGL(earth) : 0;
     text(String.format("Alt: %.0f km", altitude), panelX + 10, panelY + 28);
   }
 
@@ -173,7 +180,6 @@ class LaunchUI {
   }
 
   void handleClick(int mx, int my) {
-    boolean wasInputFocused = inputFocused;
     inputFocused = isTextInputClicked(mx, my);
     
     if (inputFocused) {

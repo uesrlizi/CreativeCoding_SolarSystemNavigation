@@ -31,8 +31,8 @@ class CameraController {
   void update() {
     scale += (targetScale - scale) * 0.1;
     if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
-      camX = followTarget.px;
-      camY = followTarget.py;
+      camX = followTarget.position[0] / 1000;
+      camY = followTarget.position[1] / 1000;
     }
   }
 
@@ -43,8 +43,8 @@ class CameraController {
   void setViewMode(ViewMode m) {
     mode = m;
     if (m == ViewMode.SHIP_VIEW && followTarget != null) {
-      camX = followTarget.px;
-      camY = followTarget.py;
+      camX = followTarget.position[0] / 1000;
+      camY = followTarget.position[1] / 1000;
       targetScale = calculateShipViewScale();
     }
   }
@@ -52,8 +52,8 @@ class CameraController {
   void followShip(Spacecraft ship) {
     followTarget = ship;
     if (ship != null) {
-      camX = ship.px;
-      camY = ship.py;
+      camX = ship.position[0] / 1000;
+      camY = ship.position[1] / 1000;
     }
   }
 

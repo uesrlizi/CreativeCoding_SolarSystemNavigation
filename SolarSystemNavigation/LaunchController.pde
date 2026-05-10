@@ -65,10 +65,16 @@ class LaunchController {
           phase = ShipPhase.IN_ORBIT;
         }
         break;
+      case COASTING:
+        updateOrbital(currentShip, 1.0);
+        break;
       case IN_ORBIT:
         updateOrbital(currentShip, 1.0);
         break;
       case TRANSFER:
+        updateOrbital(currentShip, 1.0);
+        break;
+      case DECOUPLING:
         updateOrbital(currentShip, 1.0);
         break;
     }
@@ -84,6 +90,18 @@ class LaunchController {
     ship.position[0] += ship.velocity[0] * dt;
     ship.position[1] += ship.velocity[1] * dt;
     ship.position[2] += ship.velocity[2] * dt;
+  }
+
+  ShipPhase getState() {
+    return phase;
+  }
+
+  CelestialBody getSelectedTarget() {
+    return selectedTarget;
+  }
+
+  Spacecraft getCurrentShip() {
+    return currentShip;
   }
 
   void selectTarget(CelestialBody target) {

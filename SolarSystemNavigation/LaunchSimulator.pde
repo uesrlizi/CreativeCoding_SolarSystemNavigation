@@ -54,10 +54,6 @@ class LaunchSimulator {
     double massFlow = thrust / (ship.isp * g0);
     double drag = calculateDrag(altitude, ship.speed());
 
-    double dragDecel = drag / ship.mass;
-    double gravityDecel = gravity;
-    double netVerticalAccel = (thrust / ship.mass) * Math.cos(Math.toRadians(ship.launchPitch)) - gravityDecel - dragDecel * Math.sin(Math.toRadians(ship.launchPitch));
-
     double pitchOverRate = initialPitchRate * Math.max(0, 1.0 - altitude / maxQAltitude);
     ship.launchPitch = Math.max(0, Math.min(90, ship.launchPitch - pitchOverRate * dt));
 
@@ -71,7 +67,7 @@ class LaunchSimulator {
 
     ship.velocity[0] += (thrustEast + gravity * ship.position[0] / Math.sqrt(ship.position[0]*ship.position[0] + ship.position[1]*ship.position[1])) * dt;
     ship.velocity[1] += (thrustNorth + gravity * ship.position[1] / Math.sqrt(ship.position[0]*ship.position[0] + ship.position[1]*ship.position[1])) * dt;
-    ship.velocity[2] += (thrustUp - gravity * ship.position[2] / Math.sqrt(ship.position[0]*ship.position[0] + ship.position[1]*ship.position[1])) * dt;
+    ship.velocity[2] += thrustUp * dt;
 
     ship.position[0] += ship.velocity[0] * dt;
     ship.position[1] += ship.velocity[1] * dt;
