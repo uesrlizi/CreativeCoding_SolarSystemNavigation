@@ -136,13 +136,14 @@ class ManeuverPlanner {
               addManeuver(new OrbitalManeuver("Circularize", vCirc - v, new double[]{0, 1, 0}, ManeuverType.CIRCULARIZE));
               break;
             case 1:
-              addManeuver(OrbitalManeuver.raiseApogee(100));
+              addManeuver(new OrbitalManeuver("Raise Apogee", 100, new double[]{0, 1, 0}, ManeuverType.RAISE_APOGEE));
               break;
             case 2:
-              addManeuver(OrbitalManeuver.lowerApogee(100));
+              addManeuver(new OrbitalManeuver("Lower Apogee", -100, new double[]{0, -1, 0}, ManeuverType.LOWER_APOGEE));
               break;
             case 3:
-              addManeuver(OrbitalManeuver.escape(body));
+              double escapeDv = Math.sqrt(2 * body.gm / (body.radius * 1000)) - Math.sqrt(body.gm / (body.radius * 1000));
+              addManeuver(new OrbitalManeuver("Escape", escapeDv, new double[]{0, 1, 0}, ManeuverType.ESCAPE));
               break;
           }
         }
@@ -162,13 +163,14 @@ class ManeuverPlanner {
       addManeuver(new OrbitalManeuver("Circularize", vCirc - v, new double[]{0, 1, 0}, ManeuverType.CIRCULARIZE));
     }
     if (k == '2') {
-      addManeuver(OrbitalManeuver.raiseApogee(100));
+      addManeuver(new OrbitalManeuver("Raise Apogee", 100, new double[]{0, 1, 0}, ManeuverType.RAISE_APOGEE));
     }
     if (k == '3') {
-      addManeuver(OrbitalManeuver.lowerApogee(100));
+      addManeuver(new OrbitalManeuver("Lower Apogee", -100, new double[]{0, -1, 0}, ManeuverType.LOWER_APOGEE));
     }
     if (k == '4') {
-      addManeuver(OrbitalManeuver.escape(body));
+      double escapeDv = Math.sqrt(2 * body.gm / (body.radius * 1000)) - Math.sqrt(body.gm / (body.radius * 1000));
+      addManeuver(new OrbitalManeuver("Escape", escapeDv, new double[]{0, 1, 0}, ManeuverType.ESCAPE));
     }
     if (k == 'x' || k == 'X') {
       executeNext(ship);

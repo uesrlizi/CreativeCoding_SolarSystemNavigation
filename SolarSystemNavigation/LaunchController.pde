@@ -142,10 +142,14 @@ class LaunchController {
         return "Configure and Launch";
       case POWERED_ASCENT:
         return String.format("Ascent - Alt: %.0f km", currentShip.altitudeAGL(launchBody));
+      case COASTING:
+        return String.format("Coasting - Alt: %.0f km", currentShip.altitudeAGL(launchBody));
       case IN_ORBIT:
         return String.format("In Orbit - Alt: %.0f km", currentShip.altitudeAGL(launchBody));
       case TRANSFER:
         return "Escape Maneuver";
+      case DECOUPLING:
+        return "Decoupling";
     }
     return "";
   }

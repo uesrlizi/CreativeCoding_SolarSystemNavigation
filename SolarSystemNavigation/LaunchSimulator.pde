@@ -52,7 +52,6 @@ class LaunchSimulator {
 
     double thrust = ship.getThrustMagnitude();
     double massFlow = thrust / (ship.isp * g0);
-    double drag = calculateDrag(altitude, ship.speed());
 
     double pitchOverRate = initialPitchRate * Math.max(0, 1.0 - altitude / maxQAltitude);
     ship.launchPitch = Math.max(0, Math.min(90, ship.launchPitch - pitchOverRate * dt));

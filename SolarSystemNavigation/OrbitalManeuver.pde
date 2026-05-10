@@ -32,28 +32,28 @@ class OrbitalManeuver {
     return (m0 - mf) / (thrust / (isp * g0));
   }
 
-  static OrbitalManeuver circularize(double targetAltitude, CelestialBody body) {
+  OrbitalManeuver createCircularize(double targetAltitude, CelestialBody body) {
     double r = body.radius * 1000 + targetAltitude * 1000;
     double vCircular = Math.sqrt(body.gm / r);
     return new OrbitalManeuver("Circularize", vCircular, new double[]{0, 1, 0}, ManeuverType.CIRCULARIZE);
   }
 
-  static OrbitalManeuver raiseApogee(double dv) {
+  OrbitalManeuver createRaiseApogee(double dv) {
     return new OrbitalManeuver("Raise Apogee", dv, new double[]{0, 1, 0}, ManeuverType.RAISE_APOGEE);
   }
 
-  static OrbitalManeuver lowerApogee(double dv) {
+  OrbitalManeuver createLowerApogee(double dv) {
     return new OrbitalManeuver("Lower Apogee", -dv, new double[]{0, -1, 0}, ManeuverType.LOWER_APOGEE);
   }
 
-  static OrbitalManeuver escape(CelestialBody body) {
+  OrbitalManeuver createEscape(CelestialBody body) {
     double r = body.radius * 1000;
     double vEscape = Math.sqrt(2 * body.gm / r);
     double vOrbital = Math.sqrt(body.gm / r);
     return new OrbitalManeuver("Escape", vEscape - vOrbital, new double[]{0, 1, 0}, ManeuverType.ESCAPE);
   }
 
-  static double[] calculateHohmannTransfer(double r1, double r2, double gm) {
+  double[] computeHohmannTransfer(double r1, double r2, double gm) {
     double a = (r1 + r2) / 2;
     double v1 = Math.sqrt(gm / r1);
     double vTransfer1 = Math.sqrt(gm * (2.0/r1 - 1.0/a));

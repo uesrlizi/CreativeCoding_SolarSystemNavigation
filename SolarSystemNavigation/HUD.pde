@@ -6,7 +6,7 @@ class HUD {
   }
 
   void draw(CameraController cam, double simTime, double timeWarp, String statusText) {
-    drawInfoPanel(statusText);
+    drawInfoPanel();
     drawViewModeIndicator();
     launchUI.draw();
     if (timeWarp == 0) {
@@ -14,7 +14,7 @@ class HUD {
     }
   }
 
-  void drawInfoPanel(String statusText) {
+  void drawInfoPanel() {
     noStroke();
     fill(0, 0, 0, 160);
     rect(10, 10, 380, 120, 8);
