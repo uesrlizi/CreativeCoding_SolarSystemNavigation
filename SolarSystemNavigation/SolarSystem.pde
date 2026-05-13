@@ -34,10 +34,13 @@ class SolarSystem {
   void drawSun(CameraController cam) {
     double[] sp = cam.worldToScreen(0, 0);
     float sx = (float)sp[0], sy = (float)sp[1];
+    float sunR = max((float)(sun.radius * cam.scale), 4);
+
+    if (sx + sunR < -50 || sx - sunR > width + 50 ||
+        sy + sunR < -50 || sy - sunR > height + 50) return;
 
     fill(255, 230, 80);
     noStroke();
-    float sunR = max((float)(sun.radius * cam.scale), 4);
     ellipse(sx, sy, sunR * 2, sunR * 2);
 
     if (showLabels) {

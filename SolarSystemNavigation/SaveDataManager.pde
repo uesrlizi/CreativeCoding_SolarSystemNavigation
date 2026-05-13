@@ -36,6 +36,6 @@ class SaveDataManager {
 
 class SaveData {
   double simTime = 0;
-  double timeWarp = 1000;
-  int warpIndex = 3;
+  double timeWarp = 1.0;
+  int warpIndex = 4;
 }

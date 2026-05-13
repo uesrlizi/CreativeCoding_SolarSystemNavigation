@@ -11,6 +11,7 @@ class CelestialBody {
   color col;
 
   double px, py, pz;
+  double currentNu;
 
   CelestialBody(String name, double a_au, double e, double i,
     double omega, double w, double M0, double T_days, double R_km, color col) {
@@ -42,16 +43,18 @@ class CelestialBody {
     double M = (M0 + n * t) % (2.0 * PI);
     double E = solveKepler(M, e);
     double nu = trueAnomaly(E, e);
+    this.currentNu = nu;
     double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
     px = pos[0]; py = pos[1]; pz = pos[2];
   }
 
   void draw(CameraController cam) {
     double[] sp = cam.worldToScreen(px, py);
-    if (sp[0] < -100 || sp[0] > width + 100 || sp[1] < -100 || sp[1] > height + 100) return;
 
     double screenR = radius * cam.scale;
     int drawR = max((int)screenR, 2);
+    if (sp[0] + drawR < -50 || sp[0] - drawR > width + 50 ||
+        sp[1] + drawR < -50 || sp[1] - drawR > height + 50) return;
 
     noStroke();
     for (int g = 3; g >= 1; g--) {

@@ -13,6 +13,10 @@ class CameraController {
   ViewMode mode;
   Spacecraft followTarget;
 
+  CelestialBody focusBody;
+  Spacecraft focusShip;
+  double offsetX, offsetY;
+
   CameraController() {
     camX = 0;
     camY = 0;
@@ -21,6 +25,10 @@ class CameraController {
     dragging = false;
     mode = ViewMode.MAP_VIEW;
     followTarget = null;
+    focusBody = null;
+    focusShip = null;
+    offsetX = 0;
+    offsetY = 0;
   }
 
   void initialize(double initialScale) {
@@ -30,6 +38,15 @@ class CameraController {
 
   void update() {
     scale += (targetScale - scale) * 0.1;
+    if (mode == ViewMode.MAP_VIEW) {
+      if (focusBody != null) {
+        camX = focusBody.px + offsetX;
+        camY = focusBody.py + offsetY;
+      } else if (focusShip != null) {
+        camX = focusShip.px + offsetX;
+        camY = focusShip.py + offsetY;
+      }
+    }
     if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
       camX = followTarget.px;
       camY = followTarget.py;
@@ -45,7 +62,11 @@ class CameraController {
     if (m == ViewMode.SHIP_VIEW && followTarget != null) {
       camX = followTarget.px;
       camY = followTarget.py;
-      targetScale = calculateShipViewScale();
+      if (followTarget.earthRelative) {
+        targetScale = height / 1.5;
+      } else if (followTarget.a > 0) {
+        targetScale = (width * 0.3) / followTarget.a;
+      }
     }
   }
 
@@ -55,10 +76,6 @@ class CameraController {
       camX = ship.px;
       camY = ship.py;
     }
-  }
-
-  double calculateShipViewScale() {
-    return 5e-6;
   }
 
   void handleMousePressed() {
@@ -71,8 +88,14 @@ class CameraController {
 
   void handleMouseDragged() {
     if (dragging) {
-      camX = dragCX - (mouseX - dragSX) / scale;
-      camY = dragCY - (mouseY - dragSY) / scale;
+      double newCX = dragCX - (mouseX - dragSX) / scale;
+      double newCY = dragCY - (mouseY - dragSY) / scale;
+      if (focusBody != null || focusShip != null) {
+        offsetX += newCX - camX;
+        offsetY += newCY - camY;
+      }
+      camX = newCX;
+      camY = newCY;
     }
   }
 
@@ -83,18 +106,54 @@ class CameraController {
   void handleMouseWheel(MouseEvent event) {
     double factor = event.getCount() > 0 ? 0.85 : 1.18;
     targetScale *= factor;
-    targetScale = constrainDouble(targetScale, 1e-18, 1e-1);
+    targetScale = constrainDouble(targetScale, 1e-18, 1e6);
   }
 
   void reset() {
+    focusBody = null;
+    focusShip = null;
+    offsetX = 0;
+    offsetY = 0;
     camX = 0;
     camY = 0;
   }
 
+  void focusOn(CelestialBody body) {
+    focusBody = body;
+    focusShip = null;
+    offsetX = 0;
+    offsetY = 0;
+    mode = ViewMode.MAP_VIEW;
+  }
+
+  void focusOn(Spacecraft ship) {
+    focusBody = null;
+    focusShip = ship;
+    offsetX = 0;
+    offsetY = 0;
+    mode = ViewMode.MAP_VIEW;
+  }
+
   void focusOn(double x, double y, double targetScale) {
+    focusBody = null;
+    focusShip = null;
+    offsetX = 0;
+    offsetY = 0;
     camX = x;
     camY = y;
     this.targetScale = targetScale;
+  }
+
+  String getFocusName() {
+    if (focusBody != null) return focusBody.name;
+    if (focusShip != null) return focusShip.name;
+    return null;
+  }
+
+  double[] screenToWorld(double sx, double sy) {
+    double wx = (sx - width / 2.0) / scale + camX;
+    double wy = (sy - height / 2.0) / scale + camY;
+    return new double[]{wx, wy};
   }
 
   double[] worldToScreen(double wx, double wy) {

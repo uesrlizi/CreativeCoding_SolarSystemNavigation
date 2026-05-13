@@ -6,19 +6,27 @@ class HUD {
   }
 
   void draw(CameraController cam, double simTime, double timeWarp,
-            double[] WARP_LEVELS, List<CelestialBody> planets) {
-    drawInfoPanel(cam, simTime, timeWarp, WARP_LEVELS);
+            double[] WARP_LEVELS, String[] WARP_LABELS,
+            int warpIndex, List<CelestialBody> planets) {
+    drawInfoPanel(cam, simTime, timeWarp, WARP_LABELS, warpIndex);
+    drawPlanetList(planets);
     drawViewModeIndicator();
     launchUI.draw();
+
+    if (cam.getMode() == ViewMode.SHIP_VIEW && cam.followTarget != null) {
+      drawShipViewOverlay(cam.followTarget);
+    }
+
     if (timeWarp == 0) {
       drawPauseIndicator();
     }
   }
 
-  void drawInfoPanel(CameraController cam, double simTime, double timeWarp, double[] WARP_LEVELS) {
+  void drawInfoPanel(CameraController cam, double simTime, double timeWarp,
+                     String[] WARP_LABELS, int warpIndex) {
     noStroke();
     fill(0, 0, 0, 160);
-    rect(10, 10, 420, 290, 8);
+    rect(10, 10, 420, 240, 8);
 
     fill(220);
     textSize(21);
@@ -31,22 +39,27 @@ class HUD {
     double simYears = simDays / 365.25;
     text(String.format("Time: %.1f days (%.2f years)", simDays, simYears), 20, 48);
 
-    String warpStr = formatWarp(timeWarp);
+    String warpStr = formatWarp(timeWarp, WARP_LABELS, warpIndex);
     fill(100, 200, 100);
-    text("Time warp: " + warpStr, 20, 72);
-
-    fill(180);
-    text("[Q/E] Adjust speed  [Space] Pause", 20, 96);
+    text("Time Warp: " + warpStr, 20, 72);
 
     double auPerPixel = 1.0 / (AU_KM * cam.scale);
-    text(String.format("Zoom: %.4f AU/px", auPerPixel), 20, 120);
+    text(String.format("Zoom: %.4f AU/px", auPerPixel), 20, 96);
+
+    String focusName = cam.getFocusName();
+    if (focusName != null) {
+      fill(255, 200, 50);
+      textSize(15);
+      text("Focus: " + focusName, 20, 118);
+    }
 
     fill(140);
-    textSize(15);
-    text("[O] Orbits [L] Labels [T] Trails [R] Reset", 20, 144);
-    text("[1-8] Focus planet [0] Focus Sun", 20, 168);
-    text("[V] View Mode [F] Follow Ship", 20, 192);
-    text("Drag to pan, Scroll to zoom", 20, 216);
+    textSize(13);
+    text("[Space] Pause    [Q/E] Warp Speed    [R] Reset View", 20, 125);
+    text("[O] Orbits    [L] Labels    [T] Trails", 20, 148);
+    text("[1-8] Focus Planet    [0] Sun    [V] View Mode", 20, 171);
+    text("[F] Follow Ship    Drag to Pan    Scroll to Zoom", 20, 194);
+    text("Double-click object to focus", 20, 217);
   }
 
   void drawViewModeIndicator() {
@@ -62,16 +75,25 @@ class HUD {
   }
 
   void drawPlanetList(List<CelestialBody> planets) {
+    int px = 10;
+    int py = 225;
+    int pw = 200;
+    int ph = 38 + planets.size() * 27;
+
+    noStroke();
     fill(0, 0, 0, 140);
-    rect(width - 260, 10, 250, 35 + planets.size() * 27, 8);
+    rect(px, py, pw, ph, 8);
+
     fill(200);
-    textSize(17);
+    textSize(16);
     textAlign(LEFT, TOP);
-    text("Planets [1-8 Focus]", width - 250, 18);
+    text("Planets  [1-8]", px + 10, py + 8);
+
     for (int idx = 0; idx < planets.size(); idx++) {
       CelestialBody p = planets.get(idx);
       fill(p.col);
-      text((idx + 1) + ". " + p.name, width - 250, 45 + idx * 27);
+      textSize(13);
+      text((idx + 1) + ". " + p.name, px + 10, py + 35 + idx * 27);
     }
   }
 
@@ -81,12 +103,127 @@ class HUD {
     textAlign(CENTER, CENTER);
     text("PAUSED", width / 2, height - 60);
   }
+
+  void drawShipViewOverlay(Spacecraft ship) {
+    int rightX = width - 220;
+    drawSpeedIndicator(ship, rightX, 60);
+    drawEngineIndicator(ship, rightX, 107);
+
+    if (ship.earthRelative) {
+      drawOrbitData(ship, rightX, 150);
+    } else {
+      drawHeliocentricData(ship, rightX, 150);
+    }
+
+    // Ship name at bottom center
+    fill(0, 0, 0, 100);
+    noStroke();
+    rect(width / 2 - 80, height - 40, 160, 30, 5);
+    fill(red(ship.col), green(ship.col), blue(ship.col), 220);
+    textSize(14);
+    textAlign(CENTER, CENTER);
+    text(ship.name, width / 2, height - 25);
+  }
+
+  void drawSpeedIndicator(Spacecraft ship, int x, int y) {
+    double speed;
+    if (ship.earthRelative) {
+      speed = Math.sqrt(ship.earthRelVel[0] * ship.earthRelVel[0]
+                      + ship.earthRelVel[1] * ship.earthRelVel[1]);
+    } else {
+      double nuFwd = ship.currentNu + 0.01;
+      double[] posFwd = orbitalToCartesian(ship.a, ship.e, ship.i, ship.omega, ship.w, nuFwd);
+      speed = Math.sqrt((posFwd[0] - ship.px) * (posFwd[0] - ship.px)
+                      + (posFwd[1] - ship.py) * (posFwd[1] - ship.py)) / 0.01;
+    }
+
+    fill(0, 0, 0, 110);
+    noStroke();
+    rect(x, y, 155, 42, 5);
+
+    fill(200);
+    textSize(11);
+    textAlign(LEFT, TOP);
+    text("SPEED", x + 8, y + 4);
+    fill(100, 220, 100);
+    textSize(15);
+    text(String.format("%.2f km/s", speed), x + 8, y + 20);
+  }
+
+  void drawEngineIndicator(Spacecraft ship, int x, int y) {
+    fill(0, 0, 0, 110);
+    noStroke();
+    rect(x, y, 155, 35, 5);
+
+    if (ship.thrustActive) {
+      fill(255, 160, 40);
+      textSize(13);
+      textAlign(LEFT, CENTER);
+      text("ENGINE: BURNING", x + 8, y + 17);
+      // Small flame icon
+      float flameX = x + 135;
+      float flameY = y + 17;
+      fill(255, 200, 50, 180);
+      triangle(flameX, flameY - 6, flameX, flameY + 6, flameX + 10, flameY);
+      fill(255, 140, 30, 120);
+      triangle(flameX, flameY - 4, flameX, flameY + 4, flameX + 14, flameY);
+    } else {
+      fill(120);
+      textSize(13);
+      textAlign(LEFT, CENTER);
+      text("ENGINE: OFF", x + 8, y + 17);
+    }
+  }
+
+  void drawOrbitData(Spacecraft ship, int x, int y) {
+    fill(0, 0, 0, 110);
+    noStroke();
+    rect(x, y, 155, 50, 5);
+
+    fill(200);
+    textSize(11);
+    textAlign(LEFT, TOP);
+    text("ORBIT DATA", x + 8, y + 4);
+
+    fill(160);
+    textSize(10);
+    if (ship.state == ShipState.LAUNCHING) {
+      double apo = ship.computeApoapsis();
+      text(String.format("Apoapsis:  %.0f km", apo), x + 8, y + 20);
+      text(String.format("Altitude:  %.0f km", ship.launchAltitude), x + 8, y + 34);
+    } else if (ship.state == ShipState.ORBIT) {
+      text(String.format("Altitude:  %.0f km", ship.launchAltitude), x + 8, y + 20);
+      text("Orbit:  Circular LEO", x + 8, y + 34);
+    } else {
+      text(String.format("Altitude:  %.0f km", ship.launchAltitude), x + 8, y + 20);
+    }
+  }
+
+  void drawHeliocentricData(Spacecraft ship, int x, int y) {
+    fill(0, 0, 0, 110);
+    noStroke();
+    rect(x, y, 155, 50, 5);
+
+    fill(200);
+    textSize(11);
+    textAlign(LEFT, TOP);
+    text("ORBIT DATA", x + 8, y + 4);
+
+    double distFromSun = Math.sqrt(ship.px * ship.px + ship.py * ship.py);
+    double distAU = distFromSun / AU_KM;
+
+    fill(160);
+    textSize(10);
+    text(String.format("Sun dist: %.3f AU", distAU), x + 8, y + 20);
+    text(String.format("State: %s", ship.state.toString()), x + 8, y + 34);
+  }
+
 }
 
-String formatWarp(double w) {
+String formatWarp(double w, String[] WARP_LABELS, int warpIndex) {
   if (w == 0) return "Paused";
-  if (w >= 1e6) return String.format("%.0e x", w);
-  if (w >= 1000) return String.format("%.0f x", w);
-  if (w >= 1) return String.format("%.0f x", w);
-  return String.format("%.1f x", w);
+  if (warpIndex >= 0 && warpIndex < WARP_LABELS.length) {
+    return WARP_LABELS[warpIndex];
+  }
+  return String.format("%.0f x", w);
 }
