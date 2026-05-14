@@ -24,6 +24,7 @@ class Spacecraft {
   // Physics-based launch
   double lastUpdateTime;
   boolean thrustActive;                          // true during powered ascent
+  double circBurnDuration;                       // pre-computed circularization burn (seconds)
   static final double THRUST_ACCEL = 0.025;      // km/s^2 (~2.5g)
   static final double VERTICAL_RISE_TIME = 10.0; // seconds, pure vertical before pitch program
   static final double MAX_PITCH_RAD = 1.4835298641951802;  // 85 degrees to rad, max pitch from vertical
@@ -169,12 +170,19 @@ class Spacecraft {
             ascentStepApplied = true;
 
           } else {
-            // Circularization — prograde thrust (along velocity)
+            // Circularization: steer to match local circular orbit velocity.
+            // Δv = v_circ(r) * tangent - v_current.  Thrust aligns with Δv.
+            // At apoapsis Δv is pure tangential; elsewhere it corrects
+            // radial velocity so the burn doesn't raise/lower apoapsis.
             double vx = earthRelVel[0], vy = earthRelVel[1];
-            double spd = Math.sqrt(vx * vx + vy * vy);
-            if (spd > 0.001) {
-              ax += THRUST_ACCEL * vx / spd;
-              ay += THRUST_ACCEL * vy / spd;
+            double vCirc = Math.sqrt(MissionPlanner.GM_EARTH / r);
+            double tanX = -ry / r, tanY = rx / r;
+            double dvx = vCirc * tanX - vx;
+            double dvy = vCirc * tanY - vy;
+            double dv = Math.sqrt(dvx * dvx + dvy * dvy);
+            if (dv > 0.0001) {
+              ax += THRUST_ACCEL * dvx / dv;
+              ay += THRUST_ACCEL * dvy / dv;
             }
           }
         }
@@ -197,25 +205,50 @@ class Spacecraft {
 
         if (state == ShipState.LAUNCHING) {
           if (!thrustActive) {
-            // Wait until near apoapsis before circularizing.
-            // Primary check: time-to-apoapsis (works for reasonable orbits).
-            // Backup check: radial velocity near zero (works even for
-            // eccentric orbits where time estimate may be loose).
-            double timeToApo = timeToApoapsis();
+            // Compute circularization parameters from osculating orbit.
+            // The burn must be CENTERED on apoapsis: start before it,
+            // finish after it. This prevents the spacecraft from
+            // descending while burning.
             double vx = earthRelVel[0], vy = earthRelVel[1];
-            double rMag = Math.sqrt(rxNew * rxNew + ryNew * ryNew);
-            double radialVel = (rxNew * vx + ryNew * vy) / rMag;
-            boolean atApoapsis = (timeToApo >= 0 && timeToApo < 15.0)
-                              || Math.abs(radialVel) < 0.02;
-            if (atApoapsis || timeToApo < 0) {
+            double v2 = vx * vx + vy * vy;
+            double energy = v2 / 2.0 - MissionPlanner.GM_EARTH / rNew;
+            double timeToApo = timeToApoapsis();
+            boolean startBurn = false;
+
+            if (energy < 0) {
+              double a = -MissionPlanner.GM_EARTH / (2.0 * energy);
+              double h = rxNew * vy - ryNew * vx;
+              double e2 = 1.0 - h * h / (MissionPlanner.GM_EARTH * a);
+              double e = Math.sqrt(Math.max(0.0, e2));
+              double rApo = a * (1.0 + e);
+              double vApo = Math.sqrt(MissionPlanner.GM_EARTH * (2.0 / rApo - 1.0 / a));
+              double vCirc = Math.sqrt(MissionPlanner.GM_EARTH / rApo);
+              double dv = vCirc - vApo;          // Δv needed at apoapsis
+              double burnTime = Math.max(0.0, dv / THRUST_ACCEL);
+              double startOffset = burnTime / 2.0;  // center burn on apoapsis
+
+              if (timeToApo < 0 || e < 0.001) {
+                startBurn = true;  // past apoapsis or near-circular
+                circBurnDuration = Math.max(burnTime, 0.5);
+              } else if (timeToApo <= startOffset) {
+                startBurn = true;  // within centering window
+                circBurnDuration = burnTime;
+              }
+            } else {
+              // Hyperbolic (shouldn't happen) — start burn as safety
+              startBurn = true;
+              circBurnDuration = 5.0;
+            }
+
+            if (startBurn) {
               state = ShipState.CIRCULARIZING;
               thrustActive = true;
             }
           }
         } else if (state == ShipState.CIRCULARIZING) {
-          // Complete when perigee reaches target altitude
+          circBurnDuration -= step;
           double periAlt = computePerigee();
-          if (periAlt >= MissionPlanner.LEO_ALTITUDE_KM - 1.0) {
+          if (periAlt >= MissionPlanner.LEO_ALTITUDE_KM - 1.0 || circBurnDuration <= 0) {
             finalizeOrbitInsertion();
             remainingDt = 0;
           }
@@ -662,9 +695,15 @@ class Spacecraft {
           return (float)Math.atan2(thrY, thrX);
         }
       } else if (state == ShipState.CIRCULARIZING) {
-        // Point in prograde direction (along velocity)
+        // Point along Δv vector = v_circ*tangent - v_current
         double vx = earthRelVel[0], vy = earthRelVel[1];
-        return (float)Math.atan2(vy, vx);
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double r = Math.sqrt(rx * rx + ry * ry);
+        double vCirc = Math.sqrt(MissionPlanner.GM_EARTH / r);
+        double tanX = -ry / r, tanY = rx / r;
+        double dvx = vCirc * tanX - vx;
+        double dvy = vCirc * tanY - vy;
+        return (float)Math.atan2(dvy, dvx);
       } else {
         // Coasting or in orbit — maintain orbit-relative orientation
         return (float)(earthOrbitAngle + PI / 2.0);
