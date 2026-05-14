@@ -122,8 +122,11 @@ void drawOrbits() {
     drawOrbitPath(p.a, p.e, p.i, p.omega, p.w, color(60, 60, 80, 100));
   }
   for (Spacecraft s : solarSystem.ships) {
-    if (s.earthRelative) continue;
-    drawOrbitPath(s.a, s.e, s.i, s.omega, s.w, color(red(s.col), green(s.col), blue(s.col), 40));
+    if (s.earthRelative && s.earthRef != null) {
+      drawEarthRelOrbit(s);
+    } else if (!s.earthRelative) {
+      drawOrbitPath(s.a, s.e, s.i, s.omega, s.w, color(red(s.col), green(s.col), blue(s.col), 40));
+    }
   }
 }
 
@@ -137,6 +140,26 @@ void drawOrbitPath(double a, double e, double i, double omega, double w, color c
     double nu = 2.0 * PI * j / steps;
     double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
     double[] sp = camera.worldToScreen(pos[0], pos[1]);
+    vertex((float)sp[0], (float)sp[1]);
+  }
+  endShape(CLOSE);
+}
+
+void drawEarthRelOrbit(Spacecraft s) {
+  double radius = MissionPlanner.LEO_RADIUS_KM;
+  double cx = s.earthRef.px;
+  double cy = s.earthRef.py;
+
+  noFill();
+  stroke(red(s.col), green(s.col), blue(s.col), 50);
+  strokeWeight(0.8);
+  beginShape();
+  int steps = 128;
+  for (int j = 0; j <= steps; j++) {
+    double a = 2.0 * PI * j / steps;
+    double[] sp = camera.worldToScreen(
+      cx + radius * Math.cos(a),
+      cy + radius * Math.sin(a));
     vertex((float)sp[0], (float)sp[1]);
   }
   endShape(CLOSE);
@@ -359,21 +382,10 @@ void handleDoubleClick() {
 
   if (closestShip != null) {
     camera.focusOn(closestShip);
-    if (closestShip.earthRelative) {
-      camera.targetScale = 0.4 * height / (2.0 * MissionPlanner.EARTH_RADIUS_KM);
-    } else if (closestShip.a > 0) {
-      camera.targetScale = (width * 0.2) / closestShip.a;
-    }
   } else if (closestBody != null) {
     camera.focusOn(closestBody);
-    if (closestBody == solarSystem.sun) {
-      camera.targetScale = (width * 0.15) / AU_KM;
-    } else if (closestBody.a > 0) {
-      camera.targetScale = (width * 0.2) / closestBody.a;
-    }
   } else {
     camera.focusOn(solarSystem.sun);
-    camera.targetScale = (width * 0.15) / AU_KM;
   }
 }
 
@@ -456,12 +468,10 @@ void keyPressed() {
     if (idx < solarSystem.planets.size()) {
       CelestialBody p = solarSystem.planets.get(idx);
       camera.focusOn(p);
-      camera.targetScale = (width * 0.2) / p.a;
     }
   }
   if (key == '0') {
     camera.focusOn(solarSystem.sun);
-    camera.targetScale = (width * 0.15) / AU_KM;
   }
 }
 

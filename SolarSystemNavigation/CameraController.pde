@@ -8,7 +8,7 @@ class CameraController {
   double scale;
   double targetScale;
   boolean dragging;
-  double dragSX, dragSY, dragCX, dragCY;
+  double dragSX, dragSY, dragCX, dragCY, dragOffsetX, dragOffsetY;
 
   ViewMode mode;
   Spacecraft followTarget;
@@ -62,11 +62,6 @@ class CameraController {
     if (m == ViewMode.SHIP_VIEW && followTarget != null) {
       camX = followTarget.px;
       camY = followTarget.py;
-      if (followTarget.earthRelative) {
-        targetScale = height / 1.5;
-      } else if (followTarget.a > 0) {
-        targetScale = (width * 0.3) / followTarget.a;
-      }
     }
   }
 
@@ -84,18 +79,23 @@ class CameraController {
     dragSY = mouseY;
     dragCX = camX;
     dragCY = camY;
+    dragOffsetX = offsetX;
+    dragOffsetY = offsetY;
   }
 
   void handleMouseDragged() {
     if (dragging) {
-      double newCX = dragCX - (mouseX - dragSX) / scale;
-      double newCY = dragCY - (mouseY - dragSY) / scale;
       if (focusBody != null || focusShip != null) {
-        offsetX += newCX - camX;
-        offsetY += newCY - camY;
+        offsetX = dragOffsetX - (mouseX - dragSX) / scale;
+        offsetY = dragOffsetY - (mouseY - dragSY) / scale;
+        double tx = (focusBody != null) ? focusBody.px : focusShip.px;
+        double ty = (focusBody != null) ? focusBody.py : focusShip.py;
+        camX = tx + offsetX;
+        camY = ty + offsetY;
+      } else {
+        camX = dragCX - (mouseX - dragSX) / scale;
+        camY = dragCY - (mouseY - dragSY) / scale;
       }
-      camX = newCX;
-      camY = newCY;
     }
   }
 
@@ -121,16 +121,16 @@ class CameraController {
   void focusOn(CelestialBody body) {
     focusBody = body;
     focusShip = null;
-    offsetX = 0;
-    offsetY = 0;
+    offsetX = camX - body.px;
+    offsetY = camY - body.py;
     mode = ViewMode.MAP_VIEW;
   }
 
   void focusOn(Spacecraft ship) {
     focusBody = null;
     focusShip = ship;
-    offsetX = 0;
-    offsetY = 0;
+    offsetX = camX - ship.px;
+    offsetY = camY - ship.py;
     mode = ViewMode.MAP_VIEW;
   }
 

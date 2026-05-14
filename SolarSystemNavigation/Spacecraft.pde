@@ -312,7 +312,6 @@ class Spacecraft {
 
   void drawOrbitHighlight(CameraController cam) {
     if (earthRelative) {
-      if (state == ShipState.LAUNCHING) return; // No trail during ascent
       drawEarthRelOrbitHighlight(cam);
       return;
     }
@@ -337,17 +336,107 @@ class Spacecraft {
 
   void drawEarthRelOrbitHighlight(CameraController cam) {
     if (earthRef == null) return;
+
+    if (state == ShipState.LAUNCHING) {
+      double[] ke = cartesianToKepler(
+        new double[]{earthRelPos[0], earthRelPos[1], 0},
+        new double[]{earthRelVel[0], earthRelVel[1], 0},
+        MissionPlanner.GM_EARTH);
+      double ea = ke[0];
+      double ee = ke[1];
+      double ei = ke[2];
+      double eOmega = ke[3];
+      double ew = ke[4];
+      double eNu = Math.toRadians(ke[5]);
+
+      // Convert current ν to eccentric anomaly E for uniform spatial sampling
+      double cosNu = Math.cos(eNu);
+      double sinNu = Math.sin(eNu);
+      double denom = 1.0 + ee * cosNu;
+      double cosE = (ee + cosNu) / denom;
+      double sinE = Math.sqrt(1.0 - ee * ee) * sinNu / denom;
+      double curE = Math.atan2(sinE, cosE);
+
+      double eArc = 1.0;       // arc in E space (rad)
+      int steps = 200;
+      double rEarth = MissionPlanner.EARTH_RADIUS_KM;
+
+      // Sample uniformly in E, convert to ν for orbitalToCartesian
+      double[][] pts = new double[steps + 1][2];
+      boolean[] above = new boolean[steps + 1];
+      for (int j = 0; j <= steps; j++) {
+        double E = curE - eArc + (2.0 * eArc * j / steps);
+        double nu = trueAnomaly(E, ee);
+        double[] pos = orbitalToCartesian(ea, ee, ei, eOmega, ew, nu);
+        pts[j][0] = pos[0];
+        pts[j][1] = pos[1];
+        above[j] = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1]) >= rEarth;
+      }
+
+      noFill();
+      stroke(trailColor);
+      strokeWeight(2.5);
+
+      // Draw segments with proper surface intersection
+      boolean inShape = false;
+      if (above[0]) {
+        beginShape();
+        inShape = true;
+        double[] sp = cam.worldToScreen(
+          earthRef.px + pts[0][0], earthRef.py + pts[0][1]);
+        vertex((float)sp[0], (float)sp[1]);
+      }
+
+      for (int j = 1; j <= steps; j++) {
+        if (above[j - 1] && above[j]) {
+          // Both above: continue
+          double[] sp = cam.worldToScreen(
+            earthRef.px + pts[j][0], earthRef.py + pts[j][1]);
+          vertex((float)sp[0], (float)sp[1]);
+        } else if (above[j - 1] && !above[j]) {
+          // Entering surface: draw intersection, end shape
+          double[] isect = sphereIntersect(pts[j - 1], pts[j], rEarth);
+          if (isect != null) {
+            double[] sp = cam.worldToScreen(
+              earthRef.px + isect[0], earthRef.py + isect[1]);
+            vertex((float)sp[0], (float)sp[1]);
+          }
+          endShape();
+          inShape = false;
+        } else if (!above[j - 1] && above[j]) {
+          // Emerging from surface: start shape at intersection, continue
+          double[] isect = sphereIntersect(pts[j - 1], pts[j], rEarth);
+          beginShape();
+          inShape = true;
+          if (isect != null) {
+            double[] sp = cam.worldToScreen(
+              earthRef.px + isect[0], earthRef.py + isect[1]);
+            vertex((float)sp[0], (float)sp[1]);
+          }
+          double[] sp = cam.worldToScreen(
+            earthRef.px + pts[j][0], earthRef.py + pts[j][1]);
+          vertex((float)sp[0], (float)sp[1]);
+        }
+        // both below: nothing
+      }
+
+      if (inShape) {
+        endShape();
+      }
+      return;
+    }
+
+    // ORBIT state: circular LEO arc (behind only)
     double centerX = earthRef.px;
     double centerY = earthRef.py;
     double radius = MissionPlanner.LEO_RADIUS_KM;
     double currentAngle = earthOrbitAngle;
-
     double arcLength = 0.6;
-    int steps = 40;
+    int steps = 60;
 
     noFill();
     stroke(trailColor);
-    strokeWeight(1.5);
+    strokeWeight(2.5);
     beginShape();
     for (int j = 0; j <= steps; j++) {
       double a = currentAngle - arcLength + (arcLength * j / steps);
@@ -357,6 +446,28 @@ class Spacecraft {
       vertex((float)sp[0], (float)sp[1]);
     }
     endShape();
+  }
+
+  // Intersection of segment P→Q with circle radius R centered at origin.
+  // Returns the (x,y) of the intersection in [0,1] range, or null.
+  double[] sphereIntersect(double[] P, double[] Q, double R) {
+    double dx = Q[0] - P[0];
+    double dy = Q[1] - P[1];
+    double a = dx * dx + dy * dy;
+    if (a < 1e-20) return null;
+    double b = 2.0 * (P[0] * dx + P[1] * dy);
+    double c = (P[0] * P[0] + P[1] * P[1]) - R * R;
+    double disc = b * b - 4.0 * a * c;
+    if (disc < 0) return null;
+
+    double sqrtDisc = Math.sqrt(disc);
+    double t0 = (-b - sqrtDisc) / (2.0 * a);
+    double t1 = (-b + sqrtDisc) / (2.0 * a);
+
+    double t = (t0 >= 0.0 && t0 <= 1.0) ? t0 : t1;
+    if (t < 0.0 || t > 1.0) return null;
+
+    return new double[]{P[0] + t * dx, P[1] + t * dy};
   }
 
   float calculateOrientation(CameraController cam) {
