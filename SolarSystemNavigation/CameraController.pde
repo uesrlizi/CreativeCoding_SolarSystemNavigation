@@ -16,6 +16,7 @@ class CameraController {
   CelestialBody focusBody;
   Spacecraft focusShip;
   double offsetX, offsetY;
+  double targetOffsetX, targetOffsetY;
 
   CameraController() {
     camX = 0;
@@ -29,6 +30,8 @@ class CameraController {
     focusShip = null;
     offsetX = 0;
     offsetY = 0;
+    targetOffsetX = 0;
+    targetOffsetY = 0;
   }
 
   void initialize(double initialScale) {
@@ -38,14 +41,14 @@ class CameraController {
 
   void update() {
     scale += (targetScale - scale) * 0.1;
+    offsetX += (targetOffsetX - offsetX) * 0.15;
+    offsetY += (targetOffsetY - offsetY) * 0.15;
     if (mode == ViewMode.MAP_VIEW) {
-      if (focusBody != null) {
-        camX = focusBody.px + offsetX;
-        camY = focusBody.py + offsetY;
-      } else if (focusShip != null) {
-        camX = focusShip.px + offsetX;
-        camY = focusShip.py + offsetY;
-      }
+      double tx = 0, ty = 0;
+      if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
+      else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
+      camX = tx + offsetX;
+      camY = ty + offsetY;
     }
     if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
       camX = followTarget.px;
@@ -85,17 +88,15 @@ class CameraController {
 
   void handleMouseDragged() {
     if (dragging) {
-      if (focusBody != null || focusShip != null) {
-        offsetX = dragOffsetX - (mouseX - dragSX) / scale;
-        offsetY = dragOffsetY - (mouseY - dragSY) / scale;
-        double tx = (focusBody != null) ? focusBody.px : focusShip.px;
-        double ty = (focusBody != null) ? focusBody.py : focusShip.py;
-        camX = tx + offsetX;
-        camY = ty + offsetY;
-      } else {
-        camX = dragCX - (mouseX - dragSX) / scale;
-        camY = dragCY - (mouseY - dragSY) / scale;
-      }
+      offsetX = dragOffsetX - (mouseX - dragSX) / scale;
+      offsetY = dragOffsetY - (mouseY - dragSY) / scale;
+      targetOffsetX = offsetX;
+      targetOffsetY = offsetY;
+      double tx = 0, ty = 0;
+      if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
+      else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
+      camX = tx + offsetX;
+      camY = ty + offsetY;
     }
   }
 
@@ -114,6 +115,8 @@ class CameraController {
     focusShip = null;
     offsetX = 0;
     offsetY = 0;
+    targetOffsetX = 0;
+    targetOffsetY = 0;
     camX = 0;
     camY = 0;
   }
@@ -123,6 +126,8 @@ class CameraController {
     focusShip = null;
     offsetX = camX - body.px;
     offsetY = camY - body.py;
+    targetOffsetX = offsetX;
+    targetOffsetY = offsetY;
     mode = ViewMode.MAP_VIEW;
   }
 
@@ -131,6 +136,8 @@ class CameraController {
     focusShip = ship;
     offsetX = camX - ship.px;
     offsetY = camY - ship.py;
+    targetOffsetX = offsetX;
+    targetOffsetY = offsetY;
     mode = ViewMode.MAP_VIEW;
   }
 
@@ -139,13 +146,15 @@ class CameraController {
     focusShip = null;
     offsetX = 0;
     offsetY = 0;
+    targetOffsetX = 0;
+    targetOffsetY = 0;
     camX = x;
     camY = y;
     this.targetScale = targetScale;
   }
 
   String getFocusName() {
-    if (focusBody != null) return focusBody.name;
+    if (focusBody != null && focusBody.a != 0) return focusBody.name;
     if (focusShip != null) return focusShip.name;
     return null;
   }

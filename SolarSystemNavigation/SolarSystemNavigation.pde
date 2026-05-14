@@ -94,7 +94,7 @@ void draw() {
   }
   hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
            timeManager.WARP_LEVELS, timeManager.WARP_LABELS,
-           timeManager.warpIndex, solarSystem.planets);
+           timeManager.warpIndex, solarSystem.planets, solarSystem.sun);
 }
 
 // ============================================================
@@ -345,6 +345,9 @@ class TimeManager {
 void mousePressed() {
   hud.launchUI.handleClick(mouseX, mouseY);
   if (!hud.launchUI.isPopupOpen()) {
+    if (hud.handleClick(mouseX, mouseY, solarSystem.sun, solarSystem.planets, camera)) {
+      return;
+    }
     long now = millis();
     if (now - lastClickTime < DOUBLE_CLICK_MS &&
         dist(mouseX, mouseY, lastClickX, lastClickY) < DOUBLE_CLICK_PX) {
@@ -444,11 +447,6 @@ void keyPressed() {
     }
   }
 
-  if (key == 'r' || key == 'R') {
-    camera.reset();
-    camera.targetScale = (width * 0.15) / AU_KM;
-  }
-
   if (key == 'v' || key == 'V') {
     if (camera.getMode() == ViewMode.MAP_VIEW) {
       camera.setViewMode(ViewMode.SHIP_VIEW);
@@ -458,21 +456,28 @@ void keyPressed() {
   }
 
   if (key == 'f' || key == 'F') {
-    if (launchController.getCurrentShip() != null) {
-      camera.focusOn(launchController.getCurrentShip());
+    if (camera.focusShip != null) {
+      if (Math.abs(camera.targetOffsetX) > 0.01 || Math.abs(camera.targetOffsetY) > 0.01) {
+        camera.targetOffsetX = 0;
+        camera.targetOffsetY = 0;
+      }
+    } else if (camera.focusBody != null && camera.focusBody.a != 0) {
+      if (Math.abs(camera.targetOffsetX) > 0.01 || Math.abs(camera.targetOffsetY) > 0.01) {
+        camera.targetOffsetX = 0;
+        camera.targetOffsetY = 0;
+      } else {
+        camera.targetScale = height / (4.0 * camera.focusBody.radius);
+      }
+    } else {
+      if (Math.abs(camera.targetOffsetX) > 0.01 || Math.abs(camera.targetOffsetY) > 0.01) {
+        camera.targetOffsetX = 0;
+        camera.targetOffsetY = 0;
+      } else {
+        camera.targetScale = (width * 0.15) / AU_KM;
+      }
     }
   }
 
-  if (key >= '1' && key <= '8') {
-    int idx = key - '1';
-    if (idx < solarSystem.planets.size()) {
-      CelestialBody p = solarSystem.planets.get(idx);
-      camera.focusOn(p);
-    }
-  }
-  if (key == '0') {
-    camera.focusOn(solarSystem.sun);
-  }
 }
 
 void keyTyped() {
