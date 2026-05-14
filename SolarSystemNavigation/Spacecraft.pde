@@ -29,6 +29,7 @@ class Spacecraft {
   static final double VERTICAL_RISE_TIME = 10.0; // seconds, pure vertical before pitch program
   static final double MAX_PITCH_RAD = 1.4835298641951802;  // 85 degrees to rad, max pitch from vertical
   static final double PITCH_EXPONENT = 0.7;      // shape: higher = stays vertical longer
+  static final double ASCENT_APO_MARGIN = 15.0;  // km overshoot — finite circ burn decays apoapsis
   static final double FIXED_SUBSTEP = 1.0;       // max seconds per physics sub-step
   static final double CIRC_ECC_TOLERANCE = 0.0005;  // eccentricity threshold for circular orbit
   static final double SHIP_LENGTH_KM = 0.05;     // 50 m rocket
@@ -140,7 +141,9 @@ class Spacecraft {
 
             double apoFull = computeApoapsisAt(tmpRx, tmpRy, tmpVx, tmpVy);
 
-            if (apoFull >= MissionPlanner.LEO_ALTITUDE_KM) {
+            double ascentTarget = MissionPlanner.LEO_ALTITUDE_KM + ASCENT_APO_MARGIN;
+
+            if (apoFull >= ascentTarget) {
               // Will cross target — find the fraction of thrust needed
               double gVx = preVx + ax * step;
               double gVy = preVy + ay * step;
@@ -149,8 +152,8 @@ class Spacecraft {
               double apoGrav = computeApoapsisAt(gRx, gRy, gVx, gVy);
 
               double f = 0.0;
-              if (apoFull > apoGrav && apoGrav < MissionPlanner.LEO_ALTITUDE_KM) {
-                f = (MissionPlanner.LEO_ALTITUDE_KM - apoGrav) / (apoFull - apoGrav);
+              if (apoFull > apoGrav && apoGrav < ascentTarget) {
+                f = (ascentTarget - apoGrav) / (apoFull - apoGrav);
                 f = Math.max(0.0, Math.min(1.0, f));
               }
 
