@@ -121,6 +121,22 @@ class LaunchUI {
         textAlign(CENTER, CENTER);
         text("Coasting to apoapsis...", panelX + panelW / 2, panelY + 70);
       }
+    } else if (st == ShipState.CIRCULARIZING) {
+      double speed = Math.sqrt(ship.earthRelVel[0] * ship.earthRelVel[0]
+                             + ship.earthRelVel[1] * ship.earthRelVel[1]);
+      double periAlt = ship.computePerigee();
+      double circSpeed = Math.sqrt(MissionPlanner.GM_EARTH / MissionPlanner.LEO_RADIUS_KM);
+
+      text(String.format("Altitude: %.0f km   Speed: %.2f km/s", ship.launchAltitude, speed),
+           panelX + 10, panelY + 28);
+      text(String.format("Perigee: %.0f / %.0f km   Target v: %.2f km/s",
+           periAlt, MissionPlanner.LEO_ALTITUDE_KM, circSpeed),
+           panelX + 10, panelY + 46);
+
+      double periProgress = Math.min(1.0, Math.max(0.0,
+                            periAlt / MissionPlanner.LEO_ALTITUDE_KM));
+      drawProgressBar(panelX + 10, panelY + 64, panelW - 20, 12, periProgress,
+                      "Circularizing: " + (int)(periProgress * 100) + "%");
     } else if (ship.earthRelative) {
       text(String.format("LEO Orbit: %.0f km altitude", ship.launchAltitude),
            panelX + 10, panelY + 30);

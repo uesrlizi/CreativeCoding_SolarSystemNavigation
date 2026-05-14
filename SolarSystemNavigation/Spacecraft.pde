@@ -25,10 +25,11 @@ class Spacecraft {
   double lastUpdateTime;
   boolean thrustActive;                          // true during powered ascent
   static final double THRUST_ACCEL = 0.025;      // km/s^2 (~2.5g)
-  static final double MAX_PITCH = PI / 2.0 * 0.94; // ~84.6°
-  static final double PITCH_START_TIME = 30.0;   // seconds, vertical-only phase
-  static final double PITCH_RAMP_TIME = 220.0;   // seconds, pitch transition
+  static final double VERTICAL_RISE_TIME = 10.0; // seconds, pure vertical before pitch program
+  static final double MAX_PITCH_RAD = 1.4835298641951802;  // 85 degrees to rad, max pitch from vertical
+  static final double PITCH_EXPONENT = 0.7;      // shape: higher = stays vertical longer
   static final double FIXED_SUBSTEP = 1.0;       // max seconds per physics sub-step
+  static final double CIRC_ECC_TOLERANCE = 0.0005;  // eccentricity threshold for circular orbit
   static final double SHIP_LENGTH_KM = 0.05;     // 50 m rocket
   static final double SHIP_WIDTH_KM = 0.014;     // 14 m diameter
 
@@ -76,20 +77,18 @@ class Spacecraft {
     double earthX = earthRef.px;
     double earthY = earthRef.py;
 
-    if (state == ShipState.LAUNCHING) {
+    if (state == ShipState.LAUNCHING || state == ShipState.CIRCULARIZING) {
       double dt = t - lastUpdateTime;
       if (dt <= 0) dt = 1.0 / 60.0;
       if (dt > 3600) dt = 3600;
       lastUpdateTime = t;
 
-      // Sub-stepping with per-step time tracking
-      double currentT = t - dt;  // simTime at start of this frame
+      double currentT = t - dt;
       double remainingDt = dt;
       while (remainingDt > 0) {
         double step = Math.min(remainingDt, FIXED_SUBSTEP);
 
-        double rx = earthRelPos[0];
-        double ry = earthRelPos[1];
+        double rx = earthRelPos[0], ry = earthRelPos[1];
         double r = Math.sqrt(rx * rx + ry * ry);
 
         // Gravity
@@ -97,56 +96,138 @@ class Spacecraft {
         double ax = -gMag * rx / r;
         double ay = -gMag * ry / r;
 
-        // Thrust (if still burning)
+        // Thrust
+        boolean ascentStepApplied = false;
         if (thrustActive) {
-          double burnTime = currentT - launchStartTime;
-          double pitch;
-          if (burnTime < PITCH_START_TIME) {
-            pitch = 0;  // vertical
-          } else if (burnTime < PITCH_START_TIME + PITCH_RAMP_TIME) {
-            pitch = MAX_PITCH * (burnTime - PITCH_START_TIME) / PITCH_RAMP_TIME;
-          } else {
-            pitch = MAX_PITCH;
-          }
+          if (state == ShipState.LAUNCHING) {
+            // === Active Pitch Ascent ===
+            // Phase 1 (0-VERTICAL_RISE_TIME): pure vertical
+            // Phase 2 (after): altitude-based pitch — tilts as altitude increases
+            double burnTime = currentT - launchStartTime;
+            double thrustDirX, thrustDirY;
 
-          double radX = rx / r, radY = ry / r;
-          double tanX = -ry / r, tanY = rx / r;
-          double cosP = Math.cos(pitch);
-          double sinP = Math.sin(pitch);
-          ax += THRUST_ACCEL * (radX * cosP + tanX * sinP);
-          ay += THRUST_ACCEL * (radY * cosP + tanY * sinP);
+            if (burnTime < VERTICAL_RISE_TIME) {
+              // Phase 1: pure vertical — thrust along radial
+              thrustDirX = rx / r;
+              thrustDirY = ry / r;
+            } else {
+              // Phase 2: altitude-based pitch program
+              // Pitch angle from vertical f(alt) = (alt/targetAlt)^exp * maxPitch
+              // Rocket tilts progressively as it gains altitude, ensuring
+              // sufficient tangential velocity at engine cutoff
+              double alt = r - MissionPlanner.EARTH_RADIUS_KM;
+              double altFrac = Math.max(0.0, Math.min(1.0, alt / MissionPlanner.LEO_ALTITUDE_KM));
+              double pitchAngle = Math.pow(altFrac, PITCH_EXPONENT) * MAX_PITCH_RAD;
+              double radX = rx / r, radY = ry / r;
+              double tanX = -ry / r, tanY = rx / r;
+              thrustDirX = radX * Math.cos(pitchAngle) + tanX * Math.sin(pitchAngle);
+              thrustDirY = radY * Math.cos(pitchAngle) + tanY * Math.sin(pitchAngle);
+            }
+
+            double thrustAx = THRUST_ACCEL * thrustDirX;
+            double thrustAy = THRUST_ACCEL * thrustDirY;
+
+            // Save pre-step state
+            double preRx = earthRelPos[0], preRy = earthRelPos[1];
+            double preVx = earthRelVel[0], preVy = earthRelVel[1];
+
+            // Compute post-step state with full thrust (tentative) and check apoapsis
+            double tmpVx = preVx + (ax + thrustAx) * step;
+            double tmpVy = preVy + (ay + thrustAy) * step;
+            double tmpRx = preRx + tmpVx * step;
+            double tmpRy = preRy + tmpVy * step;
+
+            double apoFull = computeApoapsisAt(tmpRx, tmpRy, tmpVx, tmpVy);
+
+            if (apoFull >= MissionPlanner.LEO_ALTITUDE_KM) {
+              // Will cross target — find the fraction of thrust needed
+              double gVx = preVx + ax * step;
+              double gVy = preVy + ay * step;
+              double gRx = preRx + gVx * step;
+              double gRy = preRy + gVy * step;
+              double apoGrav = computeApoapsisAt(gRx, gRy, gVx, gVy);
+
+              double f = 0.0;
+              if (apoFull > apoGrav && apoGrav < MissionPlanner.LEO_ALTITUDE_KM) {
+                f = (MissionPlanner.LEO_ALTITUDE_KM - apoGrav) / (apoFull - apoGrav);
+                f = Math.max(0.0, Math.min(1.0, f));
+              }
+
+              earthRelVel[0] = preVx + (ax + thrustAx * f) * step;
+              earthRelVel[1] = preVy + (ay + thrustAy * f) * step;
+              earthRelPos[0] = preRx + earthRelVel[0] * step;
+              earthRelPos[1] = preRy + earthRelVel[1] * step;
+
+              thrustActive = false;
+            } else {
+              // No overshoot yet — apply full thrust step
+              earthRelVel[0] = tmpVx;
+              earthRelVel[1] = tmpVy;
+              earthRelPos[0] = tmpRx;
+              earthRelPos[1] = tmpRy;
+            }
+            ascentStepApplied = true;
+
+          } else {
+            // Circularization — prograde thrust (along velocity)
+            double vx = earthRelVel[0], vy = earthRelVel[1];
+            double spd = Math.sqrt(vx * vx + vy * vy);
+            if (spd > 0.001) {
+              ax += THRUST_ACCEL * vx / spd;
+              ay += THRUST_ACCEL * vy / spd;
+            }
+          }
         }
 
-        // Semi-implicit Euler
-        earthRelVel[0] += ax * step;
-        earthRelVel[1] += ay * step;
-        earthRelPos[0] += earthRelVel[0] * step;
-        earthRelPos[1] += earthRelVel[1] * step;
+        // Semi-implicit Euler (skipped if ascent already applied above)
+        if (!ascentStepApplied) {
+          earthRelVel[0] += ax * step;
+          earthRelVel[1] += ay * step;
+          earthRelPos[0] += earthRelVel[0] * step;
+          earthRelPos[1] += earthRelVel[1] * step;
+        }
 
         currentT += step;
         remainingDt -= step;
+
+        // === Per-sub-step guidance ===
+        double rxNew = earthRelPos[0], ryNew = earthRelPos[1];
+        double rNew = Math.sqrt(rxNew * rxNew + ryNew * ryNew);
+        double altNew = rNew - MissionPlanner.EARTH_RADIUS_KM;
+
+        if (state == ShipState.LAUNCHING) {
+          if (!thrustActive) {
+            // Wait until near apoapsis before circularizing.
+            // Primary check: time-to-apoapsis (works for reasonable orbits).
+            // Backup check: radial velocity near zero (works even for
+            // eccentric orbits where time estimate may be loose).
+            double timeToApo = timeToApoapsis();
+            double vx = earthRelVel[0], vy = earthRelVel[1];
+            double rMag = Math.sqrt(rxNew * rxNew + ryNew * ryNew);
+            double radialVel = (rxNew * vx + ryNew * vy) / rMag;
+            boolean atApoapsis = (timeToApo >= 0 && timeToApo < 15.0)
+                              || Math.abs(radialVel) < 0.02;
+            if (atApoapsis || timeToApo < 0) {
+              state = ShipState.CIRCULARIZING;
+              thrustActive = true;
+            }
+          }
+        } else if (state == ShipState.CIRCULARIZING) {
+          // Complete when perigee reaches target altitude
+          double periAlt = computePerigee();
+          if (periAlt >= MissionPlanner.LEO_ALTITUDE_KM - 1.0) {
+            finalizeOrbitInsertion();
+            remainingDt = 0;
+          }
+        }
       }
 
-      // Update derived values
-      double rx = earthRelPos[0], ry = earthRelPos[1];
-      double r = Math.sqrt(rx * rx + ry * ry);
-      launchAltitude = r - MissionPlanner.EARTH_RADIUS_KM;
-      earthOrbitAngle = Math.atan2(ry, rx);
-
-      // Guidance: check apoapsis and handle coast/circularize
-      if (thrustActive) {
-        double apoAlt = computeApoapsis();
-        if (apoAlt >= MissionPlanner.LEO_ALTITUDE_KM) {
-          thrustActive = false;  // apoapsis reached target — cut engine
-        }
-      } else {
-        // Coasting — check if at apoapsis
-        double vx = earthRelVel[0], vy = earthRelVel[1];
-        double radX = rx / r, radY = ry / r;
-        double radialVel = vx * radX + vy * radY;
-        if (Math.abs(radialVel) < 0.01 && launchAltitude >= 390.0) {
-          finalizeOrbitInsertion();
-        }
+      // Update derived values (finalizeOrbitInsertion sets these for ORBIT state)
+      if (state != ShipState.ORBIT) {
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double r = Math.sqrt(rx * rx + ry * ry);
+        launchAltitude = r - MissionPlanner.EARTH_RADIUS_KM;
+        earthOrbitAngle = Math.atan2(ry, rx);
       }
 
     } else if (state == ShipState.ORBIT) {
@@ -184,6 +265,96 @@ class Spacecraft {
     double e = Math.sqrt(Math.max(0.0, 1.0 - h * h / (GM * a)));  // eccentricity
 
     return a * (1.0 + e) - MissionPlanner.EARTH_RADIUS_KM;
+  }
+
+  // Same as computeApoapsis() but using explicit position/velocity values
+  double computeApoapsisAt(double rx, double ry, double vx, double vy) {
+    double r = Math.sqrt(rx * rx + ry * ry);
+    double v2 = vx * vx + vy * vy;
+    double GM = MissionPlanner.GM_EARTH;
+
+    double energy = v2 / 2.0 - GM / r;
+    if (energy >= 0) return Double.MAX_VALUE;
+
+    double a = -GM / (2.0 * energy);
+    double h = rx * vy - ry * vx;
+    double e = Math.sqrt(Math.max(0.0, 1.0 - h * h / (GM * a)));
+
+    return a * (1.0 + e) - MissionPlanner.EARTH_RADIUS_KM;
+  }
+
+  double computeEccentricity() {
+    double rx = earthRelPos[0], ry = earthRelPos[1];
+    double vx = earthRelVel[0], vy = earthRelVel[1];
+    double r = Math.sqrt(rx * rx + ry * ry);
+    double v2 = vx * vx + vy * vy;
+    double GM = MissionPlanner.GM_EARTH;
+
+    double energy = v2 / 2.0 - GM / r;
+    if (energy >= 0) return Double.MAX_VALUE;
+
+    double a = -GM / (2.0 * energy);
+    double h = rx * vy - ry * vx;
+    return Math.sqrt(Math.max(0.0, 1.0 - h * h / (GM * a)));
+  }
+
+  double computePerigee() {
+    double rx = earthRelPos[0], ry = earthRelPos[1];
+    double vx = earthRelVel[0], vy = earthRelVel[1];
+    double r = Math.sqrt(rx * rx + ry * ry);
+    double v2 = vx * vx + vy * vy;
+    double GM = MissionPlanner.GM_EARTH;
+
+    double energy = v2 / 2.0 - GM / r;
+    if (energy >= 0) return Double.MAX_VALUE;
+
+    double a = -GM / (2.0 * energy);
+    double h = rx * vy - ry * vx;
+    double e = Math.sqrt(Math.max(0.0, 1.0 - h * h / (GM * a)));
+    return a * (1.0 - e) - MissionPlanner.EARTH_RADIUS_KM;
+  }
+
+  // Time in seconds until the spacecraft reaches apoapsis on its current
+  // osculating Kepler orbit. Returns -1 if already past apoapsis, or a large
+  // value if the orbit is near-circular (no well-defined apoapsis).
+  double timeToApoapsis() {
+    double rx = earthRelPos[0], ry = earthRelPos[1];
+    double vx = earthRelVel[0], vy = earthRelVel[1];
+    double r = Math.sqrt(rx * rx + ry * ry);
+    double v2 = vx * vx + vy * vy;
+    double GM = MissionPlanner.GM_EARTH;
+
+    double energy = v2 / 2.0 - GM / r;
+    if (energy >= 0) return -1;  // hyperbolic, should not happen
+
+    double a = -GM / (2.0 * energy);
+    double h = rx * vy - ry * vx;
+    double e2 = 1.0 - h * h / (GM * a);
+    if (e2 < 0) e2 = 0;
+    double e = Math.sqrt(e2);
+    if (e < 0.0001) return Double.MAX_VALUE;  // near-circular
+
+    // True anomaly
+    double radX = rx / r, radY = ry / r;
+    double v_r = vx * radX + vy * radY;
+    double cosNu = (a * (1.0 - e * e) / r - 1.0) / e;
+    cosNu = Math.max(-1.0, Math.min(1.0, cosNu));
+    double nu = Math.acos(cosNu);
+    if (v_r < 0) nu = 2.0 * PI - nu;
+
+    // Eccentric anomaly
+    double cosE = (e + Math.cos(nu)) / (1.0 + e * Math.cos(nu));
+    double sinE = Math.sqrt(1.0 - e * e) * Math.sin(nu) / (1.0 + e * Math.cos(nu));
+    double E = Math.atan2(sinE, cosE);
+    if (E < 0) E += 2.0 * PI;
+
+    // Mean anomaly and mean motion
+    double M = E - e * Math.sin(E);
+    double n = Math.sqrt(GM / (a * a * a));
+
+    // M = pi at apoapsis
+    if (M < PI) return (PI - M) / n;
+    return -1;  // already past apoapsis
   }
 
   void finalizeOrbitInsertion() {
@@ -337,7 +508,7 @@ class Spacecraft {
   void drawEarthRelOrbitHighlight(CameraController cam) {
     if (earthRef == null) return;
 
-    if (state == ShipState.LAUNCHING) {
+    if (state == ShipState.LAUNCHING || state == ShipState.CIRCULARIZING) {
       double[] ke = cartesianToKepler(
         new double[]{earthRelPos[0], earthRelPos[1], 0},
         new double[]{earthRelVel[0], earthRelVel[1], 0},
@@ -349,7 +520,7 @@ class Spacecraft {
       double ew = ke[4];
       double eNu = Math.toRadians(ke[5]);
 
-      // Convert current ν to eccentric anomaly E for uniform spatial sampling
+      // Convert current nu to eccentric anomaly E for uniform spatial sampling
       double cosNu = Math.cos(eNu);
       double sinNu = Math.sin(eNu);
       double denom = 1.0 + ee * cosNu;
@@ -361,7 +532,7 @@ class Spacecraft {
       int steps = 200;
       double rEarth = MissionPlanner.EARTH_RADIUS_KM;
 
-      // Sample uniformly in E, convert to ν for orbitalToCartesian
+      // Sample uniformly in E, convert to nu for orbitalToCartesian
       double[][] pts = new double[steps + 1][2];
       boolean[] above = new boolean[steps + 1];
       for (int j = 0; j <= steps; j++) {
@@ -448,7 +619,7 @@ class Spacecraft {
     endShape();
   }
 
-  // Intersection of segment P→Q with circle radius R centered at origin.
+  // Intersection of segment P->Q with circle radius R centered at origin.
   // Returns the (x,y) of the intersection in [0,1] range, or null.
   double[] sphereIntersect(double[] P, double[] Q, double R) {
     double dx = Q[0] - P[0];
@@ -472,10 +643,30 @@ class Spacecraft {
 
   float calculateOrientation(CameraController cam) {
     if (earthRelative) {
-      if (state == ShipState.LAUNCHING) {
-        // Point in velocity direction during ascent
-        return (float)Math.atan2(earthRelVel[1], earthRelVel[0]);
+      if (state == ShipState.LAUNCHING && thrustActive) {
+        // Point in thrust direction during powered ascent
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double r = Math.sqrt(rx * rx + ry * ry);
+        double burnTime = timeManager.simTime - launchStartTime;
+
+        if (burnTime < VERTICAL_RISE_TIME) {
+          return (float)Math.atan2(ry, rx);
+        } else {
+          double alt = r - MissionPlanner.EARTH_RADIUS_KM;
+          double altFrac = Math.max(0.0, Math.min(1.0, alt / MissionPlanner.LEO_ALTITUDE_KM));
+          double pitchAngle = Math.pow(altFrac, PITCH_EXPONENT) * MAX_PITCH_RAD;
+          double radX = rx / r, radY = ry / r;
+          double tanX = -ry / r, tanY = rx / r;
+          double thrX = radX * Math.cos(pitchAngle) + tanX * Math.sin(pitchAngle);
+          double thrY = radY * Math.cos(pitchAngle) + tanY * Math.sin(pitchAngle);
+          return (float)Math.atan2(thrY, thrX);
+        }
+      } else if (state == ShipState.CIRCULARIZING) {
+        // Point in prograde direction (along velocity)
+        double vx = earthRelVel[0], vy = earthRelVel[1];
+        return (float)Math.atan2(vy, vx);
       } else {
+        // Coasting or in orbit — maintain orbit-relative orientation
         return (float)(earthOrbitAngle + PI / 2.0);
       }
     }

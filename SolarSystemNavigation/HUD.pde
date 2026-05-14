@@ -413,6 +413,12 @@ class HUD {
       double apo = ship.computeApoapsis();
       text(String.format("Apoapsis:  %.0f km", apo), x + 8, y + 20);
       text(String.format("Altitude:  %.0f km", ship.launchAltitude), x + 8, y + 34);
+    } else if (ship.state == ShipState.CIRCULARIZING) {
+      double peri = ship.computePerigee();
+      double targetPeri = MissionPlanner.LEO_ALTITUDE_KM;
+      text(String.format("Perigee: %.0f / %.0f km", peri, targetPeri), x + 8, y + 20);
+      double progress = Math.min(100, Math.max(0, (int)(peri / targetPeri * 100)));
+      text(String.format("Progress: %d%%", progress), x + 8, y + 34);
     } else if (ship.state == ShipState.ORBIT) {
       text(String.format("Altitude:  %.0f km", ship.launchAltitude), x + 8, y + 20);
       text("Orbit:  Circular LEO", x + 8, y + 34);

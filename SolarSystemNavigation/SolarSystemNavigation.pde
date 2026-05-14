@@ -280,37 +280,31 @@ class TimeManager {
   double timeWarp;
   double[] WARP_LEVELS;
   String[] WARP_LABELS;
-  int warpIndex = 4;
+  int warpIndex = 5;
 
   TimeManager() {
     simTime = 0;
-    WARP_LEVELS = new double[8];
-    // Level 0: 1:1 real time (1 sim sec per real sec)
-    WARP_LEVELS[0] = 1.0 / 86400.0;
-    // Level 1: 1 sim minute per real second
-    WARP_LEVELS[1] = 60.0 / 86400.0;
-    // Level 2: 10 sim minutes per real second
-    WARP_LEVELS[2] = 600.0 / 86400.0;
-    // Level 3: 1 sim hour per real second
-    WARP_LEVELS[3] = 3600.0 / 86400.0;
-    // Level 4: 1 sim day per real second
-    WARP_LEVELS[4] = 1.0;
-    // Level 5: 10 sim days per real second
-    WARP_LEVELS[5] = 10.0;
-    // Level 6: 100 sim days per real second
-    WARP_LEVELS[6] = 100.0;
-    // Level 7: 1000 sim days per real second
-    WARP_LEVELS[7] = 1000.0;
+    WARP_LEVELS = new double[9];
+    WARP_LEVELS[0] = 1.0 / 86400.0;       // 1:1 real time
+    WARP_LEVELS[1] = 20.0 / 86400.0;      // 20 sim sec per real sec
+    WARP_LEVELS[2] = 60.0 / 86400.0;      // 1 sim min per real sec
+    WARP_LEVELS[3] = 600.0 / 86400.0;     // 10 sim min per real sec
+    WARP_LEVELS[4] = 3600.0 / 86400.0;    // 1 sim hour per real sec
+    WARP_LEVELS[5] = 1.0;                 // 1 sim day per real sec
+    WARP_LEVELS[6] = 10.0;                // 10 sim days per real sec
+    WARP_LEVELS[7] = 100.0;               // 100 sim days per real sec
+    WARP_LEVELS[8] = 1000.0;              // 1000 sim days per real sec
 
-    WARP_LABELS = new String[8];
+    WARP_LABELS = new String[9];
     WARP_LABELS[0] = "1:1 Real Time";
-    WARP_LABELS[1] = "1 min/sec";
-    WARP_LABELS[2] = "10 min/sec";
-    WARP_LABELS[3] = "1 hour/sec";
-    WARP_LABELS[4] = "1 day/sec";
-    WARP_LABELS[5] = "10 days/sec";
-    WARP_LABELS[6] = "100 days/sec";
-    WARP_LABELS[7] = "1000 days/sec";
+    WARP_LABELS[1] = "20 sec/sec";
+    WARP_LABELS[2] = "1 min/sec";
+    WARP_LABELS[3] = "10 min/sec";
+    WARP_LABELS[4] = "1 hour/sec";
+    WARP_LABELS[5] = "1 day/sec";
+    WARP_LABELS[6] = "10 days/sec";
+    WARP_LABELS[7] = "100 days/sec";
+    WARP_LABELS[8] = "1000 days/sec";
 
     timeWarp = WARP_LEVELS[warpIndex];
   }

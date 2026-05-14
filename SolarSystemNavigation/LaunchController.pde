@@ -1,6 +1,7 @@
 enum ShipState {
   IDLE,
   LAUNCHING,
+  CIRCULARIZING,
   ORBIT,
   TRANSFER
 }
@@ -55,10 +56,9 @@ class LaunchController {
     currentShip = ship;
     solarSystem.ships.add(ship);
 
-    // Zoom camera to Earth-relative scale
-    double launchScale = 0.4 * height / (2.0 * MissionPlanner.EARTH_RADIUS_KM);
-    camera.focusOn(earth.px, earth.py, launchScale);
+    camera.focusOn(ship);
     camera.followShip(ship);
+    camera.targetScale = 0.4 * height / (2.0 * MissionPlanner.EARTH_RADIUS_KM);
     camera.setViewMode(ViewMode.MAP_VIEW);
     timeManager.timeWarp = timeManager.WARP_LEVELS[0];
   }
@@ -161,7 +161,13 @@ class LaunchController {
 
     switch (state) {
       case LAUNCHING:
-        // Ship transitions to ORBIT via its own physics check (finalizeOrbitInsertion)
+        if (currentShip.state == ShipState.CIRCULARIZING) {
+          state = ShipState.CIRCULARIZING;
+        } else if (currentShip.state == ShipState.ORBIT) {
+          state = ShipState.ORBIT;
+        }
+        break;
+      case CIRCULARIZING:
         if (currentShip.state == ShipState.ORBIT) {
           state = ShipState.ORBIT;
         }
@@ -208,6 +214,7 @@ class LaunchController {
     switch (state) {
       case IDLE: return "Ready to Launch";
       case LAUNCHING: return "Launching...";
+      case CIRCULARIZING: return "Circularizing Orbit...";
       case ORBIT: return "In Orbit - Select Target";
       case TRANSFER: return "Transfer in Progress";
     }
