@@ -14,12 +14,12 @@ class LaunchStatusPanels {
     rect(panelX, panelY, panelW, panelH, 8);
 
     fill(100, 200, 100);
-    textSize(15);
+    textSize(15 * uiScale);
     textAlign(LEFT, TOP);
     text("Spacecraft: " + ship.name, panelX + 10, panelY + 8);
 
     fill(180);
-    textSize(13);
+    textSize(13 * uiScale);
     ShipState st = ctrl.getState();
 
     if (st == ShipState.LAUNCHING) {
@@ -42,7 +42,7 @@ class LaunchStatusPanels {
         noStroke();
         rect(panelX + 10, panelY + 64, panelW - 20, 12, 4);
         fill(180);
-        textSize(11);
+        textSize(11 * uiScale);
         textAlign(CENTER, CENTER);
         text("Coasting to apoapsis...", panelX + panelW / 2, panelY + 70);
       }
@@ -89,7 +89,7 @@ class LaunchStatusPanels {
     rect(x, y, (float)(w * Math.min(1.0, Math.max(0.0, progress))), h, 4);
 
     fill(220);
-    textSize(11);
+    textSize(11 * uiScale);
     textAlign(CENTER, CENTER);
     text(label, x + w / 2, y + h / 2);
   }
@@ -108,7 +108,7 @@ class LaunchStatusPanels {
     rect(panelX, panelY, panelW, panelH, 8);
 
     fill(200);
-    textSize(16);
+    textSize(16 * uiScale);
     textAlign(LEFT, TOP);
     text("Mission Target", panelX + 10, panelY + 10);
 
@@ -131,13 +131,13 @@ class LaunchStatusPanels {
       }
 
       fill(p.col);
-      textSize(14);
+      textSize(14 * uiScale);
       textAlign(LEFT, CENTER);
       text((idx + 1) + ". " + p.name, panelX + 18, rY + 12);
 
       if (isSelected) {
         fill(100, 200, 100);
-        textSize(11);
+        textSize(11 * uiScale);
         text("Selected", panelX + 160, rY + 12);
       }
     }
@@ -157,7 +157,7 @@ class LaunchStatusPanels {
     rect(x, y, w, h, 6);
 
     fill(enabled ? 255 : 140);
-    textSize(14);
+    textSize(14 * uiScale);
     textAlign(CENTER, CENTER);
     text(label, x + w / 2, y + h / 2);
   }

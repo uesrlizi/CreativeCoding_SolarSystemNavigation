@@ -68,7 +68,7 @@ class CelestialBody {
 
     if (showLabels) {
       fill(200, 200, 200, 200);
-      textSize(17);
+      textSize(17 * uiScale);
       textAlign(LEFT, CENTER);
       text(name, (float)sp[0] + drawR + 5, (float)sp[1]);
     }

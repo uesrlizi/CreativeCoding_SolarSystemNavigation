@@ -25,7 +25,7 @@ class SpacecraftRenderer {
 
     if (showLabels) {
       fill(red(ship.col), green(ship.col), blue(ship.col), 220);
-      textSize(15);
+      textSize(15 * uiScale);
       textAlign(LEFT, CENTER);
       float labelOffset = isShipView ? (float)(Spacecraft.SHIP_LENGTH_KM * cam.scale * 0.55) + 8 : 15;
       text(ship.name, (float)sp[0] + labelOffset, (float)sp[1]);

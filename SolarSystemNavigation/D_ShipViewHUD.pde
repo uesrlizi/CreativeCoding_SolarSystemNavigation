@@ -15,7 +15,7 @@ class ShipViewHUD {
     noStroke();
     rect(width / 2 - 80, height - 40, 160, 30, 5);
     fill(red(ship.col), green(ship.col), blue(ship.col), 220);
-    textSize(14);
+    textSize(14 * uiScale);
     textAlign(CENTER, CENTER);
     text(ship.name, width / 2, height - 25);
   }
@@ -37,11 +37,11 @@ class ShipViewHUD {
     rect(x, y, 155, 42, 5);
 
     fill(200);
-    textSize(11);
+    textSize(11 * uiScale);
     textAlign(LEFT, TOP);
     text("SPEED", x + 8, y + 4);
     fill(100, 220, 100);
-    textSize(15);
+    textSize(15 * uiScale);
     text(String.format("%.2f km/s", speed), x + 8, y + 20);
   }
 
@@ -52,7 +52,7 @@ class ShipViewHUD {
 
     if (ship.thrustActive) {
       fill(255, 160, 40);
-      textSize(13);
+      textSize(13 * uiScale);
       textAlign(LEFT, CENTER);
       text("ENGINE: BURNING", x + 8, y + 17);
       // Small flame icon
@@ -64,7 +64,7 @@ class ShipViewHUD {
       triangle(flameX, flameY - 4, flameX, flameY + 4, flameX + 14, flameY);
     } else {
       fill(120);
-      textSize(13);
+      textSize(13 * uiScale);
       textAlign(LEFT, CENTER);
       text("ENGINE: OFF", x + 8, y + 17);
     }
@@ -76,12 +76,12 @@ class ShipViewHUD {
     rect(x, y, 155, 50, 5);
 
     fill(200);
-    textSize(11);
+    textSize(11 * uiScale);
     textAlign(LEFT, TOP);
     text("ORBIT DATA", x + 8, y + 4);
 
     fill(160);
-    textSize(10);
+    textSize(10 * uiScale);
     if (ship.state == ShipState.LAUNCHING) {
       double apo = ship.computeApoapsis();
       text(String.format("Apoapsis:  %.0f km", apo), x + 8, y + 20);
@@ -106,7 +106,7 @@ class ShipViewHUD {
     rect(x, y, 155, 50, 5);
 
     fill(200);
-    textSize(11);
+    textSize(11 * uiScale);
     textAlign(LEFT, TOP);
     text("ORBIT DATA", x + 8, y + 4);
 
@@ -114,7 +114,7 @@ class ShipViewHUD {
     double distAU = distFromSun / AU_KM;
 
     fill(160);
-    textSize(10);
+    textSize(10 * uiScale);
     text(String.format("Sun dist: %.3f AU", distAU), x + 8, y + 20);
     text(String.format("State: %s", ship.state.toString()), x + 8, y + 34);
   }

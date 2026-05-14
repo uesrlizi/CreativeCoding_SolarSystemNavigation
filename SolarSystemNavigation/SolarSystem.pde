@@ -45,7 +45,7 @@ class SolarSystem {
 
     if (showLabels) {
       fill(255, 230, 100, 220);
-      textSize(18);
+      textSize(18 * uiScale);
       textAlign(LEFT, CENTER);
       text("Sun", sx + sunR + 5, sy);
     }

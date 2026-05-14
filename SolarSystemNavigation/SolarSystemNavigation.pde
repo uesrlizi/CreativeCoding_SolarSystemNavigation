@@ -35,12 +35,16 @@ TimeManager timeManager;
 SaveDataManager saveManager;
 LaunchController launchController;
 SpacecraftRenderer spacecraftRenderer;
+float uiScale;
 
 // ============================================================
 //  setup / draw
 // ============================================================
 void setup() {
   fullScreen();
+  pixelDensity(displayDensity());
+  uiScale = height / 1080.0;
+  textFont(createFont("Segoe UI Semibold", 48));
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
 

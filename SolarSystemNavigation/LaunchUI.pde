@@ -50,12 +50,12 @@ class LaunchUI {
     rect(panelX, panelY, panelW, panelH, 8);
 
     fill(200);
-    textSize(16);
+    textSize(16 * uiScale);
     textAlign(LEFT, TOP);
     text("Launch Control", panelX + 10, panelY + 10);
 
     fill(180);
-    textSize(12);
+    textSize(12 * uiScale);
 
     if (launchController.canLaunch()) {
       text("No active spacecraft", panelX + 10, panelY + 38);
@@ -64,10 +64,10 @@ class LaunchUI {
       Spacecraft ship = launchController.getCurrentShip();
       if (ship != null) {
         fill(100, 200, 100);
-        textSize(13);
+        textSize(13 * uiScale);
         text("Ship: " + ship.name, panelX + 10, panelY + 35);
         fill(180);
-        textSize(11);
+        textSize(11 * uiScale);
         text(launchController.getStatusText(), panelX + 10, panelY + 55);
       }
     }
@@ -99,13 +99,13 @@ class LaunchUI {
     rect(px, py, popupW, 36, 10, 10, 0, 0);
 
     fill(220);
-    textSize(17);
+    textSize(17 * uiScale);
     textAlign(CENTER, CENTER);
     text("Create Spacecraft", px + popupW / 2, py + 18);
 
     // Name label
     fill(180);
-    textSize(14);
+    textSize(14 * uiScale);
     textAlign(LEFT, CENTER);
     text("Ship Name:", px + 25, py + 65);
 
@@ -119,7 +119,7 @@ class LaunchUI {
 
     // Hint
     fill(120);
-    textSize(11);
+    textSize(11 * uiScale);
     textAlign(CENTER, TOP);
     text("Press Enter to launch, Esc to cancel", px + popupW / 2, py + 155);
   }
@@ -135,7 +135,7 @@ class LaunchUI {
 
     fill(inputFocused ? 255 : 180);
     noStroke();
-    textSize(14);
+    textSize(14 * uiScale);
     textAlign(LEFT, CENTER);
     String display = shipName;
     if (inputFocused && (frameCount / 30) % 2 == 0) {
@@ -154,7 +154,7 @@ class LaunchUI {
     rect(x, y, w, h, 6);
 
     fill(enabled ? 255 : 140);
-    textSize(14);
+    textSize(14 * uiScale);
     textAlign(CENTER, CENTER);
     text(label, x + w / 2, y + h / 2);
   }
