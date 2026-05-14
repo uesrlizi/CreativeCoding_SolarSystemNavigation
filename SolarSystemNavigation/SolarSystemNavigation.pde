@@ -34,6 +34,7 @@ HUD hud;
 TimeManager timeManager;
 SaveDataManager saveManager;
 LaunchController launchController;
+SpacecraftRenderer spacecraftRenderer;
 
 // ============================================================
 //  setup / draw
@@ -66,6 +67,8 @@ void setup() {
 
   hud = new HUD();
 
+  spacecraftRenderer = new SpacecraftRenderer();
+
   Runtime.getRuntime().addShutdownHook(new Thread() {
     public void run() {
       saveCurrentState();
@@ -76,7 +79,6 @@ void setup() {
 void draw() {
   background(5, 5, 15);
 
-  camera.update();
   timeManager.update();
   launchController.update();
 
@@ -85,12 +87,14 @@ void draw() {
     s.update(timeManager.simTime);
   }
 
+  camera.update();
+
   drawStars();
   drawOrbits();
   solarSystem.drawSun(camera);
   solarSystem.drawPlanets(camera);
   for (Spacecraft s : solarSystem.ships) {
-    s.draw(camera);
+    spacecraftRenderer.draw(s, camera);
   }
   hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
            timeManager.WARP_LEVELS, timeManager.WARP_LABELS,
@@ -125,7 +129,7 @@ void drawOrbits() {
     if (s.earthRelative && s.earthRef != null) {
       drawEarthRelOrbit(s);
     } else if (!s.earthRelative) {
-      drawOrbitPath(s.a, s.e, s.i, s.omega, s.w, color(red(s.col), green(s.col), blue(s.col), 40));
+      drawOrbitPath(s.a, s.e, s.i, s.omega, s.w, color(red(s.col), green(s.col), blue(s.col)));
     }
   }
 }
@@ -146,23 +150,125 @@ void drawOrbitPath(double a, double e, double i, double omega, double w, color c
 }
 
 void drawEarthRelOrbit(Spacecraft s) {
-  double radius = MissionPlanner.LEO_RADIUS_KM;
-  double cx = s.earthRef.px;
-  double cy = s.earthRef.py;
+  if (s.state == ShipState.LAUNCHING || s.state == ShipState.CIRCULARIZING) {
+    double[] ke = cartesianToKepler(
+      new double[]{s.earthRelPos[0], s.earthRelPos[1], 0},
+      new double[]{s.earthRelVel[0], s.earthRelVel[1], 0},
+      MissionPlanner.GM_EARTH);
+    double ea = ke[0];
+    double ee = ke[1];
+    double ei = ke[2];
+    double eOmega = ke[3];
+    double ew = ke[4];
+    double eNu = Math.toRadians(ke[5]);
 
-  noFill();
-  stroke(red(s.col), green(s.col), blue(s.col), 50);
-  strokeWeight(0.8);
-  beginShape();
-  int steps = 128;
-  for (int j = 0; j <= steps; j++) {
-    double a = 2.0 * PI * j / steps;
-    double[] sp = camera.worldToScreen(
-      cx + radius * Math.cos(a),
-      cy + radius * Math.sin(a));
-    vertex((float)sp[0], (float)sp[1]);
+    double cosNu = Math.cos(eNu);
+    double sinNu = Math.sin(eNu);
+    double denom = 1.0 + ee * cosNu;
+    double cosE = (ee + cosNu) / denom;
+    double sinE = Math.sqrt(1.0 - ee * ee) * sinNu / denom;
+    double curE = Math.atan2(sinE, cosE);
+
+    double eArc = 1.0;
+    int steps = 200;
+    double rEarth = MissionPlanner.EARTH_RADIUS_KM;
+    color c = color(red(s.col), green(s.col), blue(s.col));
+
+    double[][] pts = new double[steps + 1][2];
+    boolean[] above = new boolean[steps + 1];
+    for (int j = 0; j <= steps; j++) {
+      double E = curE - eArc + (2.0 * eArc * j / steps);
+      double nu = trueAnomaly(E, ee);
+      double[] pos = orbitalToCartesian(ea, ee, ei, eOmega, ew, nu);
+      pts[j][0] = pos[0];
+      pts[j][1] = pos[1];
+      above[j] = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1]) >= rEarth;
+    }
+
+    noFill();
+    stroke(c);
+    strokeWeight(0.8);
+
+    boolean inShape = false;
+    if (above[0]) {
+      beginShape();
+      inShape = true;
+      double[] sp = camera.worldToScreen(
+        s.earthRef.px + pts[0][0], s.earthRef.py + pts[0][1]);
+      vertex((float)sp[0], (float)sp[1]);
+    }
+
+    for (int j = 1; j <= steps; j++) {
+      if (above[j - 1] && above[j]) {
+        double[] sp = camera.worldToScreen(
+          s.earthRef.px + pts[j][0], s.earthRef.py + pts[j][1]);
+        vertex((float)sp[0], (float)sp[1]);
+      } else if (above[j - 1] && !above[j]) {
+        double[] isect = sphereIntersect(pts[j - 1], pts[j], rEarth);
+        if (isect != null) {
+          double[] sp = camera.worldToScreen(
+            s.earthRef.px + isect[0], s.earthRef.py + isect[1]);
+          vertex((float)sp[0], (float)sp[1]);
+        }
+        endShape();
+        inShape = false;
+      } else if (!above[j - 1] && above[j]) {
+        double[] isect = sphereIntersect(pts[j - 1], pts[j], rEarth);
+        beginShape();
+        inShape = true;
+        if (isect != null) {
+          double[] sp = camera.worldToScreen(
+            s.earthRef.px + isect[0], s.earthRef.py + isect[1]);
+          vertex((float)sp[0], (float)sp[1]);
+        }
+        double[] sp = camera.worldToScreen(
+          s.earthRef.px + pts[j][0], s.earthRef.py + pts[j][1]);
+        vertex((float)sp[0], (float)sp[1]);
+      }
+    }
+
+    if (inShape) {
+      endShape();
+    }
+  } else {
+    double radius = MissionPlanner.LEO_RADIUS_KM;
+    double cx = s.earthRef.px;
+    double cy = s.earthRef.py;
+
+    noFill();
+    stroke(red(s.col), green(s.col), blue(s.col));
+    strokeWeight(0.8);
+    beginShape();
+    int steps = 200;
+    for (int j = 0; j <= steps; j++) {
+      double a = 2.0 * PI * j / steps;
+      double[] sp = camera.worldToScreen(
+        cx + radius * Math.cos(a),
+        cy + radius * Math.sin(a));
+      vertex((float)sp[0], (float)sp[1]);
+    }
+    endShape(CLOSE);
   }
-  endShape(CLOSE);
+}
+
+double[] sphereIntersect(double[] P, double[] Q, double R) {
+  double dx = Q[0] - P[0];
+  double dy = Q[1] - P[1];
+  double a = dx * dx + dy * dy;
+  if (a < 1e-20) return null;
+  double b = 2.0 * (P[0] * dx + P[1] * dy);
+  double c = (P[0] * P[0] + P[1] * P[1]) - R * R;
+  double disc = b * b - 4.0 * a * c;
+  if (disc < 0) return null;
+
+  double sqrtDisc = Math.sqrt(disc);
+  double t0 = (-b - sqrtDisc) / (2.0 * a);
+  double t1 = (-b + sqrtDisc) / (2.0 * a);
+
+  double t = (t0 >= 0.0 && t0 <= 1.0) ? t0 : t1;
+  if (t < 0.0 || t > 1.0) return null;
+
+  return new double[]{P[0] + t * dx, P[1] + t * dy};
 }
 
 // ============================================================
