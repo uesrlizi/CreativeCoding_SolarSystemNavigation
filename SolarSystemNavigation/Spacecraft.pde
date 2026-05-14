@@ -29,7 +29,6 @@ class Spacecraft {
   static final double VERTICAL_RISE_TIME = 10.0; // seconds, pure vertical before pitch program
   static final double MAX_PITCH_RAD = 1.4835298641951802;  // 85 degrees to rad, max pitch from vertical
   static final double PITCH_EXPONENT = 0.7;      // shape: higher = stays vertical longer
-  static final double ASCENT_APO_MARGIN = 15.0;  // km overshoot — finite circ burn decays apoapsis
   static final double FIXED_SUBSTEP = 1.0;       // max seconds per physics sub-step
   static final double CIRC_ECC_TOLERANCE = 0.0005;  // eccentricity threshold for circular orbit
   static final double SHIP_LENGTH_KM = 0.05;     // 50 m rocket
@@ -141,9 +140,7 @@ class Spacecraft {
 
             double apoFull = computeApoapsisAt(tmpRx, tmpRy, tmpVx, tmpVy);
 
-            double ascentTarget = MissionPlanner.LEO_ALTITUDE_KM + ASCENT_APO_MARGIN;
-
-            if (apoFull >= ascentTarget) {
+            if (apoFull >= MissionPlanner.LEO_ALTITUDE_KM) {
               // Will cross target — find the fraction of thrust needed
               double gVx = preVx + ax * step;
               double gVy = preVy + ay * step;
@@ -152,8 +149,8 @@ class Spacecraft {
               double apoGrav = computeApoapsisAt(gRx, gRy, gVx, gVy);
 
               double f = 0.0;
-              if (apoFull > apoGrav && apoGrav < ascentTarget) {
-                f = (ascentTarget - apoGrav) / (apoFull - apoGrav);
+              if (apoFull > apoGrav && apoGrav < MissionPlanner.LEO_ALTITUDE_KM) {
+                f = (MissionPlanner.LEO_ALTITUDE_KM - apoGrav) / (apoFull - apoGrav);
                 f = Math.max(0.0, Math.min(1.0, f));
               }
 
@@ -173,20 +170,37 @@ class Spacecraft {
             ascentStepApplied = true;
 
           } else {
-            // Circularization: steer to match local circular orbit velocity.
-            // Δv = v_circ(r) * tangent - v_current.  Thrust aligns with Δv.
-            // At apoapsis Δv is pure tangential; elsewhere it corrects
-            // radial velocity so the burn doesn't raise/lower apoapsis.
+            // PEG-inspired fixed-target circularization guidance.
+            // Targets a SPECIFIC orbit (LEO_RADIUS_KM) — NOT the local
+            // circular speed.  Feedback on altitude error and radial
+            // velocity produces the pitch corrections that keep apoapsis
+            // pinned at the target during the finite burn.
             double vx = earthRelVel[0], vy = earthRelVel[1];
-            double vCirc = Math.sqrt(MissionPlanner.GM_EARTH / r);
             double tanX = -ry / r, tanY = rx / r;
-            double dvx = vCirc * tanX - vx;
-            double dvy = vCirc * tanY - vy;
-            double dv = Math.sqrt(dvx * dvx + dvy * dvy);
-            if (dv > 0.0001) {
-              ax += THRUST_ACCEL * dvx / dv;
-              ay += THRUST_ACCEL * dvy / dv;
-            }
+            double radX = rx / r, radY = ry / r;
+
+            // Fixed target: circular orbit at LEO_RADIUS_KM
+            double vTangTarget = Math.sqrt(MissionPlanner.GM_EARTH
+                                         / MissionPlanner.LEO_RADIUS_KM);
+            double vTang = (rx * vy - ry * vx) / r;     // angular momentum / r
+            double vRad  = (rx * vx + ry * vy) / r;     // radial component
+            double altError = r - MissionPlanner.LEO_RADIUS_KM;
+
+            // Pitch from tangential: positive = upward (radial), negative = downward
+            double K_ALT  = 0.02;   // rad / km   altitude correction gain
+            double K_VRAD = 2.0;    // rad / (km/s) radial-velocity damping
+            double pitchOffset = -K_ALT * altError - K_VRAD * vRad;
+
+            // Clamp pitch so we never burn backwards
+            double maxPitch = 1.2;  // ~69 degrees
+            if (pitchOffset >  maxPitch) pitchOffset =  maxPitch;
+            if (pitchOffset < -maxPitch) pitchOffset = -maxPitch;
+
+            // Thrust direction: mostly tangential with pitch correction
+            double cosP = Math.cos(pitchOffset);
+            double sinP = Math.sin(pitchOffset);
+            ax += THRUST_ACCEL * (tanX * cosP + radX * sinP);
+            ay += THRUST_ACCEL * (tanY * cosP + radY * sinP);
           }
         }
 
@@ -698,15 +712,20 @@ class Spacecraft {
           return (float)Math.atan2(thrY, thrX);
         }
       } else if (state == ShipState.CIRCULARIZING) {
-        // Point along Δv vector = v_circ*tangent - v_current
+        // PEG-style: tangential thrust with pitch correction from feedback
         double vx = earthRelVel[0], vy = earthRelVel[1];
         double rx = earthRelPos[0], ry = earthRelPos[1];
         double r = Math.sqrt(rx * rx + ry * ry);
-        double vCirc = Math.sqrt(MissionPlanner.GM_EARTH / r);
         double tanX = -ry / r, tanY = rx / r;
-        double dvx = vCirc * tanX - vx;
-        double dvy = vCirc * tanY - vy;
-        return (float)Math.atan2(dvy, dvx);
+        double radX = rx / r, radY = ry / r;
+        double vRad  = (rx * vx + ry * vy) / r;
+        double altError = r - MissionPlanner.LEO_RADIUS_KM;
+        double pitchOffset = -0.02 * altError - 2.0 * vRad;
+        if (pitchOffset >  1.2) pitchOffset =  1.2;
+        if (pitchOffset < -1.2) pitchOffset = -1.2;
+        double thrX = tanX * Math.cos(pitchOffset) + radX * Math.sin(pitchOffset);
+        double thrY = tanY * Math.cos(pitchOffset) + radY * Math.sin(pitchOffset);
+        return (float)Math.atan2(thrY, thrX);
       } else {
         // Coasting or in orbit — maintain orbit-relative orientation
         return (float)(earthOrbitAngle + PI / 2.0);
