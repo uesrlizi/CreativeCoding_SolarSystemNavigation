@@ -1,5 +1,4 @@
 class MissionPlanner {
-  static final double GM_SUN = 1.327124e11;
   static final double GM_EARTH = 3.986004e5;
   static final double EARTH_RADIUS_KM = 6371.0;
   static final double LEO_ALTITUDE_KM = 420.0;

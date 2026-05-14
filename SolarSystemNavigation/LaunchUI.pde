@@ -2,8 +2,10 @@ class LaunchUI {
   String shipName = "";
   boolean inputFocused = false;
   boolean showLaunchPopup = false;
+  LaunchStatusPanels panels;
 
   LaunchUI() {
+    panels = new LaunchStatusPanels();
   }
 
   boolean isPopupOpen() {
@@ -27,8 +29,8 @@ class LaunchUI {
   // ============================================================
   void draw() {
     drawLaunchPanel();
-    drawShipStatus();
-    drawTargetPanel();
+    panels.drawShipStatus(launchController);
+    panels.drawTargetPanel(launchController, solarSystem.planets);
     if (showLaunchPopup) {
       drawLaunchPopup();
     }
@@ -69,164 +71,6 @@ class LaunchUI {
         text(launchController.getStatusText(), panelX + 10, panelY + 55);
       }
     }
-  }
-
-  // ============================================================
-  //  Right side: ship status
-  // ============================================================
-  void drawShipStatus() {
-    if (launchController.getCurrentShip() == null) return;
-
-    int panelX = width - 280;
-    int panelY = 55;
-    int panelW = 270;
-    int panelH = 100;
-
-    noStroke();
-    fill(0, 0, 0, 180);
-    rect(panelX, panelY, panelW, panelH, 8);
-
-    Spacecraft ship = launchController.getCurrentShip();
-    fill(100, 200, 100);
-    textSize(15);
-    textAlign(LEFT, TOP);
-    text("Spacecraft: " + ship.name, panelX + 10, panelY + 8);
-
-    fill(180);
-    textSize(13);
-    ShipState st = launchController.getState();
-
-    if (st == ShipState.LAUNCHING) {
-      double speed = Math.sqrt(ship.earthRelVel[0] * ship.earthRelVel[0]
-                             + ship.earthRelVel[1] * ship.earthRelVel[1]);
-      double apoAlt = ship.computeApoapsis();
-      String apoStr = (apoAlt > 1e6) ? "escaping" : String.format("%.0f km", apoAlt);
-
-      text(String.format("Altitude: %.0f km   Speed: %.2f km/s", ship.launchAltitude, speed),
-           panelX + 10, panelY + 28);
-      text(String.format("Apoapsis: %s / %.0f km", apoStr, MissionPlanner.LEO_ALTITUDE_KM),
-           panelX + 10, panelY + 46);
-
-      if (ship.thrustActive) {
-        double progress = Math.min(1.0, apoAlt / MissionPlanner.LEO_ALTITUDE_KM);
-        drawProgressBar(panelX + 10, panelY + 64, panelW - 20, 12, progress,
-                        "Burning: " + (int)(progress * 100) + "%");
-      } else {
-        // Coasting — show a different style bar
-        fill(40, 60, 80);
-        noStroke();
-        rect(panelX + 10, panelY + 64, panelW - 20, 12, 4);
-        fill(180);
-        textSize(11);
-        textAlign(CENTER, CENTER);
-        text("Coasting to apoapsis...", panelX + panelW / 2, panelY + 70);
-      }
-    } else if (st == ShipState.CIRCULARIZING) {
-      double speed = Math.sqrt(ship.earthRelVel[0] * ship.earthRelVel[0]
-                             + ship.earthRelVel[1] * ship.earthRelVel[1]);
-      double periAlt = ship.computePerigee();
-      double circSpeed = Math.sqrt(MissionPlanner.GM_EARTH / MissionPlanner.LEO_RADIUS_KM);
-
-      text(String.format("Altitude: %.0f km   Speed: %.2f km/s", ship.launchAltitude, speed),
-           panelX + 10, panelY + 28);
-      text(String.format("Perigee: %.0f / %.0f km   Target v: %.2f km/s",
-           periAlt, MissionPlanner.LEO_ALTITUDE_KM, circSpeed),
-           panelX + 10, panelY + 46);
-
-      double periProgress = Math.min(1.0, Math.max(0.0,
-                            periAlt / MissionPlanner.LEO_ALTITUDE_KM));
-      drawProgressBar(panelX + 10, panelY + 64, panelW - 20, 12, periProgress,
-                      "Circularizing: " + (int)(periProgress * 100) + "%");
-    } else if (ship.earthRelative) {
-      text(String.format("LEO Orbit: %.0f km altitude", ship.launchAltitude),
-           panelX + 10, panelY + 30);
-    } else {
-      double au = ship.a / AU_KM;
-      text(String.format("Heliocentric Orbit: %.3f AU", au),
-           panelX + 10, panelY + 30);
-      // Transfer progress bar when in TRANSFER
-      if (st == ShipState.TRANSFER && launchController.transferOrbitParams != null) {
-        double elapsed = timeManager.simTime - launchController.transferStartTime;
-        double total = launchController.planner.calculateTransferTime(
-                         launchController.transferOrbitParams[0], GM_SUN);
-        double progress = Math.min(1.0, elapsed / Math.max(1.0, total));
-        drawProgressBar(panelX + 10, panelY + 52, panelW - 20, 10, progress,
-                        "Transfer: " + (int)(progress * 100) + "%");
-      }
-    }
-  }
-
-  void drawProgressBar(int x, int y, int w, int h, double progress, String label) {
-    fill(30, 30, 30);
-    noStroke();
-    rect(x, y, w, h, 4);
-
-    fill(80, 180, 80);
-    rect(x, y, (float)(w * Math.min(1.0, Math.max(0.0, progress))), h, 4);
-
-    fill(220);
-    textSize(11);
-    textAlign(CENTER, CENTER);
-    text(label, x + w / 2, y + h / 2);
-  }
-
-  // ============================================================
-  //  Right side: mission target panel
-  // ============================================================
-  void drawTargetPanel() {
-    ShipState st = launchController.getState();
-    if (st != ShipState.ORBIT && st != ShipState.TRANSFER) return;
-
-    int panelX = width - 280;
-    int panelY = 170;
-    int panelW = 270;
-    int panelH = 300;
-
-    noStroke();
-    fill(0, 0, 0, 180);
-    rect(panelX, panelY, panelW, panelH, 8);
-
-    fill(200);
-    textSize(16);
-    textAlign(LEFT, TOP);
-    text("Mission Target", panelX + 10, panelY + 10);
-
-    List<CelestialBody> planets = solarSystem.planets;
-    CelestialBody earth = launchController.getEarth();
-    int rowY = panelY + 40;
-    int rowSpacing = 28;
-
-    for (int idx = 0; idx < planets.size(); idx++) {
-      CelestialBody p = planets.get(idx);
-      // Skip Earth as a target
-      if (p == earth) continue;
-
-      int rY = rowY;
-      rowY += rowSpacing;
-
-      boolean isSelected = (launchController.getSelectedTarget() == p);
-      if (isSelected) {
-        fill(50, 80, 50, 200);
-        noStroke();
-        rect(panelX + 8, rY - 2, panelW - 16, 28, 4);
-      }
-
-      fill(p.col);
-      textSize(14);
-      textAlign(LEFT, CENTER);
-      text((idx + 1) + ". " + p.name, panelX + 18, rY + 12);
-
-      if (isSelected) {
-        fill(100, 200, 100);
-        textSize(11);
-        text("Selected", panelX + 160, rY + 12);
-      }
-    }
-
-    // Transfer button
-    boolean canTransfer = launchController.canTransfer();
-    String btnLabel = canTransfer ? "Transfer  [T]" : "Select a target";
-    drawButton(btnLabel, panelX + 10, panelY + panelH - 45, 140, 32, canTransfer);
   }
 
   // ============================================================
@@ -325,45 +169,6 @@ class LaunchUI {
     return mx >= bx && mx <= bx + 140 && my >= by && my <= by + 35;
   }
 
-  boolean isTargetRow(int mx, int my) {
-    int panelX = width - 280;
-    int panelY = 170;
-    // Count non-Earth planets to see if click is within the list
-    CelestialBody earth = launchController.getEarth();
-    int targetCount = 0;
-    for (CelestialBody p : solarSystem.planets) {
-      if (p != earth) targetCount++;
-    }
-    int listBottom = panelY + 40 + targetCount * 28;
-    return mx >= panelX && mx <= panelX + 270 && my >= panelY + 40 && my <= listBottom;
-  }
-
-  int getTargetIndex(int mx, int my) {
-    int panelX = width - 280;
-    int panelY = 170;
-    CelestialBody earth = launchController.getEarth();
-    int displayIdx = (my - (panelY + 40)) / 28;
-    // Map display index back to actual planet index
-    int actualIdx = 0;
-    int count = 0;
-    for (int i = 0; i < solarSystem.planets.size(); i++) {
-      if (solarSystem.planets.get(i) == earth) continue;
-      if (count == displayIdx) { actualIdx = i; break; }
-      count++;
-    }
-    return (count == displayIdx) ? actualIdx : -1;
-  }
-
-  boolean isTransferButton(int mx, int my) {
-    if (!launchController.canTransfer()) return false;
-    int panelX = width - 280;
-    int panelH = 300;
-    int panelY = 170;
-    int bx = panelX + 10;
-    int by = panelY + panelH - 45;
-    return mx >= bx && mx <= bx + 140 && my >= by && my <= by + 32;
-  }
-
   boolean isLaunchPopupButton(int mx, int my) {
     if (!showLaunchPopup) return false;
     int popupW = 340;
@@ -407,7 +212,7 @@ class LaunchUI {
         inputFocused = true;
         return;
       }
-      // Click outside popup → close
+      // Click outside popup -> close
       int popupW = 340;
       int popupH = 200;
       int px = width / 2 - popupW / 2;
@@ -425,8 +230,8 @@ class LaunchUI {
     }
 
     // Target selection
-    if (launchController.canSelectTarget() && isTargetRow(mx, my)) {
-      int idx = getTargetIndex(mx, my);
+    if (launchController.canSelectTarget() && panels.isTargetRow(mx, my, launchController, solarSystem.planets)) {
+      int idx = panels.getTargetIndex(mx, my, launchController, solarSystem.planets);
       if (idx >= 0) {
         launchController.selectTarget(solarSystem.planets.get(idx));
         return;
@@ -434,7 +239,7 @@ class LaunchUI {
     }
 
     // Transfer button
-    if (isTransferButton(mx, my)) {
+    if (panels.isTransferButton(mx, my, launchController)) {
       launchController.initiateTransfer();
     }
   }

@@ -1,8 +1,3 @@
-enum ViewMode {
-  MAP_VIEW,
-  SHIP_VIEW
-}
-
 class CameraController {
   double camX, camY;
   double scale;
@@ -157,6 +152,29 @@ class CameraController {
     if (focusBody != null && focusBody.a != 0) return focusBody.name;
     if (focusShip != null) return focusShip.name;
     return null;
+  }
+
+  void snapFocus() {
+    if (focusShip != null) {
+      if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
+        targetOffsetX = 0;
+        targetOffsetY = 0;
+      }
+    } else if (focusBody != null && focusBody.a != 0) {
+      if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
+        targetOffsetX = 0;
+        targetOffsetY = 0;
+      } else {
+        targetScale = height / (4.0 * focusBody.radius);
+      }
+    } else {
+      if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
+        targetOffsetX = 0;
+        targetOffsetY = 0;
+      } else {
+        targetScale = (width * 0.15) / AU_KM;
+      }
+    }
   }
 
   double[] screenToWorld(double sx, double sy) {

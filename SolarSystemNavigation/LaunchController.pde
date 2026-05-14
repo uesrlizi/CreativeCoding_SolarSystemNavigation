@@ -1,11 +1,3 @@
-enum ShipState {
-  IDLE,
-  LAUNCHING,
-  CIRCULARIZING,
-  ORBIT,
-  TRANSFER
-}
-
 class LaunchController {
   ShipState state;
   Spacecraft currentShip;
