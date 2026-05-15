@@ -13,11 +13,14 @@ class SpacecraftRenderer {
     pushMatrix();
     translate((float)sp[0], (float)sp[1]);
 
-    float angle = calculateOrientation(ship, cam);
-    if (Float.isNaN(angle) || Float.isInfinite(angle)) {
-      angle = 0;
+    float worldAngle = (float)ship.displayAngle;
+    if (isShipView && ship.earthRelative) {
+      worldAngle = worldAngle - (float)cam.shipViewAngle - HALF_PI;
     }
-    rotate(angle);
+    if (Float.isNaN(worldAngle) || Float.isInfinite(worldAngle)) {
+      worldAngle = 0;
+    }
+    rotate(worldAngle);
 
     if (isShipView) {
       float bodyLen = (float)(Spacecraft.SHIP_LENGTH_KM * cam.scale);
@@ -84,6 +87,7 @@ class SpacecraftRenderer {
     drawStage2Body(ship, bl);
     drawFairing(ship, bl);
     drawBodyPanelLines(bl);
+    drawRCSThrusters(ship, bl);
     drawNavLights(ship, bl);
   }
 
@@ -494,44 +498,101 @@ class SpacecraftRenderer {
   }
 
   // ============================================================
-  //  Orientation calculation
+  //  RCS thrusters
+  //  Fire to rotate the spacecraft — forward/aft pairs for pitch torque
   // ============================================================
 
-  float calculateOrientation(Spacecraft ship, CameraController cam) {
-    float worldAngle;
+  void drawRCSThrusters(Spacecraft ship, float bl) {
+    // RCS nozzle positions (local coords)
+    // Forward pair: on fairing body
+    float fwdX = bl * 0.42;
+    float fwdR = bl * 0.052;
+    // Aft pair: on stage 1 body
+    float aftX = -bl * 0.20;
+    float aftR = bl * 0.069;
 
-    if (ship.earthRelative) {
-      if (ship.state == ShipState.IDLE ||
-          ship.state == ShipState.COUNTDOWN ||
-          ship.state == ShipState.IGNITION) {
-        worldAngle = (float)(ship.earthOrbitAngle);
-      } else if (ship.state == ShipState.LAUNCHING && ship.thrustActive) {
-        double rx = ship.earthRelPos[0], ry = ship.earthRelPos[1];
-        double burnTime = timeManager.simTime - ship.launchStartTime;
-        worldAngle = (float)ship.getAscentThrustAngle(rx, ry, burnTime);
-      } else if (ship.state == ShipState.CIRCULARIZING) {
-        double rx = ship.earthRelPos[0], ry = ship.earthRelPos[1];
-        double vx = ship.earthRelVel[0], vy = ship.earthRelVel[1];
-        double[] peg = ship.getPEGGuidance(rx, ry, vx, vy);
-        worldAngle = (float)peg[1];
-      } else {
-        worldAngle = (float)(ship.earthOrbitAngle + PI / 2.0);
-      }
+    // --- Nozzle housings (always visible — physical hardware) ---
+    noStroke();
+    fill(90, 88, 92);
+    float hw = bl * 0.010;
+    float hh = bl * 0.005;
+    // Outer casing (dark)
+    rect(fwdX - hw * 0.5, -fwdR - hh * 0.5, hw, hh, 1);
+    rect(fwdX - hw * 0.5,  fwdR - hh * 0.5, hw, hh, 1);
+    rect(aftX - hw * 0.5, -aftR - hh * 0.5, hw, hh, 1);
+    rect(aftX - hw * 0.5,  aftR - hh * 0.5, hw, hh, 1);
+    // Thruster nozzle dot (dark interior)
+    fill(30, 28, 32);
+    float nd = bl * 0.004;
+    ellipse(fwdX, -fwdR, nd, nd);
+    ellipse(fwdX,  fwdR, nd, nd);
+    ellipse(aftX, -aftR, nd, nd);
+    ellipse(aftX,  aftR, nd, nd);
+
+    // --- Plumes (only when turning) ---
+    double accel = ship.angularAcceleration;
+    if (Math.abs(accel) < 0.02) return;
+
+    float thrustLevel = (float)Math.min(1.0, Math.abs(accel) / Spacecraft.MAX_ANGULAR_ACCEL);
+    if (thrustLevel < 0.03) return;
+
+    float oscPhase = millis() / 1000.0 * 35.0;
+
+    // Plumes fire away from body surface:
+    //   top nozzles (Y < 0) fire -Y;  bottom nozzles (Y > 0) fire +Y
+    // Firing pair depends on sign of angular acceleration
+    if (accel > 0) {
+      // CCW: forward-bottom (+Y) + aft-top (-Y)
+      drawRCSPlume(bl, fwdX,  fwdR,  1, thrustLevel, oscPhase);         // forward-bottom
+      drawRCSPlume(bl, aftX, -aftR, -1, thrustLevel, oscPhase + 0.9);   // aft-top
     } else {
-      double nuForward = ship.currentNu + 0.01;
-      double[] posForward = orbitalToCartesian(ship.a, ship.e, ship.i, ship.omega, ship.w, nuForward);
-      double vx = posForward[0] - ship.px;
-      double vy = posForward[1] - ship.py;
-      worldAngle = (float)Math.atan2(vy, vx);
+      // CW: forward-top (-Y) + aft-bottom (+Y)
+      drawRCSPlume(bl, fwdX, -fwdR, -1, thrustLevel, oscPhase);         // forward-top
+      drawRCSPlume(bl, aftX,  aftR,  1, thrustLevel, oscPhase + 0.9);   // aft-bottom
     }
-
-    // In ship view, the worldToScreen transform rotates the coordinate system:
-    //   screen X = tangential, screen Y = -radial (up = away from Earth)
-    // Convert world-space angle to view-space angle
-    boolean isShipView = (cam.getMode() == ViewMode.SHIP_VIEW && cam.followTarget == ship);
-    if (isShipView && ship.earthRelative) {
-      return worldAngle - (float)cam.shipViewAngle - HALF_PI;
-    }
-    return worldAngle;
   }
+
+  void drawRCSPlume(float bl, float originX, float originY, int dirSign, float level, float phase) {
+    noStroke();
+    float plumeLen = bl * 0.04 * level;
+    float plumeW = bl * 0.006 * level;
+    float osc = (float)Math.sin(phase) * plumeLen * 0.2;
+
+    // Outer fringe (cool blue-white)
+    fill(180, 210, 255, 50 * level);
+    beginShape();
+    vertex(originX, originY);
+    vertex(originX + plumeW * 0.3, originY + dirSign * plumeW * 0.5);
+    vertex(originX + plumeW * 0.1, originY + dirSign * (plumeLen + osc));
+    vertex(originX - plumeW * 0.1, originY + dirSign * (plumeLen + osc));
+    vertex(originX - plumeW * 0.3, originY + dirSign * plumeW * 0.5);
+    endShape(CLOSE);
+
+    // Mid plume
+    fill(200, 225, 255, 100 * level);
+    beginShape();
+    vertex(originX, originY);
+    vertex(originX + plumeW * 0.15, originY + dirSign * plumeW * 0.3);
+    vertex(originX + plumeW * 0.05, originY + dirSign * (plumeLen * 0.7 + osc));
+    vertex(originX - plumeW * 0.05, originY + dirSign * (plumeLen * 0.7 + osc));
+    vertex(originX - plumeW * 0.15, originY + dirSign * plumeW * 0.3);
+    endShape(CLOSE);
+
+    // Inner bright core
+    fill(230, 240, 255, 160 * level);
+    beginShape();
+    vertex(originX, originY);
+    vertex(originX + plumeW * 0.06, originY + dirSign * plumeW * 0.1);
+    vertex(originX, originY + dirSign * (plumeLen * 0.45 + osc * 0.6));
+    vertex(originX - plumeW * 0.06, originY + dirSign * plumeW * 0.1);
+    endShape(CLOSE);
+
+    // Bright spot at nozzle exit
+    fill(255, 255, 255, 200 * level);
+    ellipse(originX, originY, plumeW * 0.8, plumeW * 0.5);
+  }
+
+  // ============================================================
+  //  Orientation — kept for external use (map icon direction)
+  // ============================================================
 }

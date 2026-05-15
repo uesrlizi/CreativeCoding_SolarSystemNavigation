@@ -80,6 +80,7 @@ void setup() {
   defaultShip.earthRelative = true;
   defaultShip.earthRef = earth;
   defaultShip.launchPadAngle = launchAngle;
+  defaultShip.displayAngle = launchAngle;
   defaultShip.launchAltitude = 0.0488;  // ~49m, engines rest on pad surface
   defaultShip.earthOrbitAngle = launchAngle;
   defaultShip.orbitStartTime = 0;
@@ -133,6 +134,7 @@ void draw() {
 
     for (Spacecraft s : solarSystem.ships) {
       s.update(timeManager.simTime);
+      s.updateDisplayAngle(s.computeTargetWorldAngle(), deltaTime);
     }
 
     camera.update(deltaTime);

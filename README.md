@@ -13,13 +13,15 @@ SolarSystemNavigation/
 ├── CelestialBody.pde           # 天体数据模型与LOD分级绘制
 ├── SolarSystem.pde             # 太阳系初始化（8大行星 + 太阳）
 ├── Spacecraft.pde              # 航天器物理模拟（上升/圆化/入轨）
-├── SpacecraftRenderer.pde      # 航天器绘制（远距图标 / 飞船视角放大模型）
+├── SpacecraftRenderer.pde      # 航天器绘制（地图图标 / 飞船视角详细模型）
+├── LaunchSite.pde              # 发射场数据模型（地表位置跟踪）
+├── LaunchSiteRenderer.pde      # 发射场绘制（发射台/勤务塔/脐带臂/避雷塔/地形）
 ├── CameraController.pde        # 摄像机控制（平移/缩放/跟随/双视角）
 ├── MissionPlanner.pde          # 轨道力学常数与霍曼转移计算
 ├── LaunchController.pde        # 发射流程状态机
 ├── LaunchUI.pde                # 发射面板交互逻辑
 ├── LaunchPanels.pde            # 发射面板UI绘制
-└── D_ShipViewHUD.pde           # 飞船视角HUD叠加层
+├── D_ShipViewHUD.pde           # 飞船视角HUD叠加层
 └── HUD.pde                     # 主HUD（信息面板/天体列表/动态缩放单位）
 ```
 
@@ -134,6 +136,56 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 - `computeApoapsis()` / `computePerigee()` — 用活力公式从瞬时状态计算密切轨道的远/近地点
 - `timeToApoapsis()` — 通过偏近点角计算到达远地点的时间，用于确定圆化点火时机
 - `finalizeOrbitInsertion()` — 圆化完成时，将速度和位置重置为精确圆形轨道
+
+### SpacecraftRenderer.pde — 航天器绘制
+
+两种绘制模式，根据当前视角自动切换：
+
+**地图图标** (`drawMapIcon`)：居中箭头（chevron）图标，范围 ±0.8s（s=9px），原点在图标几何中心。无光晕，简洁清晰。
+
+**飞船视角模型** (`drawShipViewModel`)：详细的多级火箭侧视图，原点在飞船几何中心（发动机喷口 X=-0.45bl 到整流罩尖 X=0.57bl，中心 X=0.06bl）。
+
+绘制顺序（从尾到头）：
+1. 发动机尾焰（5 个喷口，带动画马赫环）
+2. 发动机喷管（5 个，梅花布局）
+3. 发动机舱段（锥形推力结构）
+4. 一级箭体（圆柱段 + 彩色装饰带）
+5. 格栅翼（4 片展开状态）
+6. 级间段（锥形适配器）
+7. 二级箭体（圆柱段 + 装饰带）
+8. 整流罩（ogive 曲线，24 段拟合）
+9. 箭体面板线 + 导航灯（红/绿/白频闪）
+
+飞船原点（世界坐标 `px,py` 在绘图中的位置）通过 `translate(-bl*0.06, 0)` 对齐到几何中心，使摄像机聚焦在飞船中部而非尾焰。
+
+### LaunchSite.pde — 发射场数据
+
+发射场位于地球向阳面表面，角度 `baseAngle` 由初始化时太阳方向决定：
+
+```
+px = earth.px + EARTH_RADIUS * cos(baseAngle)
+py = earth.py + EARTH_RADIUS * sin(baseAngle)
+```
+
+每帧 `update()` 跟随地球轨道运动，确保发射场始终锚定在地表。
+
+### LaunchSiteRenderer.pde — 发射场绘制
+
+仅在飞船视角（SHIP_VIEW）下绘制。坐标系经过旋转使 +X=地表切向，-Y=径向向外（上方）。
+
+发射场设施层次：
+- 地形（地层纹理、草皮、砾石护堤）
+- 通道（路面 + 路肩 + 中心虚线）
+- 火焰导流槽（楔形偏转板 + 烧蚀痕迹）
+- 混凝土发射台（斜面/高光/伸缩缝/支柱）
+- 勤务塔（柱体 + X 撑 + 电梯井 + 6 层平台 + 天线）
+- 脐带臂（4 个可摆动臂 + 尾部服务桅杆 cryo 软管）
+- 固定臂（4 个，钳制在发射台表面）
+- 避雷系统（两座高塔 + 悬链线 + 接地缆）
+- 附属建筑（掩体/设备间/燃料储罐/水塔）
+- 排焰管道（台面以下）
+
+发射台表面高度 `padSurfY = -bl*0.10`（地表以上），与飞船发动机喷口位置对齐。飞船初始 `launchAltitude = 0.0488 km` 使发动机精确落在台面上。
 
 ### SolarSystemNavigation.pde — 主程序
 

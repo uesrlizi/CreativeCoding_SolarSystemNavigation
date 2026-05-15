@@ -7,6 +7,15 @@ class Spacecraft {
   double px, py, pz;
   double currentNu;
 
+  // Display-layer angular dynamics (presentation only — does not affect physics)
+  double displayAngle;                              // current world-space displayed angle (rad)
+  double angularVelocity;                           // rad/s
+  double angularAcceleration;                       // rad/s², stored for RCS visual
+  static final double MAX_ANGULAR_VELOCITY = 3.0;   // rad/s
+  static final double MAX_ANGULAR_ACCEL = 8.0;      // rad/s²
+  static final double ANGLE_KP = 10.0;              // position gain
+  static final double ANGLE_KD = 6.0;               // velocity damping
+
   ShipState state;
   double launchStartTime;
   double transferStartTime;
@@ -63,6 +72,9 @@ class Spacecraft {
     this.orbitStartTime = 0;
     this.earthRelPos = new double[]{0, 0, 0};
     this.earthRelVel = new double[]{0, 0, 0};
+    this.displayAngle = 0;
+    this.angularVelocity = 0;
+    this.angularAcceleration = 0;
   }
 
   void update(double t) {
@@ -442,6 +454,58 @@ class Spacecraft {
     thrustActive = false;
     state = ShipState.ORBIT;
     dbgLog("finalizeOrbitInsertion done, state=ORBIT");
+  }
+
+  // Compute the physics-determined world-space target angle (radians from +X)
+  double computeTargetWorldAngle() {
+    if (earthRelative) {
+      if (state == ShipState.IDLE ||
+          state == ShipState.COUNTDOWN ||
+          state == ShipState.IGNITION) {
+        return earthOrbitAngle;
+      } else if (state == ShipState.LAUNCHING && thrustActive) {
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double burnTime = timeManager.simTime - launchStartTime;
+        return getAscentThrustAngle(rx, ry, burnTime);
+      } else if (state == ShipState.CIRCULARIZING) {
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double vx = earthRelVel[0], vy = earthRelVel[1];
+        double[] peg = getPEGGuidance(rx, ry, vx, vy);
+        return peg[1];
+      } else {
+        return earthOrbitAngle + PI / 2.0;
+      }
+    } else {
+      double nuForward = currentNu + 0.01;
+      double[] posForward = orbitalToCartesian(a, e, i, omega, w, nuForward);
+      double vx = posForward[0] - px;
+      double vy = posForward[1] - py;
+      return Math.atan2(vy, vx);
+    }
+  }
+
+  // Update display angle toward target with angular velocity/acceleration dynamics
+  void updateDisplayAngle(double targetAngle, double dt) {
+    if (dt <= 0 || dt > 0.5) return;
+    double error = angleDifference(targetAngle, displayAngle);
+    double desiredAccel = error * ANGLE_KP - angularVelocity * ANGLE_KD;
+    angularAcceleration = clamp(desiredAccel, -MAX_ANGULAR_ACCEL, MAX_ANGULAR_ACCEL);
+    angularVelocity += angularAcceleration * dt;
+    angularVelocity = clamp(angularVelocity, -MAX_ANGULAR_VELOCITY, MAX_ANGULAR_VELOCITY);
+    displayAngle += angularVelocity * dt;
+    displayAngle = normalizeAngle(displayAngle);
+  }
+
+  double clamp(double v, double min, double max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  double normalizeAngle(double a) {
+    return ((a % (2.0 * PI)) + 2.0 * PI) % (2.0 * PI);
+  }
+
+  double angleDifference(double target, double current) {
+    return ((target - current + 3.0 * PI) % (2.0 * PI)) - PI;
   }
 
 }
