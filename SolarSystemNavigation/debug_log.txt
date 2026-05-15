@@ -1,4 +1,0 @@
-3768: CIRC START: state->CIRCULARIZING, burnDuration=258.42506739533195 timeToApo=129.17291882406334
-4539: CIRC DONE: finalizing orbit insertion
-4539: finalizeOrbitInsertion start
-4539: finalizeOrbitInsertion done, state=ORBIT

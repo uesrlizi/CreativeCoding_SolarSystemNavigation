@@ -104,7 +104,7 @@ class CameraController {
       }
       // First time entering ship view — auto-zoom
       if (shipTargetScale <= 0.0) {
-        shipTargetScale = 0.15 * height / Spacecraft.SHIP_LENGTH_KM;
+        shipTargetScale = 0.22 * height / Spacecraft.SHIP_LENGTH_KM;
         targetScale = shipTargetScale;
       }
     }

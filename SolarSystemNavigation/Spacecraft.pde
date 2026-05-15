@@ -38,8 +38,8 @@ class Spacecraft {
   static final double PEG_K_ALT  = 0.02;             // rad/km altitude correction gain
   static final double PEG_K_VRAD = 2.0;              // rad/(km/s) radial-velocity damping
   static final double PEG_MAX_PITCH = 1.2;           // ~69 deg max pitch from tangential
-  static final double SHIP_LENGTH_KM = 0.05;         // 50 m rocket
-  static final double SHIP_WIDTH_KM = 0.014;     // 14 m diameter
+  static final double SHIP_LENGTH_KM = 0.08;         // 80 m rocket
+  static final double SHIP_WIDTH_KM = 0.006;      // 6 m diameter
 
   Spacecraft(double a, double e, double i,
     double omega, double w, double M0, double period, color col) {

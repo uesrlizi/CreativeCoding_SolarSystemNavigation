@@ -38,6 +38,8 @@ HUD hud;
 TimeManager timeManager;
 LaunchController launchController;
 SpacecraftRenderer spacecraftRenderer;
+LaunchSite launchSite;
+LaunchSiteRenderer launchSiteRenderer;
 float uiScale;
 
 // ============================================================
@@ -96,6 +98,9 @@ void setup() {
   launchController.currentShip = defaultShip;
   camera.followShip(defaultShip);
 
+  launchSite = new LaunchSite(earth, launchAngle);
+  launchSiteRenderer = new LaunchSiteRenderer();
+
   hud = new HUD();
 
   spacecraftRenderer = new SpacecraftRenderer();
@@ -134,6 +139,11 @@ void draw() {
     drawOrbits();
     solarSystem.drawSun(camera);
     solarSystem.drawPlanets(camera);
+
+    launchSite.update();
+    if (launchController.getCurrentShip() != null) {
+      launchSiteRenderer.draw(launchSite, camera, launchController.getCurrentShip());
+    }
 
     for (Spacecraft s : solarSystem.ships) {
       spacecraftRenderer.draw(s, camera);

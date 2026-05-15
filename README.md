@@ -69,6 +69,16 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT → TR
 
 解决方案：逐行扫描屏幕每一行像素，用 **double** 精度计算该行被圆覆盖的 x 范围，clamp 到屏幕宽度后以 `QUADS` 绘制。所有输出坐标均在屏幕范围内，彻底规避大数值 float 精度问题。扫描结果合并到单个 `beginShape(QUADS)` 调用，N 行屏幕仅产生一次 GPU/渲染管线提交。
 
+### 帧率无关设计
+
+所有实时动画和插值通过 `deltaTime`（墙钟秒数）驱动，而非 `frameCount`：
+
+- **摄像机平滑**：平移和缩放采用 `1 - exp(-speed × dt)` 指数衰减，任意帧率下收敛速度一致
+- **模拟时间推进**：`simTime += timeWarp × DAY_S × dt`，时间加速倍率基于真实秒而非帧数
+- **动画效果**：引擎火焰抖动、IGNITION 文字脉冲等改用 `millis() / 1000.0` 计时
+
+`dt` 在每帧 `draw()` 开头由 `(millis() - lastFrameMillis) / 1000.0` 计算，钳制在 0~0.5s 防止切窗回来时的大跳跃。
+
 ### 动态缩放单位
 
 HUD 缩放显示根据当前比例尺自动切换单位（`formatScale`）：
@@ -131,7 +141,7 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 - `setup()`: 初始化所有全局对象（摄像机/太阳系/飞船/HUD），每次启动从 simTime=0 开始
 - `draw()`: 每帧更新时间 → 太阳系 → 飞船 → 绘制星空/轨道/天体（LOD）/飞船/HUD
 - 轨道力学拆分至 `B_OrbitalMath.pde`：`solveKepler()`, `orbitalToCartesian()`, `cartesianToKepler()`, `orbitalVelocityToCartesian()`
-- 时间管理拆分至 `C_TimeManager.pde`：模拟时间 + 8 级时间加速（1:1 到 100 天/秒）
+- 时间管理拆分至 `C_TimeManager.pde`：模拟时间 + 8 级时间加速（1:1 到 100 天/秒），基于真实墙钟 deltaTime 推进，帧率无关
 - 交互：双击聚焦、拖拽平移、滚轮缩放、键盘快捷键
 
 ### LaunchController.pde — 状态流程
@@ -147,7 +157,7 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 - **MAP_VIEW**: 2D 正交俯视图，跟随聚焦天体/飞船，支持偏移和缩放
 - **SHIP_VIEW**: 以飞船为中心自动放大至飞船尺度，其他天体相对显示
 
-缓动插值（scale lerp 0.1, offset lerp 0.15）实现平滑过渡。模式切换时保存/恢复各自的缩放状态。天体 LOD 层级由摄像机距离和 scale 决定。
+缓动插值使用指数衰减公式 `1 - exp(-speed × dt)` 实现平滑过渡（scale speed=6.0, offset speed=10.0，等价于 60fps 下的 0.1/0.15 lerp），帧率无关。模式切换时保存/恢复各自的缩放状态。天体 LOD 层级由摄像机距离和 scale 决定。
 
 ### HUD.pde — 界面
 
@@ -159,10 +169,9 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 
 ### LaunchUI.pde — 发射交互
 
-- 底部面板：发射控制按钮 + 飞船状态
+- 底部面板：发射控制按钮 + 飞船状态显示
 - 右侧面板：飞船实时数据（高度/速度/远地点/近地点进度条）+ 目标行星列表
-- 模态弹窗：命名新飞船 + 发射按钮
-- 支持鼠标点击和键盘输入
+- 支持鼠标点击和键盘快捷键（L 发射 / T 转移）
 
 ### MissionPlanner.pde — 轨道常数与计算
 
