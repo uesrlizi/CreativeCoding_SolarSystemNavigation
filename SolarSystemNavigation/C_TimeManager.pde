@@ -8,6 +8,9 @@ class TimeManager {
   String[] WARP_LABELS;
   int warpIndex = 0;
 
+  int maxWarpIndex = 7;  // 档位上限，7=100days（无限制）
+  int minWarpIndex = 0;  // 档位下限，0=1x
+
   TimeManager() {
     simTime = 0;
     WARP_LEVELS = new double[8];
@@ -46,12 +49,41 @@ class TimeManager {
   }
 
   void increaseWarp() {
-    warpIndex = min(WARP_LEVELS.length - 1, warpIndex + 1);
-    timeWarp = WARP_LEVELS[warpIndex];
+    int newIndex = min(maxWarpIndex, warpIndex + 1);  // 不超过上限
+    newIndex = min(WARP_LEVELS.length - 1, newIndex);
+    if (newIndex != warpIndex) {
+      warpIndex = newIndex;
+      timeWarp = WARP_LEVELS[warpIndex];
+    }
   }
 
   void decreaseWarp() {
-    warpIndex = max(0, warpIndex - 1);
+    int newIndex = max(minWarpIndex, warpIndex - 1);  // 不低于下限
+    newIndex = max(0, newIndex);
+    if (newIndex != warpIndex) {
+      warpIndex = newIndex;
+      timeWarp = WARP_LEVELS[warpIndex];
+    }
+  }
+
+  // 设置档位上限
+  void setMaxWarpIndex(int index) {
+    maxWarpIndex = constrain(index, 0, WARP_LEVELS.length - 1);
+    // 如果当前档位超过上限，强制降到上限
+    if (warpIndex > maxWarpIndex) {
+      warpIndex = maxWarpIndex;
+      timeWarp = WARP_LEVELS[warpIndex];
+    }
+  }
+
+  // 清除档位上限
+  void clearMaxWarp() {
+    maxWarpIndex = WARP_LEVELS.length - 1;
+  }
+
+  // 强制设置档位（不受上限限制）
+  void forceSetWarpIndex(int index) {
+    warpIndex = constrain(index, 0, WARP_LEVELS.length - 1);
     timeWarp = WARP_LEVELS[warpIndex];
   }
 

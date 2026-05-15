@@ -335,11 +335,11 @@ class ShipStatusPanel {
         // 显示倒计时
         TransferParameters mission = ctrl.getCurrentMission();
         if (mission != null) {
-          double daysToWindow = (mission.launchDate - timeManager.simTime) / DAY_S;
+          double secToWindow = mission.launchDate - timeManager.simTime;
           fill(180);
           textSize(12 * scale);
-          if (daysToWindow > 0) {
-            text(String.format("Time to TMI: %.1f days", daysToWindow),
+          if (secToWindow > 0) {
+            text("Time to TMI: " + formatSimTime(secToWindow),
                  panelX + panelMargin, y + 22);
             // 显示 ΔV 预算
             text(String.format("TMI ΔV: %.2f km/s", mission.tmiDeltaV),
@@ -393,9 +393,9 @@ class ShipStatusPanel {
           float tBarY = y + 42;
           float tBarW = panelW - 2 * panelMargin;
           float tBarH = 10 * scale;
-          int daysLeft = (int)Math.ceil((total - elapsed) / DAY_S);
+          double secLeft = total - elapsed;
           drawProgressBar(tBarX, tBarY, tBarW, tBarH, (float)progress,
-                         "ETA: " + daysLeft + " days");
+                         "ETA: " + formatSimTime(secLeft));
         } else if (ctrl.transferOrbitParams != null) {
           // 向后兼容
           double elapsed = timeManager.simTime - ctrl.transferStartTime;

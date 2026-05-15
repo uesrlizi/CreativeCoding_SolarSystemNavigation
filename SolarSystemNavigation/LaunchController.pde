@@ -18,6 +18,10 @@ class LaunchController {
   CelestialBody approachTarget;
   double closestApproachDistance;
 
+  // 自动降速状态
+  boolean autoWarpActive = false;
+  boolean inCriticalPhase = false;  // 在关键阶段（锁住1x）
+
   LaunchController() {
     state = ShipState.IDLE;
     currentShip = null;
@@ -90,9 +94,45 @@ class LaunchController {
     dbgLog("Mission planning cancelled");
   }
 
+  // ===== 检查是否需要跳转到事件前15秒 =====
+  boolean checkAndJumpToEvent(double targetSimTime, String eventName) {
+    if (inCriticalPhase) return false;
+
+    double remaining = targetSimTime - timeManager.simTime;
+    if (remaining <= 0) return false;
+
+    double currentWarp = Math.max(timeManager.timeWarp, 1e-6);
+    double nextFrameSimTime = timeManager.simTime + currentWarp * DAY_S * deltaTime;
+
+    // 检查下一帧是否会跳过或离事件太近
+    // 15秒模拟时间作为阈值
+    double thresholdSimTime = 15.0;
+
+    if (remaining <= thresholdSimTime || nextFrameSimTime >= targetSimTime) {
+      // 跳到事件前15秒
+      double jumpToTime = targetSimTime - thresholdSimTime;
+      if (jumpToTime > timeManager.simTime) {
+        timeManager.simTime = jumpToTime;
+        dbgLog("Jumped to 15s before " + eventName);
+      }
+
+      // 强制1x并锁住
+      inCriticalPhase = true;
+      timeManager.setMaxWarpIndex(0);
+      timeManager.forceSetWarpIndex(0);
+      dbgLog(eventName + " approaching: TIME LOCKED to 1x");
+      return true;
+    }
+
+    return false;
+  }
+
   // 检查发射窗口是否到达
   void checkLaunchWindow() {
     if (currentMission == null) return;
+
+    // 检查并跳转
+    checkAndJumpToEvent(currentMission.launchDate, "launch window");
 
     double timeToWindow = currentMission.launchDate - timeManager.simTime;
 
@@ -181,17 +221,16 @@ class LaunchController {
 
   // 监控转移轨道
   void monitorTransfer() {
+    if (currentMission == null) return;
+
+    double targetTime = transferStartTime + currentMission.transferTime;
+
+    // 检查并跳转
+    checkAndJumpToEvent(targetTime, "transfer end");
+
     double elapsed = timeManager.simTime - transferStartTime;
-    double remaining = currentMission.transferTime - elapsed;
+    double remaining = targetTime - timeManager.simTime;
 
-    // 当剩余 10 天时自动降回 1x（如果还没降的话）
-    if (remaining <= 10 * DAY_S && timeManager.warpIndex > 0) {
-      timeManager.warpIndex = 0;
-      timeManager.timeWarp = timeManager.WARP_LEVELS[0];
-      dbgLog("Approaching target, time warp set to 1x");
-    }
-
-    // 检查是否接近目标（剩余 3 天）
     if (remaining <= 3 * DAY_S) {
       startApproach();
     }
@@ -205,8 +244,8 @@ class LaunchController {
     dbgLog("Starting approach to " + approachTarget.name);
   }
 
-  // 更新接近过程
-  void updateApproach() {
+  // 监控接近目标阶段
+  void monitorApproach() {
     // 计算相对位置
     double dx = currentShip.px - approachTarget.px;
     double dy = currentShip.py - approachTarget.py;
@@ -214,11 +253,39 @@ class LaunchController {
 
     closestApproachDistance = distance;
 
-    // 当进入目标 SOI 的 2 倍范围内时开始 TOI 燃烧
     double soiRadius = planner.calculateSOI(approachTarget);
+
+    // 如果还没到关键阶段，检查是否需要跳转
+    if (!inCriticalPhase) {
+      // 根据距离估算到达2x SOI的时间
+      double distTo2xSOI = Math.max(0, distance - soiRadius * 2.0);
+
+      // 估算速度（假设相对速度20 km/s）
+      double estimatedSimTimeToSOI = distTo2xSOI / 20.0;  // 秒
+
+      if (estimatedSimTimeToSOI < 30.0) {  // 30秒模拟时间内
+        // 跳到距离还剩约10秒的位置
+        double jumpDist = soiRadius * 2.0 + 200.0;  // 2x SOI + 200 km
+        if (distance > jumpDist) {
+          // 只估算，不真的跳位置（因为位置是轨道计算的）
+          // 直接强制1x
+          inCriticalPhase = true;
+          timeManager.setMaxWarpIndex(0);
+          timeManager.forceSetWarpIndex(0);
+          dbgLog("TOI approaching: TIME LOCKED to 1x");
+        }
+      }
+    }
+
+    // 当进入目标 SOI 的 2倍范围内时开始 TOI 燃烧
     if (distance <= soiRadius * 2.0) {
       startTOIBurn();
     }
+  }
+
+  // 更新接近过程
+  void updateApproach() {
+    monitorApproach();
   }
 
   // 开始 TOI 燃烧
@@ -293,26 +360,35 @@ class LaunchController {
   void update() {
     if (currentShip == null) return;
 
-    // 检测状态切换，在关键阶段自动降回 1x 时间流速
+    // 检测状态切换
     if (previousState != state) {
-      // 进入燃烧阶段或接近阶段时，强制降回 1x
-      if (state == ShipState.TMI_BURN ||
-          state == ShipState.APPROACHING_TARGET ||
-          state == ShipState.TOI_BURN) {
-        if (timeManager.warpIndex > 0) {
-          timeManager.warpIndex = 0;
-          timeManager.timeWarp = timeManager.WARP_LEVELS[0];
-          dbgLog("Approaching critical phase, time warp set to 1x");
-        }
+      // 进入需要自动降速的阶段
+      if (state == ShipState.WAITING_FOR_WINDOW ||
+          state == ShipState.TRANSFER ||
+          state == ShipState.APPROACHING_TARGET) {
+        autoWarpActive = true;
+        inCriticalPhase = false;
+        timeManager.clearMaxWarp();  // 开始无限制
+        dbgLog("Entering auto warp phase");
       }
-      previousState = state;
-    }
 
-    // 限制燃烧期间的时间加速
-    if ((state == ShipState.TMI_BURN || state == ShipState.TOI_BURN) &&
-        timeManager.warpIndex > 0) {
-      timeManager.warpIndex = 0;
-      timeManager.timeWarp = timeManager.WARP_LEVELS[0];
+      // 进入燃烧状态时：清除限制，允许用户加速
+      if (state == ShipState.TMI_BURN ||
+          state == ShipState.TOI_BURN) {
+        inCriticalPhase = false;
+        timeManager.clearMaxWarp();
+        dbgLog("BURN PHASE: Manual warp control allowed");
+      }
+
+      // 回到稳定状态时：完全清除限制
+      if (state == ShipState.IDLE || state == ShipState.ORBIT || state == ShipState.CAPTURED) {
+        autoWarpActive = false;
+        inCriticalPhase = false;
+        timeManager.clearMaxWarp();
+        dbgLog("Auto warp control released");
+      }
+
+      previousState = state;
     }
 
     switch (state) {
@@ -404,9 +480,9 @@ class LaunchController {
         }
       case WAITING_FOR_WINDOW:
         if (currentMission != null) {
-          double daysToWindow = (currentMission.launchDate - timeManager.simTime) / DAY_S;
-          if (daysToWindow > 0) {
-            return "Waiting for Launch Window: T-" + (float)daysToWindow + " days";
+          double secToWindow = currentMission.launchDate - timeManager.simTime;
+          if (secToWindow > 0) {
+            return "Waiting for Launch Window: T-" + formatSimTime(secToWindow);
           } else {
             return "Launch Window Now!";
           }
@@ -416,9 +492,16 @@ class LaunchController {
         int tmiPercent = (int)(burnDeltaVApplied / burnDeltaVNeeded * 100);
         return "TMI Burn: " + tmiPercent + "%";
       case TRANSFER:
-        double elapsedDays = (timeManager.simTime - transferStartTime) / DAY_S;
-        double totalDays = currentMission.transferTime / DAY_S;
-        return "Transfer: Day " + (float)elapsedDays + "/" + (float)totalDays;
+        double elapsedSec = timeManager.simTime - transferStartTime;
+        double totalSec = currentMission.transferTime;
+        double remainingSec = totalSec - elapsedSec;
+        if (remainingSec > 0) {
+          return "Transfer: ETA " + formatSimTime(remainingSec);
+        } else {
+          double elapsedDays = elapsedSec / DAY_S;
+          double totalDays = totalSec / DAY_S;
+          return "Transfer: Day " + (float)elapsedDays + "/" + (float)totalDays;
+        }
       case APPROACHING_TARGET:
         double distMKm = closestApproachDistance / 1e6;
         return "Approaching " + approachTarget.name + ": " + (float)distMKm + " M km";
