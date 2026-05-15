@@ -531,35 +531,41 @@ class SpacecraftRenderer {
 
     // --- Plumes (only when turning) ---
     double accel = ship.angularAcceleration;
-    if (Math.abs(accel) < 0.02) return;
+    double vel = Math.abs(ship.angularVelocity);
+    // Combined RCS activity: acceleration + sustained rotation
+    double activity = Math.abs(accel) / Spacecraft.MAX_ANGULAR_ACCEL
+                    + vel / Spacecraft.MAX_ANGULAR_VELOCITY;
+    if (activity < 0.0005) return;
 
-    float thrustLevel = (float)Math.min(1.0, Math.abs(accel) / Spacecraft.MAX_ANGULAR_ACCEL);
-    if (thrustLevel < 0.03) return;
-
+    // Non-linear curve so small corrections are still visible
+    float thrustLevel = (float)Math.sqrt(Math.min(1.0, activity));
     float oscPhase = millis() / 1000.0 * 35.0;
 
-    // Plumes fire away from body surface:
-    //   top nozzles (Y < 0) fire -Y;  bottom nozzles (Y > 0) fire +Y
-    // Firing pair depends on sign of angular acceleration
+    // Firing pair depends on sign of angular acceleration.
+    // Processing rotate(+angle) = CW, so accel > 0 means accelerating CW.
+    //   CW (nose down, tail up):  forward-top (-Y plume), aft-bottom (+Y plume)
+    //   CCW (nose up, tail down): forward-bottom (+Y plume), aft-top (-Y plume)
     if (accel > 0) {
-      // CCW: forward-bottom (+Y) + aft-top (-Y)
-      drawRCSPlume(bl, fwdX,  fwdR,  1, thrustLevel, oscPhase);         // forward-bottom
-      drawRCSPlume(bl, aftX, -aftR, -1, thrustLevel, oscPhase + 0.9);   // aft-top
-    } else {
       // CW: forward-top (-Y) + aft-bottom (+Y)
       drawRCSPlume(bl, fwdX, -fwdR, -1, thrustLevel, oscPhase);         // forward-top
       drawRCSPlume(bl, aftX,  aftR,  1, thrustLevel, oscPhase + 0.9);   // aft-bottom
+    } else {
+      // CCW: forward-bottom (+Y) + aft-top (-Y)
+      drawRCSPlume(bl, fwdX,  fwdR,  1, thrustLevel, oscPhase);         // forward-bottom
+      drawRCSPlume(bl, aftX, -aftR, -1, thrustLevel, oscPhase + 0.9);   // aft-top
     }
   }
 
   void drawRCSPlume(float bl, float originX, float originY, int dirSign, float level, float phase) {
     noStroke();
-    float plumeLen = bl * 0.04 * level;
-    float plumeW = bl * 0.006 * level;
+    // Minimum visible size so weak corrections still show a small puff
+    float plumeLen = bl * Math.max(0.015, 0.06 * level);
+    float plumeW  = bl * Math.max(0.003, 0.010 * level);
     float osc = (float)Math.sin(phase) * plumeLen * 0.2;
+    float alphaMul = Math.max(0.35, level);
 
     // Outer fringe (cool blue-white)
-    fill(180, 210, 255, 50 * level);
+    fill(180, 210, 255, 50 * alphaMul);
     beginShape();
     vertex(originX, originY);
     vertex(originX + plumeW * 0.3, originY + dirSign * plumeW * 0.5);
@@ -569,7 +575,7 @@ class SpacecraftRenderer {
     endShape(CLOSE);
 
     // Mid plume
-    fill(200, 225, 255, 100 * level);
+    fill(200, 225, 255, 100 * alphaMul);
     beginShape();
     vertex(originX, originY);
     vertex(originX + plumeW * 0.15, originY + dirSign * plumeW * 0.3);
@@ -579,7 +585,7 @@ class SpacecraftRenderer {
     endShape(CLOSE);
 
     // Inner bright core
-    fill(230, 240, 255, 160 * level);
+    fill(230, 240, 255, 160 * alphaMul);
     beginShape();
     vertex(originX, originY);
     vertex(originX + plumeW * 0.06, originY + dirSign * plumeW * 0.1);
@@ -588,7 +594,7 @@ class SpacecraftRenderer {
     endShape(CLOSE);
 
     // Bright spot at nozzle exit
-    fill(255, 255, 255, 200 * level);
+    fill(255, 255, 255, 200 * alphaMul);
     ellipse(originX, originY, plumeW * 0.8, plumeW * 0.5);
   }
 
