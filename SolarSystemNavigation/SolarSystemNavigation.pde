@@ -80,12 +80,13 @@ void setup() {
   defaultShip.earthRelative = true;
   defaultShip.earthRef = earth;
   defaultShip.launchPadAngle = launchAngle;
-  defaultShip.launchAltitude = 0.0;
+  defaultShip.launchAltitude = 0.0488;  // ~49m, engines rest on pad surface
   defaultShip.earthOrbitAngle = launchAngle;
   defaultShip.orbitStartTime = 0;
+  double startRadius = MissionPlanner.EARTH_RADIUS_KM + defaultShip.launchAltitude;
   defaultShip.earthRelPos = new double[]{
-    MissionPlanner.EARTH_RADIUS_KM * Math.cos(launchAngle),
-    MissionPlanner.EARTH_RADIUS_KM * Math.sin(launchAngle),
+    startRadius * Math.cos(launchAngle),
+    startRadius * Math.sin(launchAngle),
     0};
   defaultShip.earthRelVel = new double[]{0, 0, 0};
   defaultShip.lastUpdateTime = 0;

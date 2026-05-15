@@ -45,46 +45,35 @@ class SpacecraftRenderer {
 
     noStroke();
 
-    // Outer glow ring
-    for (int g = 2; g >= 0; g--) {
-      fill(red(ship.col), green(ship.col), blue(ship.col), 15 + g * 8);
-      ellipse(0, 0, s * 2.8 + g * 3, s * 2.8 + g * 3);
-    }
-
-    // Solid core dot
-    fill(red(ship.col), green(ship.col), blue(ship.col));
-    ellipse(0, 0, s * 0.7, s * 0.7);
-
-    // Directional chevron (points in +X = forward)
-    float chevronTip = s * 1.6;
-    float chevronBase = s * 0.3;
+    // Directional chevron (points in +X = forward), centered at origin
+    float chevronTip = s * 0.8;
+    float chevronBack = s * -0.8;
     float chevronWing = s * 0.9;
     fill(red(ship.col), green(ship.col), blue(ship.col), 200);
     beginShape();
     vertex(chevronTip, 0);
-    vertex(chevronBase, -chevronWing);
-    vertex(chevronBase - s * 0.3, 0);
-    vertex(chevronBase, chevronWing);
+    vertex(chevronBack, -chevronWing);
+    vertex(chevronBack + s * 0.3, 0);
+    vertex(chevronBack, chevronWing);
     endShape(CLOSE);
 
     // Center highlight
     fill(255, 255, 255, 140);
-    ellipse(s * 0.1, 0, s * 0.35, s * 0.35);
+    ellipse(0, 0, s * 0.35, s * 0.35);
   }
 
   // ============================================================
   //  SHIP-VIEW MODEL — detailed multi-stage launch vehicle
   //  Local coords: +X = nose, -X = tail, Y = lateral
-  //  Origin ≈ base of Stage 1 / top of engine section
+  //  Origin = ship center (geometric midpoint)
   // ============================================================
 
   void drawShipViewModel(Spacecraft ship, float bl) {
-    // Elevate ship: engines at X=-bl*0.45 → pad at launch-coord Y=-bl*0.10
-    translate(bl * 0.55, 0);
+    // Origin at geometric center (local X=0.06); engines at X=-0.45 → pad at Y=-0.10
+    translate(-bl * 0.06, 0);
 
     noStroke();
 
-    drawShipGlow(ship, bl);
     if (ship.thrustActive) drawExhaustPlumes(ship, bl);
 
     drawEngineNozzles(bl);
