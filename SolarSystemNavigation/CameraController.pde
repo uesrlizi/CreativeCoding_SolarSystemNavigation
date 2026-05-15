@@ -12,6 +12,7 @@ class CameraController {
 
   // Ship view saved state
   double shipScale, shipTargetScale;
+  double shipViewAngle;  // rad, radial direction from Earth to ship
   Spacecraft followTarget;
 
   ViewMode mode;
@@ -71,6 +72,12 @@ class CameraController {
       camY = followTarget.py;
       shipScale = scale;
       shipTargetScale = targetScale;
+      // Compute view angle: radial direction from Earth to ship
+      if (followTarget.earthRelative && followTarget.earthRef != null) {
+        double rx = followTarget.earthRelPos[0];
+        double ry = followTarget.earthRelPos[1];
+        shipViewAngle = Math.atan2(ry, rx);
+      }
     }
   }
 
@@ -241,6 +248,18 @@ class CameraController {
   }
 
   double[] worldToScreen(double wx, double wy) {
+    double dx = wx - camX;
+    double dy = wy - camY;
+
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null && followTarget.earthRelative) {
+      // Rotate view: tangential dir → screen X, radial-outward → screen -Y (up)
+      double cosA = Math.cos(shipViewAngle);
+      double sinA = Math.sin(shipViewAngle);
+      double sx = (-sinA * dx + cosA * dy) * scale + width / 2.0;
+      double sy = -(cosA * dx + sinA * dy) * scale + height / 2.0;
+      return new double[]{sx, sy};
+    }
+
     double sx = (wx - camX) * scale + width / 2.0;
     double sy = (wy - camY) * scale + height / 2.0;
     double[] result = new double[2];

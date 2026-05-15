@@ -509,31 +509,40 @@ class SpacecraftRenderer {
   // ============================================================
 
   float calculateOrientation(Spacecraft ship, CameraController cam) {
+    float worldAngle;
+
     if (ship.earthRelative) {
       if (ship.state == ShipState.IDLE ||
           ship.state == ShipState.COUNTDOWN ||
           ship.state == ShipState.IGNITION) {
-        return (float)(ship.earthOrbitAngle);
+        worldAngle = (float)(ship.earthOrbitAngle);
       } else if (ship.state == ShipState.LAUNCHING && ship.thrustActive) {
         double rx = ship.earthRelPos[0], ry = ship.earthRelPos[1];
         double burnTime = timeManager.simTime - ship.launchStartTime;
-        return (float)ship.getAscentThrustAngle(rx, ry, burnTime);
+        worldAngle = (float)ship.getAscentThrustAngle(rx, ry, burnTime);
       } else if (ship.state == ShipState.CIRCULARIZING) {
         double rx = ship.earthRelPos[0], ry = ship.earthRelPos[1];
         double vx = ship.earthRelVel[0], vy = ship.earthRelVel[1];
         double[] peg = ship.getPEGGuidance(rx, ry, vx, vy);
-        return (float)peg[1];
+        worldAngle = (float)peg[1];
       } else {
-        return (float)(ship.earthOrbitAngle + PI / 2.0);
+        worldAngle = (float)(ship.earthOrbitAngle + PI / 2.0);
       }
+    } else {
+      double nuForward = ship.currentNu + 0.01;
+      double[] posForward = orbitalToCartesian(ship.a, ship.e, ship.i, ship.omega, ship.w, nuForward);
+      double vx = posForward[0] - ship.px;
+      double vy = posForward[1] - ship.py;
+      worldAngle = (float)Math.atan2(vy, vx);
     }
 
-    double nuForward = ship.currentNu + 0.01;
-    double[] posForward = orbitalToCartesian(ship.a, ship.e, ship.i, ship.omega, ship.w, nuForward);
-
-    double vx = posForward[0] - ship.px;
-    double vy = posForward[1] - ship.py;
-
-    return (float)Math.atan2(vy, vx);
+    // In ship view, the worldToScreen transform rotates the coordinate system:
+    //   screen X = tangential, screen Y = -radial (up = away from Earth)
+    // Convert world-space angle to view-space angle
+    boolean isShipView = (cam.getMode() == ViewMode.SHIP_VIEW && cam.followTarget == ship);
+    if (isShipView && ship.earthRelative) {
+      return worldAngle - (float)cam.shipViewAngle - HALF_PI;
+    }
+    return worldAngle;
   }
 }

@@ -13,7 +13,12 @@ class LaunchSiteRenderer {
 
     pushMatrix();
     translate((float)sp[0], (float)sp[1]);
-    rotate((float)(site.baseAngle + HALF_PI));
+    // View-space rotation: world angle (baseAngle + PI/2) maps to screen angle 0
+    // screen angle 0 = world angle (shipViewAngle + PI/2) in rotated view
+    // => rotate by baseAngle - shipViewAngle
+    float siteRotation = (float)(site.baseAngle - cam.shipViewAngle);
+    if (Float.isNaN(siteRotation) || Float.isInfinite(siteRotation)) siteRotation = 0;
+    rotate(siteRotation);
 
     drawLaunchComplex(bl, ship);
 
