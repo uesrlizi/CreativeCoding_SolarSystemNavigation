@@ -303,7 +303,7 @@ class Spacecraft {
   }
 
   // Shared osculating orbital parameters: returns [a (km), e, h (km^2/s), energy]
-  private double[] getOsculatingOrbitalParams() {
+  double[] getOsculatingOrbitalParams() {
     double rx = earthRelPos[0], ry = earthRelPos[1];
     double vx = earthRelVel[0], vy = earthRelVel[1];
     double r = Math.sqrt(rx * rx + ry * ry);

@@ -19,10 +19,13 @@ SolarSystemNavigation/
 ├── CameraController.pde        # 摄像机控制（平移/缩放/跟随/双视角）
 ├── MissionPlanner.pde          # 轨道力学常数与霍曼转移计算
 ├── LaunchController.pde        # 发射流程状态机
-├── LaunchUI.pde                # 发射面板交互逻辑
-├── LaunchPanels.pde            # 发射面板UI绘制
-├── D_ShipViewHUD.pde           # 飞船视角HUD叠加层
-└── HUD.pde                     # 主HUD（信息面板/天体列表/动态缩放单位）
+├── E_Button.pde                # 统一按钮组件（hover/点击状态/tooltip）
+├── E_Tooltip.pde               # 浮动提示组件（自动定位/文本换行）
+├── E_TimeControlPanel.pde      # 左上角时间控制面板
+├── E_NavigationFocusPanel.pde  # 左侧导航聚焦面板
+├── E_ViewToggleButton.pde      # 右上角视图切换按钮
+├── E_ShipStatusPanel.pde       # 右下角飞船状态面板
+└── HUD.pde                     # 总控HUD（编排所有子面板）
 ```
 
 所有 `.pde` 文件会被 Processing 连接为单一编译单元（按文件名排序），因此跨文件的类和方法可直接引用。
@@ -96,6 +99,31 @@ HUD 缩放显示根据当前比例尺自动切换单位（`formatScale`）：
 
 ## 模块说明
 
+### HUD 系统（重构版）
+
+HUD 已重构为模块化面板架构，所有交互统一通过按钮+tooltip实现：
+
+| 模块 | 位置 | 功能 |
+|------|------|------|
+| `E_Button.pde` | 通用组件 | 统一按钮类，支持 hover/点击状态/tooltip延迟显示 |
+| `E_Tooltip.pde` | 通用组件 | 浮动提示，自动定位避免出界，支持文本换行 |
+| `E_TimeControlPanel.pde` | 左上角 | 暂停/加速/减速按钮，档位指示器，当前时间 |
+| `E_NavigationFocusPanel.pde` | 左侧 | 天体/飞船列表，单击选中、双击聚焦，Snap按钮 |
+| `E_ViewToggleButton.pde` | 右上角 | 图标+状态文字，切换 MAP_VIEW / SHIP_VIEW |
+| `E_ShipStatusPanel.pde` | 右下角 | 高度/速度表，发射阶段指示，目标行星选择 |
+| `HUD.pde` | 总控 | 编排所有子面板，管理tooltip状态，分发点击事件 |
+
+**交互设计原则：**
+- 所有操作可通过按钮点击完成，键盘快捷键作为辅助
+- 鼠标悬浮按钮 1 秒（60 帧）显示 tooltip，包含功能描述和快捷键
+- 点击优先级：ShipStatusPanel > NavigationFocusPanel > ViewToggle > TimeControl
+- 未被 HUD 消费的点击透传至地图双击/摄像机拖拽
+
+**按钮状态机：**
+- `hoverFrames` 计数，≥ 60 时触发 tooltip
+- 点击时直接检测 mousePressed + isHovered，避免状态同步问题
+- `hasSpecificTarget` 判断目标缩放是否小于当前缩放，决定是否在第一次 snap 时同时缩放
+
 ### Spacecraft.pde — 核心物理
 
 航天器类，处理三种运动模式：
@@ -136,6 +164,7 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 - `computeApoapsis()` / `computePerigee()` — 用活力公式从瞬时状态计算密切轨道的远/近地点
 - `timeToApoapsis()` — 通过偏近点角计算到达远地点的时间，用于确定圆化点火时机
 - `finalizeOrbitInsertion()` — 圆化完成时，将速度和位置重置为精确圆形轨道
+- `getOsculatingOrbitalParams()` — 暴露密切轨道参数，供摄像机缩放使用（public）
 
 **表现层角动态** — 不影响物理，仅用于平滑显示：
 
@@ -228,19 +257,21 @@ py = earth.py + EARTH_RADIUS * sin(baseAngle)
 
 缓动插值使用指数衰减公式 `1 - exp(-speed × dt)` 实现平滑过渡（scale speed=6.0, offset speed=10.0，等价于 60fps 下的 0.1/0.15 lerp），帧率无关。模式切换时保存/恢复各自的缩放状态。天体 LOD 层级由摄像机距离和 scale 决定。
 
-### HUD.pde — 界面
+**snapFocus() 智能缩放逻辑：**
 
-- 左上角：模拟时间、时间加速、**动态缩放单位**（AU/km/m/mm 自动切换）、快捷键提示
-- 左下角：天体列表（点击选中，双击聚焦，Snap 按钮重置视角）
-- 右侧 Ship View 叠加层（`D_ShipViewHUD.pde`）：速度表、引擎状态、轨道数据
-- 嵌入 `LaunchUI` 组件
-- `formatScale()`: 根据 `kmPerPixel` 值自动选择最佳显示单位
+1. 先计算期望目标缩放
+2. 判断是否需要居中（offset > 0.01）
+3. 如果需要居中：
+   - 执行居中
+   - 如果目标缩放 < 当前缩放（需要缩小），则同时设置目标缩放
+4. 如果已居中，直接设置目标缩放
 
-### LaunchUI.pde — 发射交互
-
-- 底部面板：发射控制按钮 + 飞船状态显示
-- 右侧面板：飞船实时数据（高度/速度/远地点/近地点进度条）+ 目标行星列表
-- 支持鼠标点击和键盘快捷键（L 发射 / T 转移）
+针对不同聚焦目标，采用不同的缩放策略：
+- **行星**：`height / (4.0 * radius)`
+- **太阳**：`(width * 0.15) / AU_KM`（太阳系尺度）
+- **飞船（地表）**：`height / (2.0 * earthRef.radius)`
+- **飞船（地球轨道）**：`height / (4.0 * a_osc)`（密切轨道半长轴）
+- **飞船（日心轨道）**：`height / (4.0 * a)`
 
 ### MissionPlanner.pde — 轨道常数与计算
 
@@ -314,7 +345,7 @@ r_peri = a(1-e)         (近地点)
 | `Space` / `P` | 暂停/恢复 |
 | `Q` / `E` | 降低/增加时间加速 |
 | `V` | 切换 Map View / Ship View |
-| `F` | 聚焦重置（第二次回到默认缩放） |
+| `F` | 聚焦重置（目标缩放更小时第一次直接缩放到位） |
 | `O` | 切换轨道线显示 |
 | `L` | 发射飞船 / 切换标签显示 |
 | `T` | 执行转移 / 切换尾迹显示 |
@@ -322,6 +353,37 @@ r_peri = a(1-e)         (近地点)
 | 滚轮 | 缩放 |
 | 拖拽 | 平移 |
 | 双击 | 聚焦点击的天体或飞船 |
+
+## HUD 交互说明
+
+### 导航面板
+
+- 列表按 Sun → 8 行星 → Spacecraft 顺序排列
+- 单击一行：选中该行（若是天体则显示 Focus 按钮）
+- 双击一行：直接聚焦到该目标
+- Focus 按钮：将选中天体设为摄像机聚焦目标
+- Snap 按钮：重置摄像机到目标中心 + 智能缩放
+
+### 时间面板
+
+- 暂停按钮：切换模拟暂停/播放状态
+- < / > 按钮：调节时间加速档位
+- 档位条：8 个槽，当前档位高亮绿色，暂停时红色
+- 档位标签：显示当前倍率（1:1 / 10:1 / ... / 100d/s）
+
+### 视图切换
+
+- 图标+状态文字显示（MAP VIEW / SHIP VIEW）
+- 点击切换模式
+- 切换到 SHIP_VIEW 时自动跟随当前飞船
+
+### 飞船状态面板
+
+- 高度表：地表到 LEO 进度条 + 数值
+- 速度表：当前轨道速度 + 数值
+- 阶段指示：根据 ShipState 显示不同内容
+- 目标行星：ORBIT 状态可选择转移目标
+- Launch / Transfer 按钮：执行对应操作
 
 ## 技术约束
 

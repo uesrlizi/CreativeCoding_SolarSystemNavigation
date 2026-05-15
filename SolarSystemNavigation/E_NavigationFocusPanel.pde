@@ -5,8 +5,10 @@ class NavigationFocusPanel {
   float panelX, panelY, panelW, panelH;
   float rowH, headerH, footerH;
   CelestialBody selectedBody;
+  boolean selectedShip;       // 是否选中了飞船行
   long lastClickTime;
   CelestialBody lastClickBody;
+  boolean lastClickedShip;    // 上一次点击的是不是飞船
   float panelMargin;
   static final int PANEL_DOUBLE_CLICK_MS = 300;
 
@@ -27,8 +29,10 @@ class NavigationFocusPanel {
     panelMargin = 10 * scale;
 
     selectedBody = null;
+    selectedShip = false;
     lastClickTime = 0;
     lastClickBody = null;
+    lastClickedShip = false;
     hoveredIndex = -1;
     hoveredFrames = 0;
     snapButtonHover = false;
@@ -246,6 +250,10 @@ class NavigationFocusPanel {
       fill(255, 220, 100, 40);
       noStroke();
       rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (selectedShip) {
+      fill(255, 255, 255, 25);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
     } else if (isHoveredLine) {
       fill(255, 255, 255, 12);
       noStroke();
@@ -267,6 +275,8 @@ class NavigationFocusPanel {
     // 名称
     if (isFocused) {
       fill(255, 220, 100);
+    } else if (selectedShip) {
+      fill(240);
     } else {
       fill(200);
     }
@@ -274,8 +284,24 @@ class NavigationFocusPanel {
     textAlign(LEFT, CENTER);
     text("Spacecraft", panelX + 32 * scale, y + rowH / 2);
 
-    // 聚焦指示器
-    if (isFocused) {
+    // 右侧：聚焦按钮或聚焦指示器
+    if (selectedShip && !isFocused) {
+      // 绘制聚焦按钮
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = y + rowH / 2;
+      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
+                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
+      fill(btnHover ? color(80, 160, 220) : color(50, 120, 180));
+      noStroke();
+      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
+      fill(255);
+      textSize(12 * scale);
+      textAlign(CENTER, CENTER);
+      text("Focus", btnX + btnW / 2, btnCY);
+    } else if (isFocused) {
+      // 聚焦指示器
       fill(255, 220, 100, 150);
       noStroke();
       float indicCx = panelX + panelW - 18 * scale;
@@ -325,6 +351,24 @@ class NavigationFocusPanel {
       }
     }
 
+    // 检查飞船行上的聚焦按钮
+    if (selectedShip) {
+      float scale = uiScale;
+      float btnRowY = panelY + headerH + (9 + 1) * rowH;
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = btnRowY + rowH / 2;
+      if (mx >= btnX && mx <= btnX + btnW &&
+          my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
+        if (ships.size() > 0) {
+          cam.focusOn(ships.get(0));
+        }
+        selectedShip = false;
+        return true;
+      }
+    }
+
     // 接下来检查行点击（选择/聚焦）
 
     // Sun
@@ -346,16 +390,20 @@ class NavigationFocusPanel {
     if (my >= rowY && my < rowY + rowH) {
       if (ships.size() > 0) {
         long now = millis();
-        if (lastClickBody == null &&
+        if (lastClickedShip && selectedShip &&
             now - lastClickTime < PANEL_DOUBLE_CLICK_MS) {
           // 双击飞船
           cam.focusOn(ships.get(0));
+          selectedShip = false;
           lastClickTime = 0;
+          lastClickedShip = false;
         } else {
-          // 单击
+          // 单击：选中飞船，取消选中天体
+          selectedShip = true;
+          selectedBody = null;
           lastClickTime = now;
           lastClickBody = null;
-          selectedBody = null;
+          lastClickedShip = true;
         }
         return true;
       }
@@ -372,30 +420,36 @@ class NavigationFocusPanel {
     float btnH = 22 * scale;
     if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
       selectedBody = null;
+      selectedShip = false;
       cam.snapFocus();
       return true;
     }
 
     // 点击面板空白处，取消选择
     selectedBody = null;
+    selectedShip = false;
     return false;
   }
 
   boolean handleBodyClicked(float mx, float my, CelestialBody body, CameraController cam) {
     long now = millis();
-    if (body == lastClickBody &&
+    if (body == lastClickBody && !lastClickedShip &&
         now - lastClickTime < PANEL_DOUBLE_CLICK_MS) {
       // 双击：直接聚焦
       selectedBody = null;
+      selectedShip = false;
       lastClickTime = 0;
       lastClickBody = null;
+      lastClickedShip = false;
       cam.focusOn(body);
       return true;
     } else {
       // 单击：选择
       selectedBody = body;
+      selectedShip = false;
       lastClickTime = now;
       lastClickBody = body;
+      lastClickedShip = false;
       return true;
     }
   }

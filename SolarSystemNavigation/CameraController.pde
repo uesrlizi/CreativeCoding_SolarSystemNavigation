@@ -217,25 +217,68 @@ class CameraController {
 
   void snapFocus() {
     if (mode == ViewMode.SHIP_VIEW) return;
+
+    // First, calculate desired target scale
+    double desiredScale = targetScale;
+    boolean hasSpecificTarget = false;
+
     if (focusShip != null) {
-      if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
-        targetOffsetX = 0;
-        targetOffsetY = 0;
-      }
-    } else if (focusBody != null && focusBody.a != 0) {
-      if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
-        targetOffsetX = 0;
-        targetOffsetY = 0;
+      hasSpecificTarget = true;
+      if (focusShip.earthRelative && focusShip.earthRef != null) {
+        // Earth-relative phase
+        double r = Math.sqrt(focusShip.earthRelPos[0] * focusShip.earthRelPos[0] +
+                             focusShip.earthRelPos[1] * focusShip.earthRelPos[1]);
+        double altitude = r - MissionPlanner.EARTH_RADIUS_KM;
+        if (altitude < 50.0) {
+          // On surface: zoom to planet scale
+          desiredScale = height / (2.0 * focusShip.earthRef.radius);
+        } else {
+          // In flight: zoom to current orbit (osculating) scale
+          double[] orbit = focusShip.getOsculatingOrbitalParams();
+          if (orbit[0] < Double.MAX_VALUE / 2.0) {
+            // Elliptical orbit: use semi-major axis for scale
+            desiredScale = height / (4.0 * orbit[0]);
+          } else {
+            // Hyperbolic/unknown: use current distance
+            desiredScale = height / (4.0 * r);
+          }
+        }
       } else {
-        targetScale = height / (4.0 * focusBody.radius);
+        // Heliocentric phase: use solar orbit semi-major axis
+        if (focusShip.a > 0.0) {
+          desiredScale = height / (4.0 * focusShip.a);
+        } else {
+          // Fallback: use current distance from sun
+          double r = Math.sqrt(focusShip.px * focusShip.px + focusShip.py * focusShip.py);
+          desiredScale = height / (4.0 * Math.max(r, AU_KM));
+        }
+      }
+    } else if (focusBody != null) {
+      hasSpecificTarget = true;
+      if (focusBody.a != 0) {
+        // Planet: zoom to planet radius scale
+        desiredScale = height / (4.0 * focusBody.radius);
+      } else {
+        // Sun: use default solar system scale (0.15 * width / AU)
+        desiredScale = (width * 0.15) / AU_KM;
       }
     } else {
-      if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
-        targetOffsetX = 0;
-        targetOffsetY = 0;
-      } else {
-        targetScale = (width * 0.15) / AU_KM;
+      desiredScale = (width * 0.15) / AU_KM;
+    }
+
+    // Check if we need to center
+    boolean needsCenter = Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01;
+
+    if (needsCenter) {
+      targetOffsetX = 0;
+      targetOffsetY = 0;
+      // If desired scale is smaller than current, also zoom in on first snap
+      if (hasSpecificTarget && desiredScale < scale) {
+        targetScale = desiredScale;
       }
+    } else {
+      // Already centered, just set the scale
+      targetScale = desiredScale;
     }
   }
 
