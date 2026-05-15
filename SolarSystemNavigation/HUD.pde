@@ -130,7 +130,7 @@ class HUD {
       fill(255, 200, 50);
       textSize(14 * uiScale);
       textAlign(LEFT, CENTER);
-      text("Focusing: " + focusShip.name, px + 12, footerY + 12);
+      text("Focusing: Spacecraft", px + 12, footerY + 12);
     }
 
     // Snap button (always visible)
@@ -227,8 +227,10 @@ class HUD {
 
     if (mx < px || mx > px + pw || my < py || my > py + ph) return false;
 
-    // Check focus button on the currently selected row (must check before row click)
-    if (selectedBody != null && selectedBody != cam.focusBody) {
+    boolean isShipView = (cam.getMode() == ViewMode.SHIP_VIEW);
+
+    // Check focus button on the currently selected row
+    if (!isShipView && selectedBody != null && selectedBody != cam.focusBody) {
       int selIdx = -1;
       if (selectedBody == sun) selIdx = 0;
       else selIdx = planets.indexOf(selectedBody) + 1;
@@ -267,11 +269,13 @@ class HUD {
       long now = millis();
       if (clickedBody == lastPanelClickBody &&
           now - lastPanelClickTime < PANEL_DOUBLE_CLICK_MS) {
-        // Double-click — focus immediately
+        // Double-click — focus (map view only)
         selectedBody = null;
         lastPanelClickTime = 0;
         lastPanelClickBody = null;
-        cam.focusOn(clickedBody);
+        if (!isShipView) {
+          cam.focusOn(clickedBody);
+        }
         return true;
       }
       // Single click — select

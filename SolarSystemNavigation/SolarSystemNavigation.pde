@@ -41,6 +41,11 @@ float uiScale;
 //  setup / draw
 // ============================================================
 void setup() {
+  // Clear debug log
+  try {
+    new java.io.PrintWriter(sketchPath("debug_log.txt")).close();
+  } catch (Exception e) { }
+
   fullScreen();
   pixelDensity(displayDensity());
   uiScale = height / 1080.0;
@@ -69,6 +74,32 @@ void setup() {
   solarSystem = new SolarSystem();
   solarSystem.initialize();
 
+  // Create default spacecraft on Earth's day-side launch pad
+  CelestialBody earth = solarSystem.planets.get(2);
+  double launchAngle = Math.atan2(-earth.py, -earth.px);
+
+  Spacecraft defaultShip = new Spacecraft(0, 0, 0, 0, 0, 0, 0, color(0, 255, 150));
+  defaultShip.earthRelative = true;
+  defaultShip.earthRef = earth;
+  defaultShip.launchPadAngle = launchAngle;
+  defaultShip.launchAltitude = 0.0;
+  defaultShip.earthOrbitAngle = launchAngle;
+  defaultShip.orbitStartTime = 0;
+  defaultShip.earthRelPos = new double[]{
+    MissionPlanner.EARTH_RADIUS_KM * Math.cos(launchAngle),
+    MissionPlanner.EARTH_RADIUS_KM * Math.sin(launchAngle),
+    0};
+  defaultShip.earthRelVel = new double[]{0, 0, 0};
+  defaultShip.lastUpdateTime = 0;
+  defaultShip.thrustActive = false;
+  defaultShip.state = ShipState.IDLE;
+  defaultShip.px = earth.px + defaultShip.earthRelPos[0];
+  defaultShip.py = earth.py + defaultShip.earthRelPos[1];
+
+  solarSystem.ships.add(defaultShip);
+  launchController.currentShip = defaultShip;
+  camera.followShip(defaultShip);
+
   hud = new HUD();
 
   spacecraftRenderer = new SpacecraftRenderer();
@@ -80,29 +111,45 @@ void setup() {
   });
 }
 
+// DEBUG: trace freeze location — writes to sketch folder / debug_log.txt
+void dbgLog(String msg) {
+  try {
+    java.io.PrintWriter w = new java.io.PrintWriter(
+      new java.io.FileWriter(sketchPath("debug_log.txt"), true));
+    w.println(frameCount + ": " + msg);
+    w.flush();
+    w.close();
+  } catch (Exception e) { }
+}
+
 void draw() {
-  background(5, 5, 15);
+  try {
+    background(5, 5, 15);
+    timeManager.update();
+    launchController.update();
+    solarSystem.update(timeManager.simTime);
 
-  timeManager.update();
-  launchController.update();
+    for (Spacecraft s : solarSystem.ships) {
+      s.update(timeManager.simTime);
+    }
 
-  solarSystem.update(timeManager.simTime);
-  for (Spacecraft s : solarSystem.ships) {
-    s.update(timeManager.simTime);
+    camera.update();
+    drawStars();
+    drawOrbits();
+    solarSystem.drawSun(camera);
+    solarSystem.drawPlanets(camera);
+
+    for (Spacecraft s : solarSystem.ships) {
+      spacecraftRenderer.draw(s, camera);
+    }
+
+    hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
+             timeManager.WARP_LEVELS, timeManager.WARP_LABELS,
+             timeManager.warpIndex, solarSystem.planets, solarSystem.sun);
+  } catch (Exception e) {
+    dbgLog("DRAW EXCEPTION: " + e.toString());
+    e.printStackTrace();
   }
-
-  camera.update();
-
-  drawStars();
-  drawOrbits();
-  solarSystem.drawSun(camera);
-  solarSystem.drawPlanets(camera);
-  for (Spacecraft s : solarSystem.ships) {
-    spacecraftRenderer.draw(s, camera);
-  }
-  hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
-           timeManager.WARP_LEVELS, timeManager.WARP_LABELS,
-           timeManager.warpIndex, solarSystem.planets, solarSystem.sun);
 }
 
 // ============================================================
@@ -125,6 +172,7 @@ void drawStars() {
 // ============================================================
 void drawOrbits() {
   if (!showOrbits) return;
+  if (camera.getMode() == ViewMode.SHIP_VIEW) return;  // orbits meaningless at ship scale
   for (CelestialBody p : solarSystem.planets) {
     if (p.a == 0) continue;
     drawOrbitPath(p.a, p.e, p.i, p.omega, p.w, color(60, 60, 80, 100));
@@ -280,25 +328,25 @@ double[] sphereIntersect(double[] P, double[] Q, double R) {
 // ============================================================
 void mousePressed() {
   hud.launchUI.handleClick(mouseX, mouseY);
-  if (!hud.launchUI.isPopupOpen()) {
-    if (hud.handleClick(mouseX, mouseY, solarSystem.sun, solarSystem.planets, camera)) {
-      return;
-    }
-    long now = millis();
-    if (now - lastClickTime < DOUBLE_CLICK_MS &&
-        dist(mouseX, mouseY, lastClickX, lastClickY) < DOUBLE_CLICK_PX) {
-      handleDoubleClick();
-      lastClickTime = 0;
-      return;
-    }
-    lastClickTime = now;
-    lastClickX = mouseX;
-    lastClickY = mouseY;
-    camera.handleMousePressed();
+  if (hud.handleClick(mouseX, mouseY, solarSystem.sun, solarSystem.planets, camera)) {
+    return;
   }
+  long now = millis();
+  if (now - lastClickTime < DOUBLE_CLICK_MS &&
+      dist(mouseX, mouseY, lastClickX, lastClickY) < DOUBLE_CLICK_PX) {
+    handleDoubleClick();
+    lastClickTime = 0;
+    return;
+  }
+  lastClickTime = now;
+  lastClickX = mouseX;
+  lastClickY = mouseY;
+  camera.handleMousePressed();
 }
 
 void handleDoubleClick() {
+  if (camera.getMode() == ViewMode.SHIP_VIEW) return;
+
   CelestialBody closestBody = null;
   Spacecraft closestShip = null;
   double minDist = FOCUS_HIT_RADIUS;
@@ -329,15 +377,11 @@ void handleDoubleClick() {
 }
 
 void mouseDragged() {
-  if (!hud.launchUI.isPopupOpen()) {
-    camera.handleMouseDragged();
-  }
+  camera.handleMouseDragged();
 }
 
 void mouseReleased() {
-  if (!hud.launchUI.isPopupOpen()) {
-    camera.handleMouseReleased();
-  }
+  camera.handleMouseReleased();
 }
 
 void mouseWheel(MouseEvent event) {
@@ -345,18 +389,6 @@ void mouseWheel(MouseEvent event) {
 }
 
 void keyPressed() {
-  // When popup is open, only popup keys work; block all global shortcuts
-  if (hud.launchUI.isPopupOpen()) {
-    if (key == ESC) {
-      hud.launchUI.keyPressed(ESC);
-    } else if (key == BACKSPACE) {
-      hud.launchUI.keyPressed(BACKSPACE);
-    } else if (key == ENTER || key == RETURN) {
-      hud.launchUI.keyPressed(ENTER);
-    }
-    return;
-  }
-
   if (key == ' ' || key == 'p' || key == 'P') {
     timeManager.togglePause();
   }
@@ -370,7 +402,7 @@ void keyPressed() {
   if (key == 'o' || key == 'O') showOrbits = !showOrbits;
   if (key == 'l' || key == 'L') {
     if (launchController.canLaunch()) {
-      hud.launchUI.openPopup();
+      launchController.startLaunch();
     } else {
       showLabels = !showLabels;
     }
@@ -385,6 +417,9 @@ void keyPressed() {
 
   if (key == 'v' || key == 'V') {
     if (camera.getMode() == ViewMode.MAP_VIEW) {
+      if (camera.followTarget == null && launchController.getCurrentShip() != null) {
+        camera.followShip(launchController.getCurrentShip());
+      }
       camera.setViewMode(ViewMode.SHIP_VIEW);
     } else {
       camera.setViewMode(ViewMode.MAP_VIEW);
@@ -394,11 +429,9 @@ void keyPressed() {
   if (key == 'f' || key == 'F') {
     camera.snapFocus();
   }
-
 }
 
 void keyTyped() {
-  hud.launchUI.keyPressed(key);
 }
 
 void saveCurrentState() {

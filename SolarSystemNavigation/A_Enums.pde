@@ -5,6 +5,8 @@ enum ViewMode {
 
 enum ShipState {
   IDLE,
+  COUNTDOWN,
+  IGNITION,
   LAUNCHING,
   CIRCULARIZING,
   ORBIT,

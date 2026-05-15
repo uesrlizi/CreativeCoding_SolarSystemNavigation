@@ -34,7 +34,10 @@ class SolarSystem {
   void drawSun(CameraController cam) {
     double[] sp = cam.worldToScreen(0, 0);
     float sx = (float)sp[0], sy = (float)sp[1];
-    float sunR = max((float)(sun.radius * cam.scale), 4);
+    double sR = sun.radius * cam.scale;
+    if (sR > 5000) sR = 5000;
+    if (Double.isNaN(sR) || Double.isInfinite(sR)) return;
+    float sunR = max((float)sR, 4);
 
     if (sx + sunR < -50 || sx - sunR > width + 50 ||
         sy + sunR < -50 || sy - sunR > height + 50) return;

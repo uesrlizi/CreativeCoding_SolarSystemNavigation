@@ -3,6 +3,8 @@ class SpacecraftRenderer {
   void draw(Spacecraft ship, CameraController cam) {
     double[] sp = cam.worldToScreen(ship.px, ship.py);
 
+    if (Double.isNaN(sp[0]) || Double.isNaN(sp[1]) || Double.isNaN(cam.scale)) return;
+
     boolean isShipView = (cam.getMode() == ViewMode.SHIP_VIEW && cam.followTarget == ship);
     float drawExtent = isShipView ? (float)(Spacecraft.SHIP_LENGTH_KM * cam.scale * 0.55) : 20;
     if (sp[0] + drawExtent < -50 || sp[0] - drawExtent > width + 50 ||
@@ -12,6 +14,10 @@ class SpacecraftRenderer {
     translate((float)sp[0], (float)sp[1]);
 
     float angle = calculateOrientation(ship, cam);
+    if (Float.isNaN(angle) || Float.isInfinite(angle)) {
+      dbgLog("RENDERER NaN angle, state=" + ship.state + " — using 0");
+      angle = 0;
+    }
     rotate(angle);
 
     if (isShipView) {
@@ -28,7 +34,7 @@ class SpacecraftRenderer {
       textSize(15 * uiScale);
       textAlign(LEFT, CENTER);
       float labelOffset = isShipView ? (float)(Spacecraft.SHIP_LENGTH_KM * cam.scale * 0.55) + 8 : 15;
-      text(ship.name, (float)sp[0] + labelOffset, (float)sp[1]);
+      text("Spacecraft", (float)sp[0] + labelOffset, (float)sp[1]);
     }
   }
 
@@ -97,7 +103,11 @@ class SpacecraftRenderer {
 
   float calculateOrientation(Spacecraft ship, CameraController cam) {
     if (ship.earthRelative) {
-      if (ship.state == ShipState.LAUNCHING && ship.thrustActive) {
+      if (ship.state == ShipState.IDLE ||
+          ship.state == ShipState.COUNTDOWN ||
+          ship.state == ShipState.IGNITION) {
+        return (float)(ship.earthOrbitAngle);
+      } else if (ship.state == ShipState.LAUNCHING && ship.thrustActive) {
         double rx = ship.earthRelPos[0], ry = ship.earthRelPos[1];
         double burnTime = timeManager.simTime - ship.launchStartTime;
         return (float)ship.getAscentThrustAngle(rx, ry, burnTime);
@@ -199,6 +209,62 @@ class SpacecraftRenderer {
     // Body stripe
     fill(red(ship.col) * 0.6, green(ship.col) * 0.6, blue(ship.col) * 0.6);
     rect(-bodyLen * 0.05, -bodyWid * 0.48, bodyWid * 0.4, bodyWid * 0.96, max(1.0, bodyLen * 0.06));
+
+    // Launch base
+    drawLaunchBase(ship, bodyLen, bodyWid);
+  }
+
+  void drawLaunchBase(Spacecraft ship, float bodyLen, float bodyWid) {
+    if (ship.state == ShipState.IDLE ||
+        ship.state == ShipState.COUNTDOWN ||
+        ship.state == ShipState.IGNITION ||
+        (ship.state == ShipState.LAUNCHING && ship.launchAltitude < 2.0)) {
+
+      float alpha = 255;
+      if (ship.state == ShipState.LAUNCHING) {
+        alpha = map((float)ship.launchAltitude, 0, 2.0, 255, 30);
+        if (alpha < 0) alpha = 0;
+      }
+
+      float padTopX = -bodyLen * 0.46;     // just below engine nozzle base
+      float padW = bodyLen * 1.6;           // wider than ship
+      float padH = bodyLen * 0.06;          // thin platform slab
+      float towerBaseX = padTopX;
+      float towerTopX = -bodyLen * 0.45;    // tower reaches up near mid-body
+      float towerY = bodyWid * 0.65;        // horizontal offset to right side
+      float towerThick = bodyLen * 0.05;
+
+      // --- Launch pad platform ---
+      fill(110, 105, 100, alpha);
+      noStroke();
+      rect(-padW / 2, padTopX, padW, padH);
+
+      // Pad surface highlight stripe
+      fill(135, 130, 125, alpha);
+      rect(-padW * 0.4, padTopX - padH * 0.35, padW * 0.8, padH * 0.35);
+
+      // --- Tower / gantry structure ---
+      fill(85, 82, 78, alpha);
+      rect(towerY, towerTopX, towerThick, towerBaseX - towerTopX);
+
+      // Cross-braces along tower
+      fill(72, 68, 64, alpha);
+      int numBraces = 4;
+      for (int i = 0; i < numBraces; i++) {
+        float bx = towerTopX + (towerBaseX - towerTopX) * (i + 0.5f) / numBraces;
+        float braceW = bodyLen * 0.22;
+        rect(towerY - braceW / 2 + towerThick / 2, bx, braceW, bodyLen * 0.016);
+      }
+
+      // --- Umbilical / service arm ---
+      float armX = towerTopX + bodyLen * 0.10;
+      fill(78, 74, 70, alpha);
+      rect(bodyWid * 0.18, armX, towerY - bodyWid * 0.18, bodyLen * 0.026);
+
+      // --- Ground strip ---
+      fill(55, 42, 32, alpha * 0.7);
+      rect(-padW * 0.9, padTopX + padH, padW * 1.8, bodyLen * 0.025);
+    }
   }
 
   void drawShipViewFin(Spacecraft ship, float bodyLen, float bodyWid, float side) {

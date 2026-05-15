@@ -1,23 +1,32 @@
 class CameraController {
+  // Active state (used by renderers)
   double camX, camY;
-  double scale;
-  double targetScale;
-  boolean dragging;
-  double dragSX, dragSY, dragCX, dragCY, dragOffsetX, dragOffsetY;
+  double scale, targetScale;
 
-  ViewMode mode;
-  Spacecraft followTarget;
-
-  CelestialBody focusBody;
-  Spacecraft focusShip;
+  // Map view saved state
+  double mapScale, mapTargetScale;
   double offsetX, offsetY;
   double targetOffsetX, targetOffsetY;
+  CelestialBody focusBody;
+  Spacecraft focusShip;
+
+  // Ship view saved state
+  double shipScale, shipTargetScale;
+  Spacecraft followTarget;
+
+  ViewMode mode;
+  boolean dragging;
+  double dragSX, dragSY, dragCX, dragCY, dragOffsetX, dragOffsetY;
 
   CameraController() {
     camX = 0;
     camY = 0;
     scale = 1.0;
     targetScale = 1.0;
+    mapScale = 1.0;
+    mapTargetScale = 1.0;
+    shipScale = 1.0;
+    shipTargetScale = 0.0;  // unset — triggers auto-zoom on first ship-view entry
     dragging = false;
     mode = ViewMode.MAP_VIEW;
     followTarget = null;
@@ -32,22 +41,32 @@ class CameraController {
   void initialize(double initialScale) {
     scale = initialScale;
     targetScale = initialScale;
+    mapScale = initialScale;
+    mapTargetScale = initialScale;
   }
 
   void update() {
-    scale += (targetScale - scale) * 0.1;
-    offsetX += (targetOffsetX - offsetX) * 0.15;
-    offsetY += (targetOffsetY - offsetY) * 0.15;
+    if (Double.isNaN(scale) || Double.isInfinite(scale)) scale = 1.0;
+    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale)) targetScale = 1.0;
     if (mode == ViewMode.MAP_VIEW) {
+      scale += (targetScale - scale) * 0.1;
+      offsetX += (targetOffsetX - offsetX) * 0.15;
+      offsetY += (targetOffsetY - offsetY) * 0.15;
       double tx = 0, ty = 0;
       if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
       else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
       camX = tx + offsetX;
       camY = ty + offsetY;
+      // Keep map saved scale current
+      mapScale = scale;
+      mapTargetScale = targetScale;
     }
     if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
+      scale += (targetScale - scale) * 0.1;
       camX = followTarget.px;
       camY = followTarget.py;
+      shipScale = scale;
+      shipTargetScale = targetScale;
     }
   }
 
@@ -56,10 +75,34 @@ class CameraController {
   }
 
   void setViewMode(ViewMode m) {
+    if (m == mode) return;
+
+    // Save current mode's scale state
+    if (mode == ViewMode.MAP_VIEW) {
+      mapScale = scale;
+      mapTargetScale = targetScale;
+    } else if (mode == ViewMode.SHIP_VIEW) {
+      shipScale = scale;
+      shipTargetScale = targetScale;
+    }
+
+    // Switch and restore target mode's scale state
     mode = m;
-    if (m == ViewMode.SHIP_VIEW && followTarget != null) {
-      camX = followTarget.px;
-      camY = followTarget.py;
+    if (m == ViewMode.MAP_VIEW) {
+      scale = mapScale;
+      targetScale = mapTargetScale;
+    } else if (m == ViewMode.SHIP_VIEW) {
+      scale = shipScale;
+      targetScale = shipTargetScale;
+      if (followTarget != null) {
+        camX = followTarget.px;
+        camY = followTarget.py;
+      }
+      // First time entering ship view — auto-zoom
+      if (shipTargetScale <= 0.0) {
+        shipTargetScale = 0.15 * height / Spacecraft.SHIP_LENGTH_KM;
+        targetScale = shipTargetScale;
+      }
     }
   }
 
@@ -71,7 +114,10 @@ class CameraController {
     }
   }
 
+  // --- Mouse / input (only affect active mode) ---
+
   void handleMousePressed() {
+    if (mode != ViewMode.MAP_VIEW) return;
     dragging = true;
     dragSX = mouseX;
     dragSY = mouseY;
@@ -82,17 +128,16 @@ class CameraController {
   }
 
   void handleMouseDragged() {
-    if (dragging) {
-      offsetX = dragOffsetX - (mouseX - dragSX) / scale;
-      offsetY = dragOffsetY - (mouseY - dragSY) / scale;
-      targetOffsetX = offsetX;
-      targetOffsetY = offsetY;
-      double tx = 0, ty = 0;
-      if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
-      else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
-      camX = tx + offsetX;
-      camY = ty + offsetY;
-    }
+    if (!dragging || mode != ViewMode.MAP_VIEW) return;
+    offsetX = dragOffsetX - (mouseX - dragSX) / scale;
+    offsetY = dragOffsetY - (mouseY - dragSY) / scale;
+    targetOffsetX = offsetX;
+    targetOffsetY = offsetY;
+    double tx = 0, ty = 0;
+    if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
+    else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
+    camX = tx + offsetX;
+    camY = ty + offsetY;
   }
 
   void handleMouseReleased() {
@@ -100,6 +145,7 @@ class CameraController {
   }
 
   void handleMouseWheel(MouseEvent event) {
+    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale)) targetScale = 1.0;
     double factor = event.getCount() > 0 ? 0.85 : 1.18;
     targetScale *= factor;
     targetScale = constrainDouble(targetScale, 1e-18, 1e6);
@@ -116,24 +162,26 @@ class CameraController {
     camY = 0;
   }
 
+  // --- Focus (MAP_VIEW only — switches to MAP_VIEW if in SHIP_VIEW) ---
+
   void focusOn(CelestialBody body) {
     focusBody = body;
     focusShip = null;
-    offsetX = camX - body.px;
-    offsetY = camY - body.py;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : camX - body.px;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : camY - body.py;
     targetOffsetX = offsetX;
     targetOffsetY = offsetY;
-    mode = ViewMode.MAP_VIEW;
+    setViewMode(ViewMode.MAP_VIEW);
   }
 
   void focusOn(Spacecraft ship) {
     focusBody = null;
     focusShip = ship;
-    offsetX = camX - ship.px;
-    offsetY = camY - ship.py;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : camX - ship.px;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : camY - ship.py;
     targetOffsetX = offsetX;
     targetOffsetY = offsetY;
-    mode = ViewMode.MAP_VIEW;
+    setViewMode(ViewMode.MAP_VIEW);
   }
 
   void focusOn(double x, double y, double targetScale) {
@@ -146,15 +194,18 @@ class CameraController {
     camX = x;
     camY = y;
     this.targetScale = targetScale;
+    setViewMode(ViewMode.MAP_VIEW);
   }
 
   String getFocusName() {
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null) return "Spacecraft";
     if (focusBody != null && focusBody.a != 0) return focusBody.name;
-    if (focusShip != null) return focusShip.name;
+    if (focusShip != null) return "Spacecraft";
     return null;
   }
 
   void snapFocus() {
+    if (mode == ViewMode.SHIP_VIEW) return;
     if (focusShip != null) {
       if (Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01) {
         targetOffsetX = 0;
@@ -176,6 +227,8 @@ class CameraController {
       }
     }
   }
+
+  // --- Coordinate transforms ---
 
   double[] screenToWorld(double sx, double sy) {
     double wx = (sx - width / 2.0) / scale + camX;

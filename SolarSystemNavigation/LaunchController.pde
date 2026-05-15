@@ -14,42 +14,35 @@ class LaunchController {
     planner = new MissionPlanner();
   }
 
-  void startLaunch(String name) {
-    if (state != ShipState.IDLE) return;
-    state = ShipState.LAUNCHING;
-    launchStartTime = timeManager.simTime;
+  void startLaunch() {
+    if (state != ShipState.IDLE || currentShip == null) return;
 
     CelestialBody earth = getEarth();
 
     // Launch pad on day side (toward Sun)
     double launchAngle = Math.atan2(-earth.py, -earth.px);
 
-    // Create spacecraft at Earth's surface
-    Spacecraft ship = new Spacecraft(name, 0, 0, 0, 0, 0, 0, 0, color(0, 255, 150));
-    ship.earthRelative = true;
-    ship.earthRef = earth;
-    ship.launchPadAngle = launchAngle;
-    ship.launchAltitude = 0.0;
-    ship.earthOrbitAngle = launchAngle;
-    ship.orbitStartTime = 0;
-    // Initialize position at Earth's surface on the launch pad
-    ship.earthRelPos = new double[]{
+    currentShip.launchPadAngle = launchAngle;
+    currentShip.launchAltitude = 0.0;
+    currentShip.earthOrbitAngle = launchAngle;
+    currentShip.orbitStartTime = 0;
+    currentShip.earthRelPos = new double[]{
       MissionPlanner.EARTH_RADIUS_KM * Math.cos(launchAngle),
       MissionPlanner.EARTH_RADIUS_KM * Math.sin(launchAngle),
       0};
-    ship.earthRelVel = new double[]{0, 0, 0};
-    ship.lastUpdateTime = launchStartTime;
-    ship.thrustActive = true;
-    ship.state = ShipState.LAUNCHING;
-    ship.launchStartTime = launchStartTime;
-    ship.px = earth.px + ship.earthRelPos[0];
-    ship.py = earth.py + ship.earthRelPos[1];
+    currentShip.earthRelVel = new double[]{0, 0, 0};
+    currentShip.px = earth.px + currentShip.earthRelPos[0];
+    currentShip.py = earth.py + currentShip.earthRelPos[1];
 
-    currentShip = ship;
-    solarSystem.ships.add(ship);
+    currentShip.state = ShipState.COUNTDOWN;
+    currentShip.countdownStartTime = timeManager.simTime;
+    currentShip.thrustActive = false;
 
-    camera.focusOn(ship);
-    camera.followShip(ship);
+    state = ShipState.COUNTDOWN;
+    launchStartTime = timeManager.simTime;
+
+    camera.focusOn(currentShip);
+    camera.followShip(currentShip);
     camera.targetScale = 0.4 * height / (2.0 * MissionPlanner.EARTH_RADIUS_KM);
     camera.setViewMode(ViewMode.MAP_VIEW);
     timeManager.timeWarp = timeManager.WARP_LEVELS[0];
@@ -152,6 +145,28 @@ class LaunchController {
     }
 
     switch (state) {
+      case COUNTDOWN:
+        {
+          double elapsed = timeManager.simTime - currentShip.countdownStartTime;
+          if (elapsed >= Spacecraft.COUNTDOWN_DURATION) {
+            currentShip.state = ShipState.IGNITION;
+            currentShip.ignitionStartTime = timeManager.simTime;
+            currentShip.thrustActive = true;
+            state = ShipState.IGNITION;
+          }
+        }
+        break;
+      case IGNITION:
+        {
+          double elapsed = timeManager.simTime - currentShip.ignitionStartTime;
+          if (elapsed >= Spacecraft.IGNITION_DURATION) {
+            currentShip.state = ShipState.LAUNCHING;
+            currentShip.launchStartTime = timeManager.simTime;
+            currentShip.lastUpdateTime = timeManager.simTime;
+            state = ShipState.LAUNCHING;
+          }
+        }
+        break;
       case LAUNCHING:
         if (currentShip.state == ShipState.CIRCULARIZING) {
           state = ShipState.CIRCULARIZING;
@@ -191,7 +206,7 @@ class LaunchController {
   }
 
   boolean canLaunch() {
-    return state == ShipState.IDLE;
+    return state == ShipState.IDLE && currentShip != null;
   }
 
   boolean canSelectTarget() {
@@ -205,6 +220,8 @@ class LaunchController {
   String getStatusText() {
     switch (state) {
       case IDLE: return "Ready to Launch";
+      case COUNTDOWN: return "Countdown...";
+      case IGNITION: return "Ignition!";
       case LAUNCHING: return "Launching...";
       case CIRCULARIZING: return "Circularizing Orbit...";
       case ORBIT: return "In Orbit - Select Target";

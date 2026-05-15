@@ -52,6 +52,8 @@ class CelestialBody {
     double[] sp = cam.worldToScreen(px, py);
 
     double screenR = radius * cam.scale;
+    if (screenR > 5000) screenR = 5000;  // clamp to avoid overflow / huge ellipses
+    if (Double.isNaN(screenR) || Double.isInfinite(screenR)) return;
     int drawR = max((int)screenR, 2);
     if (sp[0] + drawR < -50 || sp[0] - drawR > width + 50 ||
         sp[1] + drawR < -50 || sp[1] - drawR > height + 50) return;

@@ -17,7 +17,7 @@ class ShipViewHUD {
     fill(red(ship.col), green(ship.col), blue(ship.col), 220);
     textSize(14 * uiScale);
     textAlign(CENTER, CENTER);
-    text(ship.name, width / 2, height - 25);
+    text("Spacecraft", width / 2, height - 25);
   }
 
   void drawSpeedIndicator(Spacecraft ship, int x, int y) {
@@ -82,7 +82,20 @@ class ShipViewHUD {
 
     fill(160);
     textSize(10 * uiScale);
-    if (ship.state == ShipState.LAUNCHING) {
+    if (ship.state == ShipState.IDLE || ship.state == ShipState.COUNTDOWN ||
+        ship.state == ShipState.IGNITION) {
+      text("Altitude:    0 km", x + 8, y + 20);
+      if (ship.state == ShipState.COUNTDOWN) {
+        double rem = Spacecraft.COUNTDOWN_DURATION
+            - (timeManager.simTime - ship.countdownStartTime);
+        int sec = (int)Math.ceil(Math.max(0, rem));
+        text("Countdown:  T - " + sec + "s", x + 8, y + 34);
+      } else if (ship.state == ShipState.IGNITION) {
+        text("Status:  IGNITION", x + 8, y + 34);
+      } else {
+        text("Status:  Ready", x + 8, y + 34);
+      }
+    } else if (ship.state == ShipState.LAUNCHING) {
       double apo = ship.computeApoapsis();
       text(String.format("Apoapsis:  %.0f km", apo), x + 8, y + 20);
       text(String.format("Altitude:  %.0f km", ship.launchAltitude), x + 8, y + 34);

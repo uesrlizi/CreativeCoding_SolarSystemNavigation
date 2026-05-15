@@ -10,6 +10,10 @@ class Spacecraft {
   ShipState state;
   double launchStartTime;
   double transferStartTime;
+  double countdownStartTime;
+  double ignitionStartTime;
+  static final double COUNTDOWN_DURATION = 10.0;
+  static final double IGNITION_DURATION = 2.0;
 
   // Earth-relative tracking
   boolean earthRelative;
@@ -37,9 +41,9 @@ class Spacecraft {
   static final double SHIP_LENGTH_KM = 0.05;         // 50 m rocket
   static final double SHIP_WIDTH_KM = 0.014;     // 14 m diameter
 
-  Spacecraft(String name, double a, double e, double i,
+  Spacecraft(double a, double e, double i,
     double omega, double w, double M0, double period, color col) {
-    this.name = name;
+    this.name = "Spacecraft";
     this.a = a; this.e = e; this.i = i;
     this.omega = omega; this.w = w;
     this.M0 = Math.toRadians(M0);
@@ -49,6 +53,8 @@ class Spacecraft {
     this.state = ShipState.IDLE;
     this.launchStartTime = 0;
     this.transferStartTime = 0;
+    this.countdownStartTime = 0;
+    this.ignitionStartTime = 0;
     this.earthRelative = false;
     this.earthRef = null;
     this.launchPadAngle = 0;
@@ -89,11 +95,18 @@ class Spacecraft {
 
       double currentT = t - dt;
       double remainingDt = dt;
-      while (remainingDt > 0) {
+      int maxIter = 10000;
+      while (remainingDt > 0 && maxIter-- > 0) {
         double step = Math.min(remainingDt, FIXED_SUBSTEP);
 
         double rx = earthRelPos[0], ry = earthRelPos[1];
         double r = Math.sqrt(rx * rx + ry * ry);
+        if (r < MissionPlanner.EARTH_RADIUS_KM * 0.5) {
+          // Ship crashed or in degenerate state — abort
+          dbgLog("PHYSICS ABORT: r=" + r + " too low, state=" + state);
+          remainingDt = 0;
+          break;
+        }
 
         // Gravity
         double gMag = MissionPlanner.GM_EARTH / (r * r);
@@ -161,8 +174,16 @@ class Spacecraft {
             // PEG-inspired fixed-target circularization guidance
             double vx = earthRelVel[0], vy = earthRelVel[1];
             double[] peg = getPEGGuidance(rx, ry, vx, vy);
-            ax += THRUST_ACCEL * Math.cos(peg[1]);
-            ay += THRUST_ACCEL * Math.sin(peg[1]);
+            double thrX = THRUST_ACCEL * Math.cos(peg[1]);
+            double thrY = THRUST_ACCEL * Math.sin(peg[1]);
+            if (Double.isNaN(thrX) || Double.isNaN(thrY)) {
+              dbgLog("PEG NaN thrust — aborting circularization");
+              finalizeOrbitInsertion();
+              remainingDt = 0;
+              break;
+            }
+            ax += thrX;
+            ay += thrY;
           }
         }
 
@@ -220,6 +241,8 @@ class Spacecraft {
             }
 
             if (startBurn) {
+              dbgLog("CIRC START: state->CIRCULARIZING, burnDuration=" + circBurnDuration
+                + " timeToApo=" + timeToApo);
               state = ShipState.CIRCULARIZING;
               thrustActive = true;
             }
@@ -228,10 +251,16 @@ class Spacecraft {
           circBurnDuration -= step;
           double periAlt = computePerigee();
           if (periAlt >= MissionPlanner.LEO_ALTITUDE_KM - 1.0 || circBurnDuration <= 0) {
+            dbgLog("CIRC DONE: finalizing orbit insertion");
             finalizeOrbitInsertion();
             remainingDt = 0;
           }
         }
+      }
+
+      if (remainingDt > 0) {
+        dbgLog("PHYSICS MAXITER EXHAUSTED! remainingDt=" + remainingDt
+          + " state=" + state + " maxIter=" + maxIter);
       }
 
       // Update derived values (finalizeOrbitInsertion sets these for ORBIT state)
@@ -293,6 +322,7 @@ class Spacecraft {
   // Compute thrust direction angle (radians) for powered ascent pitch program
   double getAscentThrustAngle(double rx, double ry, double burnTime) {
     double r = Math.sqrt(rx * rx + ry * ry);
+    if (r < 1.0) return 0;
     if (burnTime < VERTICAL_RISE_TIME) {
       return Math.atan2(ry, rx);
     }
@@ -309,6 +339,10 @@ class Spacecraft {
   // Compute PEG guidance pitch offset [rad] and thrust angle [rad]
   double[] getPEGGuidance(double rx, double ry, double vx, double vy) {
     double r = Math.sqrt(rx * rx + ry * ry);
+    if (r < 1.0) {
+      dbgLog("PEG r too small: " + r);
+      return new double[]{0, 0};  // safe fallback
+    }
     double vRad  = (rx * vx + ry * vy) / r;
     double altError = r - MissionPlanner.LEO_RADIUS_KM;
     double pitchOffset = -PEG_K_ALT * altError - PEG_K_VRAD * vRad;
@@ -383,6 +417,7 @@ class Spacecraft {
   }
 
   void finalizeOrbitInsertion() {
+    dbgLog("finalizeOrbitInsertion start");
     double rx = earthRelPos[0], ry = earthRelPos[1];
     double r = Math.sqrt(rx * rx + ry * ry);
     double radX = rx / r, radY = ry / r;
@@ -405,6 +440,7 @@ class Spacecraft {
     earthOrbitAngle = launchPadAngle;
     orbitStartTime = timeManager.simTime;
     state = ShipState.ORBIT;
+    dbgLog("finalizeOrbitInsertion done, state=ORBIT");
   }
 
 }
