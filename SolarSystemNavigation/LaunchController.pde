@@ -129,7 +129,6 @@ class LaunchController {
           if (elapsed >= Spacecraft.COUNTDOWN_DURATION) {
             currentShip.state = ShipState.IGNITION;
             currentShip.ignitionStartTime = timeManager.simTime;
-            currentShip.thrustActive = true;
             state = ShipState.IGNITION;
           }
         }
@@ -141,6 +140,7 @@ class LaunchController {
             currentShip.state = ShipState.LAUNCHING;
             currentShip.launchStartTime = timeManager.simTime;
             currentShip.lastUpdateTime = timeManager.simTime;
+            currentShip.thrustActive = true;
             state = ShipState.LAUNCHING;
           }
         }

@@ -439,6 +439,7 @@ class Spacecraft {
     launchPadAngle = Math.atan2(earthRelPos[1], earthRelPos[0]);
     earthOrbitAngle = launchPadAngle;
     orbitStartTime = timeManager.simTime;
+    thrustActive = false;
     state = ShipState.ORBIT;
     dbgLog("finalizeOrbitInsertion done, state=ORBIT");
   }
