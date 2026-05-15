@@ -286,7 +286,7 @@ class SpacecraftRenderer {
   void drawShipViewExhaust(Spacecraft ship, float bodyLen, float nozzleLen) {
     float baseX = -bodyLen * 0.46 - nozzleLen;
     float oscScale = bodyLen * 0.1;
-    float flameOsc = (float)Math.sin(frameCount * 0.4) * oscScale;
+    float flameOsc = (float)Math.sin(millis() / 1000.0 * 24.0) * oscScale;
 
     noStroke();
     // Outer flame

@@ -45,13 +45,17 @@ class CameraController {
     mapTargetScale = initialScale;
   }
 
-  void update() {
+  void update(float dt) {
     if (Double.isNaN(scale) || Double.isInfinite(scale)) scale = 1.0;
     if (Double.isNaN(targetScale) || Double.isInfinite(targetScale)) targetScale = 1.0;
+    float scaleSpeed = 6.0;
+    float offsetSpeed = 10.0;
+    double scaleT = 1.0 - Math.exp(-scaleSpeed * dt);
+    double offsetT = 1.0 - Math.exp(-offsetSpeed * dt);
     if (mode == ViewMode.MAP_VIEW) {
-      scale += (targetScale - scale) * 0.1;
-      offsetX += (targetOffsetX - offsetX) * 0.15;
-      offsetY += (targetOffsetY - offsetY) * 0.15;
+      scale += (targetScale - scale) * scaleT;
+      offsetX += (targetOffsetX - offsetX) * offsetT;
+      offsetY += (targetOffsetY - offsetY) * offsetT;
       double tx = 0, ty = 0;
       if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
       else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
@@ -62,7 +66,7 @@ class CameraController {
       mapTargetScale = targetScale;
     }
     if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
-      scale += (targetScale - scale) * 0.1;
+      scale += (targetScale - scale) * scaleT;
       camX = followTarget.px;
       camY = followTarget.py;
       shipScale = scale;

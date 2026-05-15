@@ -54,9 +54,9 @@ class HUD {
     textSize(15 * uiScale);
     text("Time Warp: " + warpStr, 20, 76);
 
-    double auPerPixel = 1.0 / (AU_KM * cam.scale);
+    double kmPerPixel = 1.0 / cam.scale;
     fill(180);
-    text(String.format("Zoom: %.4f AU/px", auPerPixel), 20, 104);
+    text("Zoom: " + formatScale(kmPerPixel), 20, 104);
 
     fill(160);
     textSize(15 * uiScale);
@@ -311,6 +311,18 @@ class HUD {
     textSize(30 * uiScale);
     textAlign(CENTER, CENTER);
     text("PAUSED", width / 2, height - 60);
+  }
+
+  String formatScale(double kmPerPixel) {
+    if (kmPerPixel >= 1.0e6) {
+      return String.format("%.4f AU/px", kmPerPixel / AU_KM);
+    } else if (kmPerPixel >= 1.0) {
+      return String.format("%.1f km/px", kmPerPixel);
+    } else if (kmPerPixel >= 0.001) {
+      return String.format("%.1f m/px", kmPerPixel * 1000.0);
+    } else {
+      return String.format("%.2f mm/px", kmPerPixel * 1e6);
+    }
   }
 
 }

@@ -7,19 +7,20 @@
 ```
 SolarSystemNavigation/
 ├── SolarSystemNavigation.pde   # 主程序入口、setup/draw、全局工具函数
-├── CelestialBody.pde           # 天体数据模型与绘制
-├── SolarSystem.pde             # 太阳系初始化（8大行星数据）
+├── A_Enums.pde                 # 枚举定义（ViewMode, ShipState）
+├── B_OrbitalMath.pde           # 开普勒轨道数学（求解/坐标转换）
+├── C_TimeManager.pde           # 模拟时间与时间加速
+├── CelestialBody.pde           # 天体数据模型与LOD分级绘制
+├── SolarSystem.pde             # 太阳系初始化（8大行星 + 太阳）
 ├── Spacecraft.pde              # 航天器物理模拟（上升/圆化/入轨）
+├── SpacecraftRenderer.pde      # 航天器绘制（远距图标 / 飞船视角放大模型）
 ├── CameraController.pde        # 摄像机控制（平移/缩放/跟随/双视角）
 ├── MissionPlanner.pde          # 轨道力学常数与霍曼转移计算
 ├── LaunchController.pde        # 发射流程状态机
-├── LaunchUI.pde                # UI：发射面板/飞船状态/目标选择/弹窗
-├── HUD.pde                     # 信息面板/天体列表/飞船视角叠加层
-└── SaveDataManager.pde         # 模拟时间存档
-
-docs/specs/
-├── 2026-05-08-sun-glow-zoom-design.md
-├── 2026-05-09-spacecraft-launch-design.md  # 原始设计文档
+├── LaunchUI.pde                # 发射面板交互逻辑
+├── LaunchPanels.pde            # 发射面板UI绘制
+└── D_ShipViewHUD.pde           # 飞船视角HUD叠加层
+└── HUD.pde                     # 主HUD（信息面板/天体列表/动态缩放单位）
 ```
 
 所有 `.pde` 文件会被 Processing 连接为单一编译单元（按文件名排序），因此跨文件的类和方法可直接引用。
@@ -29,12 +30,14 @@ docs/specs/
 ### 状态机
 
 ```
-IDLE → LAUNCHING → CIRCULARIZING → ORBIT → TRANSFER → ORBIT (目标行星)
+IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT → TRANSFER → ORBIT (目标行星)
 ```
 
 | 状态 | 含义 |
 |------|------|
-| `IDLE` | 无活跃飞船，可发射新飞船 |
+| `IDLE` | 飞船在发射台待命 |
+| `COUNTDOWN` | 发射倒计时（10s） |
+| `IGNITION` | 点火（2s） |
 | `LAUNCHING` | 主动段上升 + 滑行至远地点 |
 | `CIRCULARIZING` | 在远地点附近做圆化机动 |
 | `ORBIT` | 圆形 LEO 轨道，可选择目标行星 |
@@ -48,6 +51,36 @@ IDLE → LAUNCHING → CIRCULARIZING → ORBIT → TRANSFER → ORBIT (目标行
 - **地球相对坐标系** (earth-relative)：发射和圆化阶段使用，以地心为原点，位置和速度均相对于地球
 
 航天器完成圆化并入轨后，切换到纯日心模式。霍曼转移时从地球相对速度叠加地球日心速度，转换为日心开普勒轨道。
+
+### 天体 LOD 渲染
+
+天体根据摄像机距离采用四级 LOD 策略，在性能和视觉之间平衡：
+
+| LOD | 条件 | 绘制方式 | 说明 |
+|-----|------|----------|------|
+| 0 — 微小 | 视半径极小 | 最小 2px 椭圆 | 远距离仍可见，不丢失 |
+| 1/2 — 常规 | 圆心在屏幕内 | 单层椭圆 + clamp 半径（≤ 3×屏幕尺寸） | 无光晕，减少填充 |
+| 3 — 近地表 | 圆心在屏幕外，圆与屏幕相交 | **逐行扫描填充** | 飞船贴地视角的关键优化 |
+| 4 — 覆盖全屏 | 屏幕四角均在圆内 | `rect(0,0,w,h)` 单矩形 | 开销最低 |
+
+**LOD 3 详情（`drawGroundScanline`）：**
+
+当摄像机接近天体表面时（如飞船视角贴地飞行），天体圆心会偏离屏幕极远（百万像素级），同时视半径极大。此时若直接画椭圆，`Ellipse2D.Float` 的 float 精度在极端坐标下会产生斑马纹状撕裂伪影。
+
+解决方案：逐行扫描屏幕每一行像素，用 **double** 精度计算该行被圆覆盖的 x 范围，clamp 到屏幕宽度后以 `QUADS` 绘制。所有输出坐标均在屏幕范围内，彻底规避大数值 float 精度问题。扫描结果合并到单个 `beginShape(QUADS)` 调用，N 行屏幕仅产生一次 GPU/渲染管线提交。
+
+### 动态缩放单位
+
+HUD 缩放显示根据当前比例尺自动切换单位（`formatScale`）：
+
+| 范围 | 单位 | 场景 |
+|------|------|------|
+| ≥ 10⁶ km/px | AU/px | 太阳系尺度 |
+| ≥ 1 km/px | km/px | 行星尺度 |
+| ≥ 0.001 km/px | m/px | 飞船贴地尺度 |
+| < 0.001 km/px | mm/px | 极近距离 |
+
+避免在飞船视角下看到 `0.0000 AU/px` 的无意义读数。
 
 ## 模块说明
 
@@ -94,33 +127,35 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 
 ### SolarSystemNavigation.pde — 主程序
 
-- `setup()`: 全屏模式，初始化所有全局对象，加载存档
-- `draw()`: 每帧更新时间 → 太阳系 → 飞船 → 绘制星空/轨道/天体/飞船/HUD
-- 轨道力学工具函数：`solveKepler()`, `orbitalToCartesian()`, `cartesianToKepler()`, `orbitalVelocityToCartesian()`
-- `TimeManager` 内部类：模拟时间 + 9 级时间加速（1:1 到 1000 天/秒）
+- `settings()`: 全屏 JAVA2D 渲染模式
+- `setup()`: 初始化所有全局对象（摄像机/太阳系/飞船/HUD），每次启动从 simTime=0 开始
+- `draw()`: 每帧更新时间 → 太阳系 → 飞船 → 绘制星空/轨道/天体（LOD）/飞船/HUD
+- 轨道力学拆分至 `B_OrbitalMath.pde`：`solveKepler()`, `orbitalToCartesian()`, `cartesianToKepler()`, `orbitalVelocityToCartesian()`
+- 时间管理拆分至 `C_TimeManager.pde`：模拟时间 + 8 级时间加速（1:1 到 100 天/秒）
 - 交互：双击聚焦、拖拽平移、滚轮缩放、键盘快捷键
 
 ### LaunchController.pde — 状态流程
 
-- `startLaunch(name)`: 在地球向阳面地表创建飞船，摄像机拉近至地球尺度
+- `startLaunch()`: 启动发射倒计时，不改变飞船位置和摄像机视角
 - `initiateTransfer()`: 将地球相对运动转换为日心开普勒轨道，计算霍曼转移参数
-- `update()`: 同步飞船子状态（LAUNCHING/CIRCULARIZING/ORBIT）到控制器状态；监控转移完成
-- 时间加速在近地阶段上限锁为 3 档（10 分钟/秒），防止大时间步长导致积分误差
+- `update()`: 同步飞船子状态到控制器状态，监控转移完成
+- 时间加速仅在主动物理阶段（LAUNCHING/CIRCULARIZING）上限锁为 3 档（10 分钟/秒），防止大时间步长导致积分误差
 
 ### CameraController.pde — 摄像机
 
 两种视角模式：
-- **MAP_VIEW**: 俯视图，跟随聚焦天体/飞船，支持偏移和缩放
-- **SHIP_VIEW**: 以飞船为中心，其他天体相对显示
+- **MAP_VIEW**: 2D 正交俯视图，跟随聚焦天体/飞船，支持偏移和缩放
+- **SHIP_VIEW**: 以飞船为中心自动放大至飞船尺度，其他天体相对显示
 
-缓动插值（scale lerp 0.1, offset lerp 0.15）实现平滑过渡。
+缓动插值（scale lerp 0.1, offset lerp 0.15）实现平滑过渡。模式切换时保存/恢复各自的缩放状态。天体 LOD 层级由摄像机距离和 scale 决定。
 
 ### HUD.pde — 界面
 
-- 左上角：模拟时间、时间加速、缩放、快捷键提示
+- 左上角：模拟时间、时间加速、**动态缩放单位**（AU/km/m/mm 自动切换）、快捷键提示
 - 左下角：天体列表（点击选中，双击聚焦，Snap 按钮重置视角）
-- 右侧 Ship View 叠加层：速度表、引擎状态、轨道数据
+- 右侧 Ship View 叠加层（`D_ShipViewHUD.pde`）：速度表、引擎状态、轨道数据
 - 嵌入 `LaunchUI` 组件
+- `formatScale()`: 根据 `kmPerPixel` 值自动选择最佳显示单位
 
 ### LaunchUI.pde — 发射交互
 
@@ -137,8 +172,8 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 ## 发射流程详解
 
 ```
-1. 用户点击 [+ New Ship] → 弹出命名窗口
-2. 输入名称，点击 Launch → IDLE → LAUNCHING
+1. 用户按 L 键 → COUNTDOWN (10s)
+2. IGNITION (2s): 显示点火特效
 3. LAUNCHING (thrust=true):
    ├─ 0-10s:   纯垂直上升
    ├─ 10s-切断: 高度俯仰程序 (alt/420)^0.7 × 85°
@@ -148,7 +183,7 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 5. CIRCULARIZING: PEG固定目标反馈制导
    └─ 近地点 ≥ 419km → finalizeOrbitInsertion() → ORBIT
 6. ORBIT: 圆形LEO轨道，可选择目标行星
-7. 选择目标 + Transfer → 霍曼转移 → 到达目标行星轨道
+7. 选择目标 + T 键 → 霍曼转移 → 到达目标行星轨道
 ```
 
 ## 物理模型
@@ -203,8 +238,8 @@ r_peri = a(1-e)         (近地点)
 | `V` | 切换 Map View / Ship View |
 | `F` | 聚焦重置（第二次回到默认缩放） |
 | `O` | 切换轨道线显示 |
-| `L` | 切换标签显示 / 打开发射弹窗 |
-| `T` | 切换尾迹显示 / 执行转移 |
+| `L` | 发射飞船 / 切换标签显示 |
+| `T` | 执行转移 / 切换尾迹显示 |
 | `ESC` | 关闭弹窗 |
 | 滚轮 | 缩放 |
 | 拖拽 | 平移 |

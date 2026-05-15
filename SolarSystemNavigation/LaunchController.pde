@@ -17,35 +17,12 @@ class LaunchController {
   void startLaunch() {
     if (state != ShipState.IDLE || currentShip == null) return;
 
-    CelestialBody earth = getEarth();
-
-    // Launch pad on day side (toward Sun)
-    double launchAngle = Math.atan2(-earth.py, -earth.px);
-
-    currentShip.launchPadAngle = launchAngle;
-    currentShip.launchAltitude = 0.0;
-    currentShip.earthOrbitAngle = launchAngle;
-    currentShip.orbitStartTime = 0;
-    currentShip.earthRelPos = new double[]{
-      MissionPlanner.EARTH_RADIUS_KM * Math.cos(launchAngle),
-      MissionPlanner.EARTH_RADIUS_KM * Math.sin(launchAngle),
-      0};
-    currentShip.earthRelVel = new double[]{0, 0, 0};
-    currentShip.px = earth.px + currentShip.earthRelPos[0];
-    currentShip.py = earth.py + currentShip.earthRelPos[1];
-
     currentShip.state = ShipState.COUNTDOWN;
     currentShip.countdownStartTime = timeManager.simTime;
     currentShip.thrustActive = false;
 
     state = ShipState.COUNTDOWN;
     launchStartTime = timeManager.simTime;
-
-    camera.focusOn(currentShip);
-    camera.followShip(currentShip);
-    camera.targetScale = 0.4 * height / (2.0 * MissionPlanner.EARTH_RADIUS_KM);
-    camera.setViewMode(ViewMode.MAP_VIEW);
-    timeManager.timeWarp = timeManager.WARP_LEVELS[0];
   }
 
   CelestialBody getEarth() {
@@ -136,8 +113,9 @@ class LaunchController {
   void update() {
     if (currentShip == null) return;
 
-    // Cap time warp during Earth-relative phases to prevent excessive sub-steps
-    if (currentShip.earthRelative) {
+    // Cap time warp during active physics to prevent excessive sub-steps
+    if (currentShip.earthRelative &&
+        (state == ShipState.LAUNCHING || state == ShipState.CIRCULARIZING)) {
       if (timeManager.warpIndex > 3) {
         timeManager.warpIndex = 3;
         timeManager.timeWarp = timeManager.WARP_LEVELS[3];

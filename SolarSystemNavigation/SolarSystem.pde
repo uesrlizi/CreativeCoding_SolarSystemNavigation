@@ -13,7 +13,7 @@ class SolarSystem {
   }
 
   void initSolarSystem() {
-    sun = new CelestialBody("Sun", 0, 0, 696340, color(255, 220, 50));
+    sun = new CelestialBody("Sun", 0, 0, 696340, color(255, 230, 80));
 
     planets.add(new CelestialBody("Mercury",  0.38710, 0.20563,  7.005,  48.331,  29.124, 174.796,    87.969,  2439.7, color(180, 160, 140)));
     planets.add(new CelestialBody("Venus",    0.72333, 0.00677,  3.395,  76.680,  54.884,  50.115,   224.701,  6051.8, color(230, 200, 130)));
@@ -33,24 +33,45 @@ class SolarSystem {
 
   void drawSun(CameraController cam) {
     double[] sp = cam.worldToScreen(0, 0);
-    float sx = (float)sp[0], sy = (float)sp[1];
+    double sx = sp[0], sy = sp[1];
     double sR = sun.radius * cam.scale;
-    if (sR > 5000) sR = 5000;
+
     if (Double.isNaN(sR) || Double.isInfinite(sR)) return;
-    float sunR = max((float)sR, 4);
 
-    if (sx + sunR < -50 || sx - sunR > width + 50 ||
-        sy + sunR < -50 || sy - sunR > height + 50) return;
+    boolean centerOnScreen = sx >= 0 && sx <= width && sy >= 0 && sy <= height;
 
-    fill(255, 230, 80);
+    // Cull — use unclamped radius
+    if (sx + sR < -10 || sx - sR > width + 10 ||
+        sy + sR < -10 || sy - sR > height + 10) return;
+
+    // LOD 4 — sun circle contains all four screen corners
+    double farCornerSq = Math.max(
+      Math.max(sx*sx + sy*sy, (sx-width)*(sx-width) + sy*sy),
+      Math.max(sx*sx + (sy-height)*(sy-height), (sx-width)*(sx-width) + (sy-height)*(sy-height))
+    );
+
     noStroke();
-    ellipse(sx, sy, sunR * 2, sunR * 2);
+
+    if (farCornerSq <= sR * sR) {
+      fill(sun.col);
+      rect(0, 0, width, height);
+    } else if (centerOnScreen) {
+      double maxR = Math.max(width, height) * 3.0;
+      double drawR = Math.min(sR, maxR);
+      if (drawR < 2) drawR = 2;
+      fill(sun.col);
+      ellipse((float)sx, (float)sy, (float)(drawR * 2), (float)(drawR * 2));
+    } else {
+      fill(sun.col);
+      ellipse((float)sx, (float)sy, (float)(sR * 2), (float)(sR * 2));
+    }
 
     if (showLabels) {
       fill(255, 230, 100, 220);
       textSize(18 * uiScale);
       textAlign(LEFT, CENTER);
-      text("Sun", sx + sunR + 5, sy);
+      double labelR = centerOnScreen ? Math.min(sR, Math.max(width, height) * 3.0) : sR;
+      text("Sun", (float)(sx + labelR + 5), (float)sy);
     }
   }
 

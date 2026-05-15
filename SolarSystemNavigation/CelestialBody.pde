@@ -50,30 +50,79 @@ class CelestialBody {
 
   void draw(CameraController cam) {
     double[] sp = cam.worldToScreen(px, py);
-
     double screenR = radius * cam.scale;
-    if (screenR > 5000) screenR = 5000;  // clamp to avoid overflow / huge ellipses
+
     if (Double.isNaN(screenR) || Double.isInfinite(screenR)) return;
-    int drawR = max((int)screenR, 2);
-    if (sp[0] + drawR < -50 || sp[0] - drawR > width + 50 ||
-        sp[1] + drawR < -50 || sp[1] - drawR > height + 50) return;
+
+    double cx = sp[0], cy = sp[1];
+    boolean centerOnScreen = cx >= 0 && cx <= width && cy >= 0 && cy <= height;
+
+    // Cull — use unclamped radius so near-surface bodies aren't lost
+    if (cx + screenR < -10 || cx - screenR > width + 10 ||
+        cy + screenR < -10 || cy - screenR > height + 10) return;
+
+    // LOD 4 — body circle contains all four screen corners
+    double farCornerSq = 0;
+    farCornerSq = Math.max(farCornerSq, cx*cx + cy*cy);
+    farCornerSq = Math.max(farCornerSq, (cx-width)*(cx-width) + cy*cy);
+    farCornerSq = Math.max(farCornerSq, cx*cx + (cy-height)*(cy-height));
+    farCornerSq = Math.max(farCornerSq, (cx-width)*(cx-width) + (cy-height)*(cy-height));
+    boolean coversScreen = farCornerSq <= screenR * screenR;
 
     noStroke();
-    for (int g = 3; g >= 1; g--) {
-      fill(red(col), green(col), blue(col), 30 / g);
-      ellipse((float)sp[0], (float)sp[1], drawR * 2 + g * 4, drawR * 2 + g * 4);
+
+    if (coversScreen) {
+      // LOD 4 — body fills every pixel → single rect
+      fill(col);
+      rect(0, 0, width, height);
+    } else if (centerOnScreen) {
+      // LOD 1/2 — centre on screen; clamp radius, min 2 px
+      double maxR = Math.max(width, height) * 3.0;
+      double drawR = Math.min(screenR, maxR);
+      if (drawR < 2) drawR = 2;
+      fill(col);
+      ellipse((float)cx, (float)cy, (float)(drawR * 2), (float)(drawR * 2));
+    } else {
+      // LOD 3 — near-surface: centre off screen, render visible arc
+      // Scanline fill avoids float-precision artifacts of huge ellipses
+      drawGroundScanline(cx, cy, screenR);
     }
-
-    fill(col);
-    noStroke();
-    ellipse((float)sp[0], (float)sp[1], drawR * 2, drawR * 2);
 
     if (showLabels) {
       fill(200, 200, 200, 200);
       textSize(17 * uiScale);
       textAlign(LEFT, CENTER);
-      text(name, (float)sp[0] + drawR + 5, (float)sp[1]);
+      float labelR = centerOnScreen ? (float)Math.min(screenR, Math.max(width, height) * 3.0) : (float)screenR;
+      if (labelR < 2) labelR = 2;
+      float labelX = (float)(cx + labelR + 5);
+      float labelY = (float)cy;
+      text(name, labelX, labelY);
     }
+  }
+
+  void drawGroundScanline(double cx, double cy, double r) {
+    // Fill visible portion of body circle on screen, row by row.
+    // All arithmetic in double; output coords clamped to screen bounds.
+    noStroke();
+    fill(col);
+    double rSq = r * r;
+    beginShape(QUADS);
+    for (int py = 0; py < height; py++) {
+      double dy = py - cy;
+      double dxSq = rSq - dy * dy;
+      if (dxSq <= 0) continue;
+      double dx = Math.sqrt(dxSq);
+      float sx = (float)Math.max(0.0, cx - dx);
+      float ex = (float)Math.min((double)width, cx + dx);
+      if (sx < ex) {
+        float ny = py + 1.0f;
+        vertex(sx, py);
+        vertex(ex, py);
+        vertex(ex, ny);
+        vertex(sx, ny);
+      }
+    }
+    endShape();
   }
 
   double[] getPosition() {

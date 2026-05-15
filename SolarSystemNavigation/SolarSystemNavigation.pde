@@ -27,28 +27,34 @@ static final double FOCUS_HIT_RADIUS = 60;
 // ---------- Starfield Background ----------
 int[] starSeed;
 
+// ---------- Frame Timing ----------
+float deltaTime = 1.0 / 60.0;
+int lastFrameMillis;
+
 // ---------- Global Objects ----------
 CameraController camera;
 SolarSystem solarSystem;
 HUD hud;
 TimeManager timeManager;
-SaveDataManager saveManager;
 LaunchController launchController;
 SpacecraftRenderer spacecraftRenderer;
 float uiScale;
 
 // ============================================================
-//  setup / draw
+//  settings / setup / draw
 // ============================================================
+void settings() {
+  fullScreen();
+}
+
 void setup() {
   // Clear debug log
   try {
     new java.io.PrintWriter(sketchPath("debug_log.txt")).close();
   } catch (Exception e) { }
 
-  fullScreen();
-  pixelDensity(displayDensity());
   uiScale = height / 1080.0;
+  lastFrameMillis = millis();
   textFont(createFont("Segoe UI Semibold", 48));
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
@@ -58,18 +64,8 @@ void setup() {
     starSeed[i] = (int)random(10000);
   }
 
-  saveManager = new SaveDataManager();
   timeManager = new TimeManager();
   launchController = new LaunchController();
-
-  SaveData saved = saveManager.load();
-  if (saved != null) {
-    timeManager.simTime = saved.simTime;
-    timeManager.warpIndex = saved.warpIndex;
-    timeManager.timeWarp = saved.timeWarp;
-  }
-
-  timeManager.timeWarp = 0;
 
   solarSystem = new SolarSystem();
   solarSystem.initialize();
@@ -103,12 +99,6 @@ void setup() {
   hud = new HUD();
 
   spacecraftRenderer = new SpacecraftRenderer();
-
-  Runtime.getRuntime().addShutdownHook(new Thread() {
-    public void run() {
-      saveCurrentState();
-    }
-  });
 }
 
 // DEBUG: trace freeze location — writes to sketch folder / debug_log.txt
@@ -125,7 +115,13 @@ void dbgLog(String msg) {
 void draw() {
   try {
     background(5, 5, 15);
-    timeManager.update();
+
+    int now = millis();
+    deltaTime = (now - lastFrameMillis) / 1000.0;
+    if (deltaTime <= 0 || deltaTime > 0.5) deltaTime = 1.0 / 60.0;
+    lastFrameMillis = now;
+
+    timeManager.update(deltaTime);
     launchController.update();
     solarSystem.update(timeManager.simTime);
 
@@ -133,7 +129,7 @@ void draw() {
       s.update(timeManager.simTime);
     }
 
-    camera.update();
+    camera.update(deltaTime);
     drawStars();
     drawOrbits();
     solarSystem.drawSun(camera);
@@ -434,10 +430,3 @@ void keyPressed() {
 void keyTyped() {
 }
 
-void saveCurrentState() {
-  double saveTimeWarp = timeManager.timeWarp;
-  if (saveTimeWarp == 0) {
-    saveTimeWarp = timeManager.WARP_LEVELS[timeManager.warpIndex];
-  }
-  saveManager.save(timeManager.simTime, saveTimeWarp, timeManager.warpIndex);
-}

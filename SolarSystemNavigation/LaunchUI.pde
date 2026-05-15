@@ -51,7 +51,7 @@ class LaunchUI {
         text("T - " + sec, panelX + panelW / 2, panelY + panelH / 2);
       }
     } else if (st == ShipState.IGNITION) {
-      float pulse = (float)(Math.sin(frameCount * 0.3) * 0.3 + 0.7);
+      float pulse = (float)(Math.sin(millis() / 1000.0 * 18.0) * 0.3 + 0.7);
       fill(255, 100 * pulse, 20 * pulse);
       textSize(22 * uiScale);
       textAlign(CENTER, CENTER);
