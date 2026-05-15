@@ -152,6 +152,7 @@ void draw() {
       spacecraftRenderer.draw(s, camera);
     }
 
+    hud.update();
     hud.draw(camera, timeManager.simTime, timeManager.timeWarp,
              timeManager.WARP_LEVELS, timeManager.WARP_LABELS,
              timeManager.warpIndex, solarSystem.planets, solarSystem.sun);
@@ -336,10 +337,11 @@ double[] sphereIntersect(double[] P, double[] Q, double R) {
 //  Controls
 // ============================================================
 void mousePressed() {
-  hud.launchUI.handleClick(mouseX, mouseY);
-  if (hud.handleClick(mouseX, mouseY, solarSystem.sun, solarSystem.planets, camera)) {
+  // HUD 面板优先处理
+  if (hud.handleMousePressed(mouseX, mouseY, camera, solarSystem.sun, solarSystem.planets)) {
     return;
   }
+  // HUD 未消费 -> 地图双击/相机拖拽
   long now = millis();
   if (now - lastClickTime < DOUBLE_CLICK_MS &&
       dist(mouseX, mouseY, lastClickX, lastClickY) < DOUBLE_CLICK_PX) {
