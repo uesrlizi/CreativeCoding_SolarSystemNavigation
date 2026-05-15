@@ -13,7 +13,7 @@ class ShipStatusPanel {
   ShipStatusPanel() {
     float scale = uiScale;
     panelW = 275 * scale;
-    panelH = 310 * scale;
+    panelH = 360 * scale;
     panelX = width - panelW - 10 * scale;
     panelY = height - panelH - 10 * scale;
     panelMargin = 10 * scale;
@@ -327,6 +327,51 @@ class ShipStatusPanel {
         }
         break;
 
+      case WAITING_FOR_WINDOW:
+        fill(150, 200, 255);
+        textSize(15 * scale);
+        textAlign(LEFT, TOP);
+        text("PHASE: WAITING FOR WINDOW", panelX + panelMargin, y);
+        // 显示倒计时
+        TransferParameters mission = ctrl.getCurrentMission();
+        if (mission != null) {
+          double daysToWindow = (mission.launchDate - timeManager.simTime) / DAY_S;
+          fill(180);
+          textSize(12 * scale);
+          if (daysToWindow > 0) {
+            text(String.format("Time to TMI: %.1f days", daysToWindow),
+                 panelX + panelMargin, y + 22);
+            // 显示 ΔV 预算
+            text(String.format("TMI ΔV: %.2f km/s", mission.tmiDeltaV),
+                 panelX + panelMargin, y + 40);
+            text(String.format("TOI ΔV: %.2f km/s", mission.toiDeltaV),
+                 panelX + panelMargin, y + 58);
+          } else {
+            text("TMI Burn Ready!", panelX + panelMargin, y + 22);
+          }
+        }
+        break;
+
+      case TMI_BURN:
+        fill(255, 150, 50);
+        textSize(15 * scale);
+        textAlign(LEFT, TOP);
+        text("PHASE: TMI BURN", panelX + panelMargin, y);
+        // 燃烧进度
+        fill(180);
+        textSize(12 * scale);
+        double tmiProgress = ctrl.burnDeltaVApplied / ctrl.burnDeltaVNeeded;
+        text(String.format("TMI: %d%% complete", (int)(tmiProgress * 100)),
+             panelX + panelMargin, y + 22);
+        // 进度条
+        float tmiBarX = panelX + panelMargin;
+        float tmiBarY = y + 42;
+        float tmiBarW = panelW - 2 * panelMargin;
+        float tmiBarH = 12 * scale;
+        drawProgressBar(tmiBarX, tmiBarY, tmiBarW, tmiBarH, (float)tmiProgress,
+                       String.format("%.2f / %.2f km/s", ctrl.burnDeltaVApplied, ctrl.burnDeltaVNeeded));
+        break;
+
       case TRANSFER:
         fill(100, 150, 255);
         textSize(15 * scale);
@@ -338,8 +383,21 @@ class ShipStatusPanel {
         textSize(12 * scale);
         text(String.format("Sun distance: %.3f AU", auDist),
              panelX + panelMargin, y + 22);
-        // 转移进度
-        if (ctrl.transferOrbitParams != null) {
+        // 转移进度（使用新的 TransferParameters）
+        TransferParameters transMission = ctrl.getCurrentMission();
+        if (transMission != null) {
+          double elapsed = timeManager.simTime - ctrl.transferStartTime;
+          double total = transMission.transferTime;
+          double progress = Math.min(1.0, elapsed / Math.max(1.0, total));
+          float tBarX = panelX + panelMargin;
+          float tBarY = y + 42;
+          float tBarW = panelW - 2 * panelMargin;
+          float tBarH = 10 * scale;
+          int daysLeft = (int)Math.ceil((total - elapsed) / DAY_S);
+          drawProgressBar(tBarX, tBarY, tBarW, tBarH, (float)progress,
+                         "ETA: " + daysLeft + " days");
+        } else if (ctrl.transferOrbitParams != null) {
+          // 向后兼容
           double elapsed = timeManager.simTime - ctrl.transferStartTime;
           double total = ctrl.planner.calculateTransferTime(ctrl.transferOrbitParams[0], GM_SUN);
           double progress = Math.min(1.0, elapsed / Math.max(1.0, total));
@@ -349,6 +407,52 @@ class ShipStatusPanel {
           float tBarH = 10 * scale;
           drawProgressBar(tBarX, tBarY, tBarW, tBarH, (float)progress,
                          "Transfer: " + (int)(progress * 100) + "%");
+        }
+        break;
+
+      case APPROACHING_TARGET:
+        fill(100, 180, 255);
+        textSize(15 * scale);
+        textAlign(LEFT, TOP);
+        text("PHASE: APPROACHING TARGET", panelX + panelMargin, y);
+        // 接近距离
+        fill(180);
+        textSize(12 * scale);
+        double approachDist = ctrl.closestApproachDistance / 1e6;
+        text(String.format("Distance: %.2f M km", approachDist),
+             panelX + panelMargin, y + 22);
+        break;
+
+      case TOI_BURN:
+        fill(255, 150, 50);
+        textSize(15 * scale);
+        textAlign(LEFT, TOP);
+        text("PHASE: TOI BURN", panelX + panelMargin, y);
+        // 燃烧进度
+        fill(180);
+        textSize(12 * scale);
+        double toiProgress = ctrl.burnDeltaVApplied / ctrl.burnDeltaVNeeded;
+        text(String.format("TOI: %d%% complete", (int)(toiProgress * 100)),
+             panelX + panelMargin, y + 22);
+        // 进度条
+        float toiBarX = panelX + panelMargin;
+        float toiBarY = y + 42;
+        float toiBarW = panelW - 2 * panelMargin;
+        float toiBarH = 12 * scale;
+        drawProgressBar(toiBarX, toiBarY, toiBarW, toiBarH, (float)toiProgress,
+                       String.format("%.2f / %.2f km/s", ctrl.burnDeltaVApplied, ctrl.burnDeltaVNeeded));
+        break;
+
+      case CAPTURED:
+        fill(100, 200, 100);
+        textSize(15 * scale);
+        textAlign(LEFT, TOP);
+        text("PHASE: CAPTURED", panelX + panelMargin, y);
+        fill(180);
+        textSize(12 * scale);
+        if (ctrl.getSelectedTarget() != null) {
+          text("Orbiting " + ctrl.getSelectedTarget().name,
+               panelX + panelMargin, y + 22);
         }
         break;
     }

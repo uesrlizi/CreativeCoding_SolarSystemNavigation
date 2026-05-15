@@ -104,3 +104,32 @@ double[] cartesianToKepler(double[] r, double[] v, double GM) {
   result[5] = Math.toDegrees(nu);
   return result;
 }
+
+// 获取某时刻天体的真近点角
+double getTrueAnomalyAtTime(CelestialBody body, double t) {
+  double n = 2.0 * PI / body.period;
+  double M = (body.M0 + n * t) % (2.0 * PI);
+  if (M < 0) M += 2.0 * PI;
+  double E = solveKepler(M, body.e);
+  return trueAnomaly(E, body.e);
+}
+
+// 获取某时刻天体的位置
+double[] getPositionAtTime(CelestialBody body, double t) {
+  double n = 2.0 * PI / body.period;
+  double M = (body.M0 + n * t) % (2.0 * PI);
+  if (M < 0) M += 2.0 * PI;
+  double E = solveKepler(M, body.e);
+  double nu = trueAnomaly(E, body.e);
+  return orbitalToCartesian(body.a, body.e, body.i, body.omega, body.w, nu);
+}
+
+// 获取某时刻天体的速度
+double[] getVelocityAtTime(CelestialBody body, double t) {
+  double n = 2.0 * PI / body.period;
+  double M = (body.M0 + n * t) % (2.0 * PI);
+  if (M < 0) M += 2.0 * PI;
+  double E = solveKepler(M, body.e);
+  double nu = trueAnomaly(E, body.e);
+  return orbitalVelocityToCartesian(body.a, body.e, body.i, body.omega, body.w, nu, GM_SUN);
+}

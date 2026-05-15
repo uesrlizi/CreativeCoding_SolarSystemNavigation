@@ -1,0 +1,8 @@
+982: CIRC START: state->CIRCULARIZING, burnDuration=258.4471601455402 timeToApo=128.773403612729
+1237: CIRC DONE: finalizing orbit insertion
+1237: finalizeOrbitInsertion start
+1237: finalizeOrbitInsertion done, state=ORBIT
+2560: Mission planned: Launch at simTime=3.5714057070061766E7 (+413.33334 days)
+5145: TMI burn started: ¦¤V=2.4953907 km/s, duration=99.81562s
+5146: TMI complete: Transfer orbit a=0.861665 AU
+7708: Starting approach to Venus
