@@ -198,7 +198,7 @@ class CelestialBodyRenderer {
     translate(cx, cy);
     // 先应用轴倾角，再应用自转
     rotate(body.axialTilt);
-    rotate(body.rotation * 0.05f);
+    rotate(body.rotation);
 
     for (int i = -bands; i <= bands; i++) {
       float yCenter = i * r / bands;
@@ -270,7 +270,7 @@ class CelestialBodyRenderer {
     pushMatrix();
     translate(cx, cy);
     rotate(body.axialTilt);
-    rotate(body.rotation * 0.05f);
+    rotate(body.rotation);
     float sx = r * 0.28f;
     float sy = r * 0.32f;
     float sr = r * 0.14f;
@@ -479,7 +479,7 @@ class CelestialBodyRenderer {
     pushMatrix();
     translate(cx, cy);
     rotate(body.axialTilt);
-    rotate(body.rotation * 0.1f);
+    rotate(body.rotation);
     int bands = 12;
 
     for (int i = -bands; i <= bands; i++) {
