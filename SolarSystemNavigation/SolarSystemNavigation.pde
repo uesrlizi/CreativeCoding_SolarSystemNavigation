@@ -75,7 +75,7 @@ void setup() {
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
 
-  starSeed = new int[600];
+  starSeed = new int[1500];
   for (int i = 0; i < starSeed.length; i++) {
     starSeed[i] = (int)random(10000);
   }
@@ -146,6 +146,7 @@ void draw() {
     timeManager.update(deltaTime);
     launchController.update();
     solarSystem.update(timeManager.simTime);
+    solarSystem.updateRenderer(deltaTime);
 
     for (Spacecraft s : solarSystem.ships) {
       s.update(timeManager.simTime);
@@ -181,13 +182,56 @@ void draw() {
 // ============================================================
 void drawStars() {
   noStroke();
+  // Draw milky way band
+  drawMilkyWay();
+  // Draw stars
   for (int i = 0; i < starSeed.length; i++) {
     int sx = (starSeed[i] * 7 + 13) % width;
     int sy = (starSeed[i] * 11 + 29) % height;
-    int brightness = 80 + (starSeed[i] * 3) % 120;
+    int baseBright = 80 + (starSeed[i] * 3) % 120;
+    float twinkle = 0.7f + 0.3f * sin(millis() * 0.003f + starSeed[i]);
+    int brightness = (int)(baseBright * twinkle);
     int sz = (starSeed[i] % 3 == 0) ? 2 : 1;
-    fill(brightness, brightness, brightness + 20);
+    // Color variation
+    int r = brightness;
+    int g = brightness;
+    int b = brightness + (starSeed[i] % 40);
+    if (starSeed[i] % 17 == 0) {
+      r = brightness + 30;
+      g = brightness - 10;
+      b = brightness - 20;
+    } else if (starSeed[i] % 13 == 0) {
+      r = brightness - 10;
+      g = brightness;
+      b = brightness + 30;
+    }
+    fill(r, g, b);
     ellipse(sx, sy, sz, sz);
+  }
+}
+
+void drawMilkyWay() {
+  float centerX = width * 0.5f;
+  float centerY = height * 0.6f;
+  float bandWidth = width * 0.8f;
+  float bandHeight = height * 0.35f;
+  noStroke();
+  // Multiple layers for depth
+  for (int layer = 0; layer < 5; layer++) {
+    float alpha = 8 - layer * 1.5f;
+    for (int i = 0; i < 200; i++) {
+      float angle = random(TWO_PI);
+      float dist = random(1);
+      dist = pow(dist, 0.5f); // Concentrate towards center
+      float x = centerX + cos(angle) * dist * bandWidth * 0.5f;
+      float y = centerY + sin(angle) * dist * bandHeight * 0.5f;
+      float size = random(1, 4);
+      float n = noise(x * 0.01f, y * 0.01f, layer * 0.5f);
+      if (n > 0.4f) {
+        fill(80, 90, 120, (int)(alpha * n));
+        ellipse(x, y, size, size);
+      }
+    }
   }
 }
 

@@ -1,3 +1,5 @@
+enum BodyType { SUN, TERRESTRIAL, GAS_GIANT, ICE_GIANT }
+
 class CelestialBody {
   String name;
   double a;
@@ -13,8 +15,29 @@ class CelestialBody {
   double px, py, pz;
   double currentNu;
 
+  // Visual properties
+  BodyType type;
+  float rotation;           // current rotation angle
+  float rotationRate;       // rotation speed
+  float axialTilt;          // axial tilt in radians
+
+  // Ring system
+  boolean hasRing;
+  float ringInnerRadius;
+  float ringOuterRadius;
+  color ringColor;
+  float ringTilt;
+
+  // Atmosphere
+  boolean hasAtmosphere;
+  color atmosphereColor;
+  float atmosphereThickness;
+
+  // For rendering access
+  CelestialBodyRenderer renderer;
+
   CelestialBody(String name, double a_au, double e, double i,
-    double omega, double w, double M0, double T_days, double R_km, color col) {
+    double omega, double w, double M0, double T_days, double R_km, color col, BodyType type) {
     this.name = name;
     this.a = a_au * AU_KM;
     this.e = e;
@@ -25,9 +48,11 @@ class CelestialBody {
     this.period = T_days * DAY_S;
     this.radius = R_km;
     this.col = col;
+    this.type = type;
+    initVisualProperties();
   }
 
-  CelestialBody(String name, double x, double y, double R_km, color col) {
+  CelestialBody(String name, double x, double y, double R_km, color col, BodyType type) {
     this.name = name;
     this.a = 0; this.e = 0; this.i = 0;
     this.omega = 0; this.w = 0; this.M0 = 0;
@@ -35,6 +60,26 @@ class CelestialBody {
     this.radius = R_km;
     this.col = col;
     this.px = x; this.py = y; this.pz = 0;
+    this.type = type;
+    initVisualProperties();
+  }
+
+  void initVisualProperties() {
+    rotation = random(TWO_PI);
+    rotationRate = 0.005f;
+    axialTilt = 0;
+    hasRing = false;
+    ringInnerRadius = 1.5f;
+    ringOuterRadius = 2.5f;
+    ringColor = color(200, 180, 140, 150);
+    ringTilt = 0.4f;
+    hasAtmosphere = false;
+    atmosphereColor = col;
+    atmosphereThickness = 0.1f;
+  }
+
+  void setRenderer(CelestialBodyRenderer r) {
+    this.renderer = r;
   }
 
   void update(double t) {
@@ -46,6 +91,7 @@ class CelestialBody {
     this.currentNu = nu;
     double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
     px = pos[0]; py = pos[1]; pz = pos[2];
+    rotation += rotationRate;
   }
 
   void draw(CameraController cam) {
@@ -71,21 +117,39 @@ class CelestialBody {
 
     noStroke();
 
-    if (coversScreen) {
-      // LOD 4 — body fills every pixel → single rect
-      fill(col);
-      rect(0, 0, width, height);
-    } else if (centerOnScreen) {
-      // LOD 1/2 — centre on screen; clamp radius, min 2 px
-      double maxR = Math.max(width, height) * 3.0;
-      double drawR = Math.min(screenR, maxR);
-      if (drawR < 2) drawR = 2;
-      fill(col);
-      ellipse((float)cx, (float)cy, (float)(drawR * 2), (float)(drawR * 2));
+    if (renderer != null) {
+      if (coversScreen) {
+        renderer.drawLOD4(this, cx, cy, screenR);
+      } else if (centerOnScreen) {
+        double maxR = Math.max(width, height) * 3.0;
+        double drawR = Math.min(screenR, maxR);
+        if (drawR < 2) drawR = 2;
+        if (drawR < 30) {
+          renderer.drawLOD0(this, cx, cy, drawR);
+        } else if (drawR < 100) {
+          renderer.drawLOD1(this, cx, cy, drawR);
+        } else if (drawR < 300) {
+          renderer.drawLOD2(this, cx, cy, drawR);
+        } else {
+          renderer.drawLOD3(this, cx, cy, drawR);
+        }
+      } else {
+        drawGroundScanline(cx, cy, screenR);
+      }
     } else {
-      // LOD 3 — near-surface: centre off screen, render visible arc
-      // Scanline fill avoids float-precision artifacts of huge ellipses
-      drawGroundScanline(cx, cy, screenR);
+      // Fallback simple rendering
+      if (coversScreen) {
+        fill(col);
+        rect(0, 0, width, height);
+      } else if (centerOnScreen) {
+        double maxR = Math.max(width, height) * 3.0;
+        double drawR = Math.min(screenR, maxR);
+        if (drawR < 2) drawR = 2;
+        fill(col);
+        ellipse((float)cx, (float)cy, (float)(drawR * 2), (float)(drawR * 2));
+      } else {
+        drawGroundScanline(cx, cy, screenR);
+      }
     }
 
     if (showLabels) {
