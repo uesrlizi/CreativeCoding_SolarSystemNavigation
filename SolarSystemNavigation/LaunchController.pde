@@ -171,6 +171,9 @@ class LaunchController {
     double timeToWindow = currentMission.launchDate - timeManager.simTime;
 
     if (timeToWindow <= 0) {
+      // 到达发射窗口时重新计算任务参数，确保使用当前地球位置
+      CelestialBody earth = getEarth();
+      currentMission = planner.computeTransferMission(earth, selectedTarget, timeManager.simTime);
       startTMIBurn();
     }
   }
@@ -220,36 +223,80 @@ class LaunchController {
     currentShip.thrustActive = false;
 
     CelestialBody earth = getEarth();
-    double r1 = earth.a;
-    double r2 = selectedTarget.a;
-    double a_transfer = (r1 + r2) / 2.0;
-    double e_transfer = Math.abs(r2 - r1) / (r2 + r1);
-    double period = 2 * PI * Math.sqrt(Math.pow(a_transfer, 3) / GM_SUN);
+    double t = timeManager.simTime;
 
-    transferStartTime = timeManager.simTime;
+    // 1. 获取地球当前的日心位置和速度
+    double[] earthPos = getPositionAtTime(earth, t);
+    double[] earthVel = getVelocityAtTime(earth, t);
 
-    double w_transfer = Math.atan2(earth.py, earth.px);
-    double n_transfer = 2 * PI / period;
-    double M0_transfer = -n_transfer * transferStartTime;
+    // 2. 计算飞船当前的日心位置和速度 = 地球位置 + 飞船相对位置
+    double[] helioPos = new double[3];
+    double[] helioVel = new double[3];
+    helioPos[0] = earthPos[0] + currentShip.earthRelPos[0];
+    helioPos[1] = earthPos[1] + currentShip.earthRelPos[1];
+    helioPos[2] = 0;
+    helioVel[0] = earthVel[0] + currentShip.earthRelVel[0];
+    helioVel[1] = earthVel[1] + currentShip.earthRelVel[1];
+    helioVel[2] = 0;
 
+    // 3. 从日心笛卡尔坐标转换为开普勒轨道元素
+    double[] kepler = cartesianToKepler(helioPos, helioVel, GM_SUN);
+
+    // 4. 切换到日心坐标系
     currentShip.earthRelative = false;
     currentShip.earthRef = null;
 
-    currentShip.a = a_transfer;
-    currentShip.e = e_transfer;
-    currentShip.i = 0;
-    currentShip.omega = 0;
-    currentShip.w = Math.toDegrees(w_transfer);
-    currentShip.M0 = M0_transfer;
-    currentShip.period = period;
+    // 5. 设置轨道元素（注意 cartesianToKepler 返回的 w 是角度，M0 需要计算）
+    currentShip.a = kepler[0];
+    currentShip.e = kepler[1];
+    currentShip.i = kepler[2];
+    currentShip.omega = kepler[3];
+    currentShip.w = kepler[4]; // 已经是角度
 
+    // 6. 计算平近点角 M0: M = M0 + n*t = nu - E + e*sinE（反向计算）
+    double a_km = currentShip.a;
+    double n;
+    if (a_km > 0) {
+      n = 2 * PI / Math.sqrt(Math.pow(a_km, 3) / GM_SUN);
+    } else {
+      // 对于双曲线轨道，使用伪周期
+      n = 2 * PI / Math.sqrt(Math.pow(-a_km, 3) / GM_SUN);
+    }
+
+    double nu_rad = Math.toRadians(kepler[5]); // true anomaly in radians
+    double E, M;
+
+    if (currentShip.e < 1.0) {
+      // 椭圆轨道：使用标准的偏近点角计算
+      E = 2 * Math.atan2(Math.sqrt(1 - currentShip.e) * Math.sin(nu_rad / 2),
+                         Math.sqrt(1 + currentShip.e) * Math.cos(nu_rad / 2));
+      M = E - currentShip.e * Math.sin(E);
+    } else {
+      // 双曲线轨道：使用双曲偏近点角
+      double coshF = (currentShip.e + Math.cos(nu_rad)) / (1 + currentShip.e * Math.cos(nu_rad));
+      E = Math.log(coshF + Math.sqrt(coshF * coshF - 1));
+      if (Math.sin(nu_rad) < 0) E = -E;
+      M = currentShip.e * Math.sinh(E) - E;
+    }
+
+    currentShip.M0 = M - n * t; // 这样在时间 t 时 M = M0 + n*t 成立
+    currentShip.period = (currentShip.e < 1.0) ? (2 * PI / n) : Double.MAX_VALUE;
+
+    // 7. 直接设置当前的日心位置，确保轨道传播从正确位置开始
+    currentShip.px = helioPos[0];
+    currentShip.py = helioPos[1];
+    currentShip.pz = helioPos[2];
+    currentShip.currentNu = nu_rad;
+
+    // 8. 更新状态机
+    transferStartTime = t;
     state = ShipState.TRANSFER;
     currentShip.state = ShipState.TRANSFER;
 
     // Backward compatibility: set the transferOrbitParams
-    transferOrbitParams = new double[]{a_transfer / 1000.0, e_transfer};
+    transferOrbitParams = new double[]{currentShip.a / 1000.0, currentShip.e};
 
-    dbgLog("TMI complete: Transfer orbit a=" + (float)(currentShip.a / AU_KM) + " AU");
+    dbgLog("TMI complete: Transfer orbit a=" + (float)(currentShip.a / AU_KM) + " AU, e=" + (float)currentShip.e);
   }
 
   // ==============================================================
@@ -295,21 +342,28 @@ class LaunchController {
 
     double soiRadius = planner.calculateSOI(approachTarget);
 
+    // 检查是否已经通过SOI切换进入了目标天体参考系
+    if (currentShip.earthRelative && currentShip.earthRef == approachTarget) {
+      // 已经在目标SOI内，开始TOI燃烧
+      startTOIBurn();
+      return;
+    }
+
     if (!inCriticalPhase) {
-      double distTo2xSOI = Math.max(0, distance - soiRadius * 2.0);
-      double estimatedSimTimeToSOI = distTo2xSOI / 20.0;
+      // 使用1.5xSOI作为临界边界
+      double distTo15xSOI = Math.max(0, distance - soiRadius * 1.5);
+      double estimatedSimTimeToSOI = distTo15xSOI / 20.0;
 
       if (estimatedSimTimeToSOI < 30.0) {
         inCriticalPhase = true;
         timeManager.setMaxWarpIndex(0);
         timeManager.forceSetWarpIndex(0);
-        dbgLog("TOI approaching: TIME LOCKED to 1x");
+        dbgLog("Approaching " + approachTarget.name + " SOI: TIME LOCKED to 1x");
       }
     }
 
-    if (distance <= soiRadius * 2.0) {
-      startTOIBurn();
-    }
+    // 在SOI边界时，等待Spacecraft的自动SOI切换
+    // 这里不强制切换，让checkSOISwitch处理
   }
 
   // ==============================================================
@@ -320,43 +374,33 @@ class LaunchController {
     state = ShipState.TOI_BURN;
     currentShip.state = ShipState.TOI_BURN;
 
-    // Switch to target-relative coordinates
-    currentShip.earthRelative = true;
-    currentShip.earthRef = approachTarget;
+    double t = timeManager.simTime;
 
-    // Initialize position relative to target
-    double dx = currentShip.px - approachTarget.px;
-    double dy = currentShip.py - approachTarget.py;
-    currentShip.earthRelPos = new double[]{dx, dy, 0};
+    // 确保已经在目标相对坐标系中（SOI切换应该已经处理了）
+    if (!currentShip.earthRelative || currentShip.earthRef != approachTarget) {
+      // 备用切换逻辑
+      currentShip.earthRelative = true;
+      currentShip.earthRef = approachTarget;
 
-    // Initialize velocity relative to target (estimate)
-    // Get target's heliocentric velocity
-    double n_target = 2 * PI / approachTarget.period;
-    double M_target = approachTarget.M0 + n_target * timeManager.simTime;
-    double E_target = solveKepler(M_target, approachTarget.e);
-    double nu_target = trueAnomaly(E_target, approachTarget.e);
-    double[] pos_target = orbitalToCartesian(approachTarget.a, approachTarget.e, approachTarget.i, approachTarget.omega, approachTarget.w, nu_target);
+      // Initialize position relative to target
+      double dx = currentShip.px - approachTarget.px;
+      double dy = currentShip.py - approachTarget.py;
+      currentShip.earthRelPos = new double[]{dx, dy, 0};
 
-    // Velocity from vis-viva
-    double r_target = Math.sqrt(pos_target[0]*pos_target[0] + pos_target[1]*pos_target[1]);
-    double v_target_mag = Math.sqrt(GM_SUN * (2.0/r_target - 1.0/approachTarget.a));
-    double theta_target = Math.atan2(pos_target[1], pos_target[0]) + PI/2; // perpendicular to radius
-    double vx_target = v_target_mag * Math.cos(theta_target);
-    double vy_target = v_target_mag * Math.sin(theta_target);
+      // Initialize velocity relative to target - use exact calculation
+      double[] targetVel = getVelocityAtTime(approachTarget, t);
 
-    // Spacecraft velocity (approximate from transfer orbit)
-    double n_ship = 2 * PI / currentShip.period;
-    double M_ship = currentShip.M0 + n_ship * timeManager.simTime;
-    double E_ship = solveKepler(M_ship, currentShip.e);
-    double nu_ship = trueAnomaly(E_ship, currentShip.e);
-    double[] pos_ship = orbitalToCartesian(currentShip.a, currentShip.e, currentShip.i, currentShip.omega, currentShip.w, nu_ship);
-    double r_ship = Math.sqrt(pos_ship[0]*pos_ship[0] + pos_ship[1]*pos_ship[1]);
-    double v_ship_mag = Math.sqrt(GM_SUN * (2.0/r_ship - 1.0/currentShip.a));
-    double theta_ship = Math.atan2(pos_ship[1], pos_ship[0]) + PI/2;
-    double vx_ship = v_ship_mag * Math.cos(theta_ship);
-    double vy_ship = v_ship_mag * Math.sin(theta_ship);
+      // Calculate spacecraft velocity from its orbital elements
+      double n_ship = 2 * PI / currentShip.period;
+      double M_ship = currentShip.M0 + n_ship * t;
+      double E_ship = solveKepler(M_ship, currentShip.e);
+      double nu_ship = trueAnomaly(E_ship, currentShip.e);
+      double[] shipVel = orbitalVelocityToCartesian(
+          currentShip.a, currentShip.e, currentShip.i,
+          currentShip.omega, currentShip.w, nu_ship, GM_SUN);
 
-    currentShip.earthRelVel = new double[]{vx_ship - vx_target, vy_ship - vy_target, 0};
+      currentShip.earthRelVel = new double[]{shipVel[0] - targetVel[0], shipVel[1] - targetVel[1], 0};
+    }
 
     currentShip.toiTargetDV = currentMission.toiDeltaV;
     currentShip.toiAccumulatedDV = 0;

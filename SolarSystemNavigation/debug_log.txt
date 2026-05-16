@@ -1,11 +1,12 @@
-506: CIRC START: state->CIRCULARIZING, burnDuration=258.4729965062919 timeToApo=128.6508553203672
-527: CIRC DONE: finalizing orbit insertion
-529: Auto warp control released
-759: Mission planned: Launch at simTime=6.307140260402716E7 (+729.9583 days)
-760: Entering auto warp phase
-1659: Jumped to 15s before launch window
-1659: launch window approaching: TIME LOCKED to 1x
-2522: TMI burn started: ¦¤V=2.9446719 km/s
-2523: BURN PHASE: Manual warp control allowed
-3306: TMI complete: Transfer orbit a=1.26184 AU
-3307: Entering auto warp phase
+552: CIRC START: state->CIRCULARIZING, burnDuration=258.44157899955326 timeToApo=129.1358294683074
+678: CIRC DONE: finalizing orbit insertion
+680: Auto warp control released
+758: Mission planned: Launch at simTime=3.571336118903509E7 (+413.33334 days)
+759: Entering auto warp phase
+1314: Jumped to 15s before launch window
+1314: launch window approaching: TIME LOCKED to 1x
+2209: TMI burn started: ¦¤V=3.4570606 km/s
+2210: BURN PHASE: Manual warp control allowed
+2769: TMI complete: Transfer orbit a=0.65765804 AU, e=0.5448463
+2769: SOI Switch: entering Earth SOI
+2770: Entering auto warp phase

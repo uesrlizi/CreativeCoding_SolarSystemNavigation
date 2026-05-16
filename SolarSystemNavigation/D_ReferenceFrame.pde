@@ -15,17 +15,10 @@ class ReferenceFrame {
 
   // GM of the dominant body (km^3/s^2)
   double gm() {
-    if (primaryBody != null && primaryBody.a == 0) {
-      return GM_SUN;
+    if (primaryBody != null) {
+      return primaryBody.GM;
     }
-    if (primaryBody == null) return GM_SUN;
-    // Planetary GM lookup — currently only Earth matters for body-relative frames
-    if (primaryBody.name.equals("Earth"))  return MissionPlanner.GM_EARTH;
-    if (primaryBody.name.equals("Mars"))   return MissionPlanner.GM_MARS;
-    if (primaryBody.name.equals("Venus"))  return MissionPlanner.GM_VENUS;
-    if (primaryBody.name.equals("Mercury")) return MissionPlanner.GM_MERCURY;
-    if (primaryBody.name.equals("Jupiter")) return MissionPlanner.GM_JUPITER;
-    return MissionPlanner.GM_EARTH; // fallback
+    return GM_SUN;
   }
 
   // Radius of the primary body (km)
@@ -38,5 +31,27 @@ class ReferenceFrame {
   double altitude(double[] relPos) {
     double r = Math.sqrt(relPos[0] * relPos[0] + relPos[1] * relPos[1]);
     return r - bodyRadius();
+  }
+
+  // 检查是否应该切换到另一个参考系
+  // 返回新的主导天体，如果不需要切换则返回null
+  CelestialBody checkSOISwitch(double worldX, double worldY, double worldZ) {
+    if (primaryBody == null) {
+      // 当前是日心参考系，检查是否进入了某个行星的SOI
+      for (CelestialBody planet : solarSystem.planets) {
+        if (planet.isInSOI(worldX, worldY, worldZ)) {
+          return planet;
+        }
+      }
+      return null;
+    } else {
+      // 当前是行星参考系，检查是否离开了SOI
+      if (!primaryBody.isInSOI(worldX, worldY, worldZ)) {
+        // 离开SOI，返回父天体（通常是太阳）
+        return primaryBody.parent;
+      }
+      // 同时检查是否进入了其他天体的SOI（比如月球，但这里还没有月球）
+      return null;
+    }
   }
 }

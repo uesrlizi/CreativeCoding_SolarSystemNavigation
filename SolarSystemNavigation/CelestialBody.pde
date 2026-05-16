@@ -10,10 +10,13 @@ class CelestialBody {
   double M0;
   double period;
   double radius;
+  double GM;  // 引力参数 GM = G*M
   color col;
 
   double px, py, pz;
   double currentNu;
+
+  CelestialBody parent;  // 中心天体（父天体）
 
   // Visual properties
   BodyType type;
@@ -39,7 +42,7 @@ class CelestialBody {
   CelestialBodyRenderer renderer;
 
   CelestialBody(String name, double a_au, double e, double i,
-    double omega, double w, double M0, double T_days, double R_km, color col, BodyType type) {
+    double omega, double w, double M0, double T_days, double R_km, double GM_km3s2, color col, BodyType type) {
     this.name = name;
     this.a = a_au * AU_KM;
     this.e = e;
@@ -49,21 +52,43 @@ class CelestialBody {
     this.M0 = Math.toRadians(M0);
     this.period = T_days * DAY_S;
     this.radius = R_km;
+    this.GM = GM_km3s2;
     this.col = col;
     this.type = type;
+    this.parent = null;
     initVisualProperties();
   }
 
-  CelestialBody(String name, double x, double y, double R_km, color col, BodyType type) {
+  CelestialBody(String name, double x, double y, double R_km, double GM_km3s2, color col, BodyType type) {
     this.name = name;
     this.a = 0; this.e = 0; this.i = 0;
     this.omega = 0; this.w = 0; this.M0 = 0;
     this.period = 1;
     this.radius = R_km;
+    this.GM = GM_km3s2;
     this.col = col;
     this.px = x; this.py = y; this.pz = 0;
     this.type = type;
+    this.parent = null;
     initVisualProperties();
+  }
+
+  // 计算SOI半径: SOI = a * (m/M)^(2/5)
+  double getSOIRadius() {
+    if (parent == null || a == 0) {
+      return Double.MAX_VALUE;  // 太阳没有SOI边界
+    }
+    double massRatio = GM / parent.GM;
+    return a * Math.pow(massRatio, 2.0 / 5.0);
+  }
+
+  // 检查给定点是否在本天体的SOI内
+  boolean isInSOI(double x, double y, double z) {
+    double dx = x - px;
+    double dy = y - py;
+    double dz = z - pz;
+    double dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    return dist <= getSOIRadius();
   }
 
   void initVisualProperties() {

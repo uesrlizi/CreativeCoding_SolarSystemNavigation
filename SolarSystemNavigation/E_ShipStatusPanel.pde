@@ -177,8 +177,21 @@ class ShipStatusPanel {
     text(String.format("Speed: %.2f km/s", currentSpeed),
          panelX + panelW - panelMargin, barY + barH + 6);
 
+    // SOI/参考系显示
+    float soiY = barY + barH + 26 * scale;
+    fill(180);
+    textSize(12 * scale);
+    textAlign(LEFT, TOP);
+    String soiText;
+    if (ship.earthRelative && ship.earthRef != null) {
+      soiText = "SOI: " + ship.earthRef.name;
+    } else {
+      soiText = "SOI: Sun";
+    }
+    text(soiText, panelX + panelMargin, soiY);
+
     // 引擎指示器（小）
-    float engineY = barY + barH + 26 * scale;
+    float engineY = soiY + 20 * scale;
     if (ship.thrustActive) {
       fill(255, 160, 40);
       textSize(12 * scale);

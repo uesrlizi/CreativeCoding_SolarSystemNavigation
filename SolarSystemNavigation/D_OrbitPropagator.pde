@@ -11,12 +11,47 @@ class OrbitPropagator {
   // ==============================================================
 
   void propagateHeliocentric(Spacecraft ship, double t) {
-    double n = 2.0 * PI / ship.period;
-    double M = (ship.M0 + n * t) % (2.0 * PI);
-    if (M < 0) M += 2.0 * PI;
-    double E = solveKepler(M, ship.e);
-    ship.currentNu = trueAnomaly(E, ship.e);
-    double[] pos = orbitalToCartesian(ship.a, ship.e, ship.i, ship.omega, ship.w, ship.currentNu);
+    double n, M, nu_rad;
+
+    if (ship.e < 1.0) {
+      // 椭圆轨道
+      n = 2.0 * PI / ship.period;
+      M = (ship.M0 + n * t) % (2.0 * PI);
+      if (M < 0) M += 2.0 * PI;
+      double E = solveKepler(M, ship.e);
+      nu_rad = trueAnomaly(E, ship.e);
+    } else {
+      // 双曲线轨道
+      double a_km = ship.a;
+      if (a_km >= 0) {
+        // 如果 a 不是负数，用之前计算的 period 反推 n
+        n = 2.0 * PI / ship.period;
+      } else {
+        n = 2.0 * PI / Math.sqrt(Math.pow(-a_km, 3) / GM_SUN);
+      }
+
+      M = ship.M0 + n * t;
+
+      // 解双曲线开普勒方程：M = e*sinh(F) - F，用牛顿迭代法
+      double F = M;
+      for (int i = 0; i < 100; i++) {
+        double f = ship.e * Math.sinh(F) - F - M;
+        double df = ship.e * Math.cosh(F) - 1.0;
+        if (Math.abs(df) < 1e-15) break;
+        double dF = f / df;
+        F -= dF;
+        if (Math.abs(dF) < 1e-15) break;
+      }
+
+      // 从双曲偏近点角 F 计算真近点角 nu
+      double coshF = Math.cosh(F);
+      double cos_nu = (coshF - ship.e) / (1.0 - ship.e * coshF);
+      double sin_nu = (Math.sqrt(ship.e * ship.e - 1.0) * Math.sinh(F)) / (1.0 - ship.e * coshF);
+      nu_rad = Math.atan2(sin_nu, cos_nu);
+    }
+
+    ship.currentNu = nu_rad;
+    double[] pos = orbitalToCartesian(ship.a, ship.e, ship.i, ship.omega, ship.w, nu_rad);
     ship.px = pos[0];
     ship.py = pos[1];
     ship.pz = pos[2];

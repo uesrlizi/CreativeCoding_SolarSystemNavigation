@@ -10,27 +10,27 @@ SolarSystemNavigation/
 ├── A_Enums.pde                 # 枚举定义（ViewMode, ShipState, FrameType, BodyType）
 ├── B_OrbitalMath.pde           # 开普勒轨道数学（求解/坐标转换）
 ├── C_TimeManager.pde           # 模拟时间与时间加速
-├── D_ReferenceFrame.pde        # 参考系系统（SURFACE/BODY_ORBIT/HELIOCENTRIC）
+├── D_ReferenceFrame.pde        # 参考系系统（SURFACE/BODY_ORBIT/HELIOCENTRIC）[更新: SOI支持]
 ├── D_AtmosphereModel.pde       # 大气模型（密度/阻力/截止高度）
 ├── D_OrbitPropagator.pde       # 开普勒轨道传播器（"on rails"模式）
 ├── D_FlightComputer.pde        # 飞行计算机/制导算法（重力转弯/PEG/转移燃烧）
 ├── D_PhysicsEngine.pde         # 牛顿力学积分引擎（"not on rails"模式）
-├── CelestialBody.pde           # 天体数据模型与LOD分级绘制
+├── CelestialBody.pde           # 天体数据模型与LOD分级绘制[更新: GM/parent/SOI]
 ├── CelestialBodyRenderer.pde   # 天体细节渲染器（程序化纹理/大气/光环/太阳日珥）
-├── SolarSystem.pde             # 太阳系初始化（8大行星 + 太阳）
-├── Spacecraft.pde              # 航天器状态容器 + 调度器
+├── SolarSystem.pde             # 太阳系初始化（8大行星 + 太阳）[更新: SOI检测]
+├── Spacecraft.pde              # 航天器状态容器 + 调度器[更新: SOI自动切换]
 ├── SpacecraftRenderer.pde      # 航天器绘制（地图图标 / 飞船视角详细模型）
 ├── LaunchSite.pde              # 发射场数据模型（地表位置跟踪）
 ├── LaunchSiteRenderer.pde      # 发射场绘制（发射台/勤务塔/脐带臂/避雷塔/地形）
 ├── CameraController.pde        # 摄像机控制（平移/缩放/跟随/双视角）
-├── MissionPlanner.pde          # 轨道力学常数与霍曼转移计算
-├── LaunchController.pde        # 发射流程状态机
+├── MissionPlanner.pde          # 轨道力学常数与霍曼转移计算[更新: 移除硬编码]
+├── LaunchController.pde        # 发射流程状态机[更新: SOI集成]
 ├── E_Button.pde                # 统一按钮组件（hover/点击状态/tooltip）
 ├── E_Tooltip.pde               # 浮动提示组件（自动定位/文本换行）
 ├── E_TimeControlPanel.pde      # 左上角时间控制面板
 ├── E_NavigationFocusPanel.pde  # 左侧导航聚焦面板
 ├── E_ViewToggleButton.pde      # 右上角视图切换按钮
-├── E_ShipStatusPanel.pde       # 右下角飞船状态面板
+├── E_ShipStatusPanel.pde       # 右下角飞船状态面板[更新: SOI显示]
 └── HUD.pde                     # 总控HUD（编排所有子面板）
 ```
 
@@ -78,6 +78,28 @@ LaunchController（纯状态机）
 - **SURFACE** — 地表坐标系，发射初始阶段
 - **BODY_ORBIT** — 行星相对坐标系（地球轨道）
 - **HELIOCENTRIC** — 日心坐标系（行星际转移）
+
+### SOI 系统（KSP 风格）
+
+**影响球（Sphere of Influence）**：基于 Hill sphere 近似的物理公式：
+```
+SOI_radius = a × (m/M)^(2/5)
+```
+其中：
+- `a` — 行星轨道半长轴
+- `m` — 行星质量（通过 GM 体现）
+- `M` — 太阳质量（GM_SUN）
+
+**SOI 层级**：通过 `CelestialBody.parent` 建立天体父子关系
+
+**SOI 自动切换**：
+- `Spacecraft.checkSOISwitch()` — 每帧检测飞船与所有行星的距离
+- 进入行星 SOI 时，**自动从日心切换到行星相对坐标系**
+- 离开行星 SOI 时，**自动从行星相对切换回日心坐标系**
+- 切换时**自动转换位置和速度矢量**（保持轨道一致性）
+- 在 `TMI_BURN` / `TOI_BURN` / `LAUNCHING` / `CIRCULARIZING` 燃烧阶段**暂停切换**，避免干扰制导
+
+**HUD 显示**：右下角状态面板显示当前 SOI 主导天体（"SOI: Earth" / "SOI: Sun" / "SOI: Mars" 等）
 
 ## 核心模块详解
 
@@ -304,7 +326,29 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 
 ## 最近更新
 
-### 2026-05-16
+### 2026-05-16 (SOI 系统重构)
+- **KSP 风格 SOI 系统完整实现**：
+  - `CelestialBody` 新增 `GM`（引力参数）和 `parent`（父天体）字段
+  - SOI 半径使用物理公式 `SOI = a * (m/M)^(2/5)`，而非硬编码
+  - `SolarSystem.findDominantBody()` — 实时检测给定点在哪个 SOI 内
+  - `Spacecraft.checkSOISwitch()` — 每帧检测 SOI 边界，自动切换参考系
+  - `Spacecraft.performSOISwitch()` — 执行坐标系转换（位置+速度矢量）
+  - SOI 切换在燃烧阶段暂停，避免干扰制导
+- **LaunchController 接近阶段优化**：
+  - 不再强制在 2xSOI 处切换参考系
+  - 等待 Spacecraft 的自动 SOI 切换
+  - 进入目标 SOI 后立即开始 TOI 燃烧
+- **MissionPlanner 简化**：
+  - 所有 GM 值从 `body.GM` 获取，不再硬编码
+  - `calculateSOI(body)` 直接调用 `body.getSOIRadius()`
+- **ReferenceFrame 更新**：
+  - `gm()` 使用 `primaryBody.GM`
+  - 支持任意天体的引力计算
+- **HUD 显示增强**：
+  - 右下角状态面板新增 SOI 信息（"SOI: Earth" / "SOI: Sun" 等）
+- **向后兼容**：所有旧接口保持工作
+
+### 2026-05-16 (前半)
 - **修复飞船在 WAITING_FOR_WINDOW 和 CAPTURED 状态下停止不动的问题**：
   - 轨道传播与任务状态完全解耦
   - `WAITING_FOR_WINDOW` 复用 `ORBIT` 状态的地球轨道传播逻辑

@@ -4,12 +4,6 @@ class MissionPlanner {
   static final double LEO_ALTITUDE_KM = 420.0;
   static final double LEO_RADIUS_KM = EARTH_RADIUS_KM + LEO_ALTITUDE_KM;
 
-  // 目标天体 GM 值 (km³/s²)
-  static final double GM_MARS = 4.2828e4;
-  static final double GM_VENUS = 3.2486e5;
-  static final double GM_MERCURY = 2.2032e4;
-  static final double GM_JUPITER = 1.26687e8;
-
   // 计算两个角度的最小差值（归一化到 [-π, π]）
   double angleDifference(double a, double b) {
     double diff = a - b;
@@ -27,12 +21,12 @@ class MissionPlanner {
 
   // 寻找下一个发射窗口
   double findNextLaunchWindow(CelestialBody origin, CelestialBody target,
-                             double startTime, double searchDurationDays) {
+                               double startTime, double searchDurationDays) {
     double searchEnd = startTime + searchDurationDays * DAY_S;
     double r1 = origin.a;
     double r2 = target.a;
     double a_transfer = (r1 + r2) / 2.0;
-    double t_transfer = PI * Math.sqrt(Math.pow(a_transfer, 3) / GM_SUN);
+    double t_transfer = PI * Math.sqrt(Math.pow(a_transfer, 3.0) / GM_SUN);
 
     // 计算理想的目标相位角（在发射时）
     // 当航天器到达时，目标应该正好位于相遇点
@@ -66,11 +60,6 @@ class MissionPlanner {
     return new double[]{a_transfer, e_transfer};
   }
 
-  // 计算转移时间（半个周期）
-  double calculateTransferTime(double a_km, double GM) {
-    return PI * Math.sqrt(Math.pow(a_km, 3) / GM);
-  }
-
   // 计算转移所需 ΔV（霍曼转移）
   double calculateDeltaV(double r1_km, double r2_km, double GM) {
     double v1 = Math.sqrt(GM / r1_km);
@@ -89,27 +78,45 @@ class MissionPlanner {
     double a_transfer = (r1 + r2) / 2.0;
     double e_transfer = Math.abs(r2 - r1) / (r2 + r1);
 
-    params.transferTime = PI * Math.sqrt(Math.pow(a_transfer, 3) / GM_SUN);
+    params.transferTime = PI * Math.sqrt(Math.pow(a_transfer, 3.0) / GM_SUN);
     params.launchDate = launchTime;
     params.arrivalDate = launchTime + params.transferTime;
 
-    // 计算 TMI ΔV (Trans-Mars Injection / Trans-X Injection)
+    // ========== 使用 patched conic 方法计算 TMI ΔV ==========
+    // 1. 计算日心霍曼转移在地球轨道处的速度
     double v_earth = Math.sqrt(GM_SUN / r1);
-    double v_trans_earth = Math.sqrt(GM_SUN * (2.0/r1 - 1.0/a_transfer));
-    params.tmiDeltaV = Math.abs(v_trans_earth - v_earth);
+    double v_trans_earth = Math.sqrt(GM_SUN * (2.0 / r1 - 1.0 / a_transfer));
 
-    // 计算到达时的相对速度
+    // 2. 计算需要的双曲线过剩速度 v∞ (日心坐标系中的速度差)
+    double v_infinity = Math.abs(v_trans_earth - v_earth);
+
+    // 3. 计算地球相对坐标系中从 LEO 到该逃逸双曲线所需的 ΔV
+    double r_leo = LEO_RADIUS_KM;
+    double v_leo = Math.sqrt(origin.GM / r_leo);
+
+    // 双曲线轨道在 r_leo 处的速度
+    double v_esc_infty = Math.sqrt(2 * origin.GM / r_leo + v_infinity * v_infinity);
+
+    // TMI ΔV = 双曲线速度 - LEO 圆轨道速度
+    params.tmiDeltaV = Math.max(0.0, v_esc_infty - v_leo);
+
+    // ========== 计算 TOI ΔV ==========
+    // 1. 计算到达目标天体时的日心相对速度
     double v_target = Math.sqrt(GM_SUN / r2);
-    double v_trans_target = Math.sqrt(GM_SUN * (2.0/r2 - 1.0/a_transfer));
-    double arrivalDV = Math.abs(v_target - v_trans_target);
+    double v_trans_target = Math.sqrt(GM_SUN * (2.0 / r2 - 1.0 / a_transfer));
+    double arrival_v_infinity = Math.abs(v_target - v_trans_target);
 
-    // 捕获到绕目标的圆轨道（轨道半径 = 10 * 目标半径）
+    // 2. 计算目标天体捕获 ΔV (使用 patched conic)
     double rCapture = target.radius * 10.0;
-    double GM_target = getTargetGM(target);
-    double vCaptureCirc = Math.sqrt(GM_target / rCapture);
 
-    // 简化：TOI ΔV = 到达时相对速度 + 捕获到圆轨道的 ΔV
-    params.toiDeltaV = arrivalDV * 0.5 + vCaptureCirc;  // 缩放因子使数值合理
+    // 双曲线接近时的近心点速度
+    double v_approach_periapsis = Math.sqrt(2 * target.GM / rCapture + arrival_v_infinity * arrival_v_infinity);
+
+    // 目标圆轨道速度
+    double vCaptureCirc = Math.sqrt(target.GM / rCapture);
+
+    // TOI ΔV = 近心点速度 - 目标圆轨道速度
+    params.toiDeltaV = Math.max(0.0, v_approach_periapsis - vCaptureCirc);
 
     params.totalDeltaV = params.tmiDeltaV + params.toiDeltaV;
     params.phaseAngleAtLaunch = calculatePhaseAngle(origin, target, launchTime);
@@ -117,23 +124,14 @@ class MissionPlanner {
     return params;
   }
 
-  // 获取目标天体的 GM 值
+  // 获取目标天体的 GM 值（向后兼容）
   double getTargetGM(CelestialBody body) {
-    if (body.name.equals("Mars")) return GM_MARS;
-    if (body.name.equals("Venus")) return GM_VENUS;
-    if (body.name.equals("Mercury")) return GM_MERCURY;
-    if (body.name.equals("Jupiter")) return GM_JUPITER;
-    return GM_EARTH;  // 默认地球
+    return body.GM;
   }
 
-  // 计算天体的影响球半径 (km)
+  // 计算天体的影响球半径 (km) — 使用物理公式
   double calculateSOI(CelestialBody body) {
-    if (body.name.equals("Mars")) return 578000.0;
-    if (body.name.equals("Venus")) return 616000.0;
-    if (body.name.equals("Earth")) return 925000.0;
-    if (body.name.equals("Mercury")) return 112000.0;
-    if (body.name.equals("Jupiter")) return 48200000.0;
-    return 500000.0;  // 默认
+    return body.getSOIRadius();
   }
 
   double calculateLaunchVelocity(double altitude_km) {
@@ -143,6 +141,11 @@ class MissionPlanner {
 
   double getLEORadius() {
     return LEO_RADIUS_KM;
+  }
+
+  // 计算转移时间（开普勒第三定律）
+  double calculateTransferTime(double a, double GM) {
+    return PI * Math.sqrt(Math.pow(a, 3.0) / GM);
   }
 }
 

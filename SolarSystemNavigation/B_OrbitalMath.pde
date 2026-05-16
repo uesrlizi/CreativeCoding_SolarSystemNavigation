@@ -92,7 +92,27 @@ double[] cartesianToKepler(double[] r, double[] v, double GM) {
   double ey = (-vx * hz) / GM - ry / rMag;
 
   double w = Math.atan2(ey, ex);
-  double nu = Math.atan2(ry, rx) - w;
+
+  // ========== 更健壮的真近点角计算 ==========
+  double nu;
+  if (e < 1e-12) {
+    // 近圆轨道：直接用位置角度减去近心点幅角
+    nu = Math.atan2(ry, rx) - w;
+  } else {
+    // 椭圆轨道：用离心率向量和位置向量的夹角计算
+    double r_dot_e = rx * ex + ry * ey;
+    double cos_nu = r_dot_e / (rMag * e);
+    cos_nu = Math.max(-1.0, Math.min(1.0, cos_nu));
+    nu = Math.acos(cos_nu);
+
+    // 用径向速度判断真近点角在哪个象限
+    double vRad = (rx * vx + ry * vy) / rMag;
+    if (vRad < 0) {
+      nu = 2.0 * PI - nu;
+    }
+  }
+
+  // 归一化到 [0, 2π)
   nu = ((nu % (2.0 * PI)) + 2.0 * PI) % (2.0 * PI);
 
   double[] result = new double[6];

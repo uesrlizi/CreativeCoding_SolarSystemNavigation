@@ -117,10 +117,20 @@ class Spacecraft {
     if (simDt > 3600) simDt = 3600; // max 1 hour to prevent skipping too much
     lastUpdateTime = t;
 
+    // 先更新当前状态
     if (earthRelative && earthRef != null) {
       updateBodyRelative(t, simDt);
     } else {
       updateHeliocentric(t, simDt);
+    }
+
+    // 检查SOI切换（在燃烧阶段跳过，避免干扰）
+    if (!thrustActive &&
+        state != ShipState.LAUNCHING &&
+        state != ShipState.CIRCULARIZING &&
+        state != ShipState.TMI_BURN &&
+        state != ShipState.TOI_BURN) {
+      checkSOISwitch(t);
     }
 
     // Update display angle — use small substeps for stability even with large simDt
@@ -131,6 +141,177 @@ class Spacecraft {
       double dt = Math.min(remainingDt, maxSubStep);
       updateDisplayAngle(targetAngle, dt);
       remainingDt -= dt;
+    }
+  }
+
+  // 检查并执行SOI切换
+  void checkSOISwitch(double t) {
+    // 获取当前世界坐标
+    double worldX, worldY, worldZ;
+    if (earthRelative && earthRef != null) {
+      worldX = earthRef.px + earthRelPos[0];
+      worldY = earthRef.py + earthRelPos[1];
+      worldZ = earthRef.pz + earthRelPos[2];
+    } else {
+      worldX = px;
+      worldY = py;
+      worldZ = pz;
+    }
+
+    // 查找应该在哪个SOI内
+    CelestialBody shouldBeIn = solarSystem.findDominantBody(worldX, worldY, worldZ);
+
+    // 检查是否需要切换
+    boolean needSwitch = false;
+    if (earthRelative) {
+      if (earthRef == null) {
+        needSwitch = (shouldBeIn != solarSystem.sun);
+      } else {
+        needSwitch = (shouldBeIn != earthRef);
+      }
+    } else {
+      needSwitch = (shouldBeIn != solarSystem.sun);
+    }
+
+    if (needSwitch) {
+      performSOISwitch(t, shouldBeIn);
+    }
+  }
+
+  // 执行SOI切换
+  void performSOISwitch(double t, CelestialBody newBody) {
+    dbgLog("SOI Switch: entering " + newBody.name + " SOI");
+
+    if (newBody == solarSystem.sun) {
+      // 切换到日心坐标系
+      if (earthRelative && earthRef != null) {
+        // 从行星相对转换到日心
+        double[] helioPos = new double[3];
+        double[] helioVel = new double[3];
+
+        helioPos[0] = earthRef.px + earthRelPos[0];
+        helioPos[1] = earthRef.py + earthRelPos[1];
+        helioPos[2] = earthRef.pz + earthRelPos[2];
+
+        // 获取行星速度
+        double[] planetVel = getVelocityAtTime(earthRef, t);
+        helioVel[0] = planetVel[0] + earthRelVel[0];
+        helioVel[1] = planetVel[1] + earthRelVel[1];
+        helioVel[2] = planetVel[2] + earthRelVel[2];
+
+        // 转换为开普勒轨道元素
+        double[] kepler = cartesianToKepler(helioPos, helioVel, GM_SUN);
+        setHeliocentricOrbit(kepler, t);
+      }
+      earthRelative = false;
+      earthRef = null;
+      frame = new ReferenceFrame(FrameType.HELIOCENTRIC, null);
+    } else {
+      // 切换到行星相对坐标系
+      if (!earthRelative) {
+        // 从日心转换到行星相对
+        double[] relPos = new double[3];
+        double[] relVel = new double[3];
+
+        relPos[0] = px - newBody.px;
+        relPos[1] = py - newBody.py;
+        relPos[2] = pz - newBody.pz;
+
+        // 获取行星速度
+        double[] planetVel = getVelocityAtTime(newBody, t);
+
+        // 获取飞船日心速度
+        double[] shipHelioVel = getCurrentHeliocentricVelocity(t);
+
+        relVel[0] = shipHelioVel[0] - planetVel[0];
+        relVel[1] = shipHelioVel[1] - planetVel[1];
+        relVel[2] = shipHelioVel[2] - planetVel[2];
+
+        // 设置行星相对坐标
+        earthRelative = true;
+        earthRef = newBody;
+        earthRelPos = relPos;
+        earthRelVel = relVel;
+
+        // 如果是目标天体，设置接近状态
+        if (launchController.selectedTarget == newBody &&
+            (state == ShipState.TRANSFER || state == ShipState.APPROACHING_TARGET)) {
+          // 让LaunchController处理TOI逻辑
+          // 我们只设置参考系
+        }
+      } else if (earthRef != newBody) {
+        // 从一个行星切换到另一个行星（罕见）
+        double[] worldPos = new double[]{
+          earthRef.px + earthRelPos[0],
+          earthRef.py + earthRelPos[1],
+          earthRef.pz + earthRelPos[2]
+        };
+        double[] planet1Vel = getVelocityAtTime(earthRef, t);
+        double[] worldVel = new double[]{
+          planet1Vel[0] + earthRelVel[0],
+          planet1Vel[1] + earthRelVel[1],
+          planet1Vel[2] + earthRelVel[2]
+        };
+        double[] planet2Vel = getVelocityAtTime(newBody, t);
+
+        earthRelPos = new double[]{
+          worldPos[0] - newBody.px,
+          worldPos[1] - newBody.py,
+          worldPos[2] - newBody.pz
+        };
+        earthRelVel = new double[]{
+          worldVel[0] - planet2Vel[0],
+          worldVel[1] - planet2Vel[1],
+          worldVel[2] - planet2Vel[2]
+        };
+        earthRef = newBody;
+      }
+      frame = new ReferenceFrame(FrameType.BODY_ORBIT, newBody);
+    }
+  }
+
+  // 设置日心轨道（从开普勒元素）
+  void setHeliocentricOrbit(double[] kepler, double t) {
+    a = kepler[0];
+    e = kepler[1];
+    i = kepler[2];
+    omega = kepler[3];
+    w = kepler[4];
+    double nu = Math.toRadians(kepler[5]);
+
+    // 计算M0
+    double n = 2 * PI / Math.sqrt(Math.pow(a, 3.0) / GM_SUN);
+    double E;
+    if (e < 1.0) {
+      E = 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2));
+    } else {
+      double coshF = (e + Math.cos(nu)) / (1 + e * Math.cos(nu));
+      E = Math.log(coshF + Math.sqrt(coshF * coshF - 1));
+      if (Math.sin(nu) < 0) E = -E;
+    }
+    double M = (e < 1.0) ? (E - e * Math.sin(E)) : (e * Math.sinh(E) - E);
+    M0 = M - n * t;
+    period = (e < 1.0) ? (2 * PI / n) : Double.MAX_VALUE;
+
+    // 设置位置
+    double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
+    px = pos[0];
+    py = pos[1];
+    pz = pos[2];
+    currentNu = nu;
+  }
+
+  // 获取当前日心速度
+  double[] getCurrentHeliocentricVelocity(double t) {
+    if (earthRelative && earthRef != null) {
+      double[] planetVel = getVelocityAtTime(earthRef, t);
+      return new double[]{
+        planetVel[0] + earthRelVel[0],
+        planetVel[1] + earthRelVel[1],
+        planetVel[2] + earthRelVel[2]
+      };
+    } else {
+      return orbitalVelocityToCartesian(a, e, i, omega, w, currentNu, GM_SUN);
     }
   }
 
@@ -473,7 +654,8 @@ class Spacecraft {
     if (earthRelPos != null) {
       double rx = earthRelPos[0], ry = earthRelPos[1];
       double r = Math.sqrt(rx * rx + ry * ry);
-      launchAltitude = r - MissionPlanner.EARTH_RADIUS_KM;
+      double bodyRadius = (earthRef != null) ? earthRef.radius : MissionPlanner.EARTH_RADIUS_KM;
+      launchAltitude = r - bodyRadius;
       earthOrbitAngle = Math.atan2(ry, rx);
     }
   }
