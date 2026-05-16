@@ -79,8 +79,6 @@ class SolarSystem {
 
     if (Double.isNaN(sR) || Double.isInfinite(sR)) return;
 
-    boolean centerOnScreen = sx >= 0 && sx <= width && sy >= 0 && sy <= height;
-
     // Cull — use unclamped radius
     if (sx + sR < -10 || sx - sR > width + 10 ||
         sy + sR < -10 || sy - sR > height + 10) return;
@@ -93,35 +91,28 @@ class SolarSystem {
 
     noStroke();
 
+    // 完全按屏幕半径判定LOD
+    double drawR = sR;
+    if (drawR < 2) drawR = 2;
+
     if (renderer != null) {
       if (farCornerSq <= sR * sR) {
         renderer.drawLOD4(sun, sx, sy, sR);
-      } else if (centerOnScreen) {
-        double maxR = Math.max(width, height) * 3.0;
-        double drawR = Math.min(sR, maxR);
-        if (drawR < 2) drawR = 2;
-        if (drawR < 30) {
-          renderer.drawLOD0(sun, sx, sy, drawR);
-        } else if (drawR < 100) {
-          renderer.drawLOD1(sun, sx, sy, drawR);
-        } else if (drawR < 300) {
-          renderer.drawLOD2(sun, sx, sy, drawR);
-        } else {
-          renderer.drawLOD3(sun, sx, sy, drawR);
-        }
+      } else if (drawR > width * 0.5 || drawR > height * 0.5) {
+        renderer.drawScanlineLOD(sun, sx, sy, sR);
+      } else if (drawR < 20) {
+        renderer.drawLOD0(sun, sx, sy, drawR);
+      } else if (drawR < 80) {
+        renderer.drawLOD1(sun, sx, sy, drawR);
+      } else if (drawR < 250) {
+        renderer.drawLOD2(sun, sx, sy, drawR);
       } else {
-        renderer.drawLOD0(sun, sx, sy, sR);
+        renderer.drawLOD3(sun, sx, sy, drawR);
       }
     } else {
       if (farCornerSq <= sR * sR) {
         fill(sun.col);
         rect(0, 0, width, height);
-      } else if (centerOnScreen) {
-        double maxR = Math.max(width, height) * 3.0;
-        double drawR = Math.min(sR, maxR);
-        if (drawR < 2) drawR = 2;
-        fill(sun.col);
-        ellipse((float)sx, (float)sy, (float)(drawR * 2), (float)(drawR * 2));
       } else {
         fill(sun.col);
         ellipse((float)sx, (float)sy, (float)(sR * 2), (float)(sR * 2));
@@ -132,8 +123,19 @@ class SolarSystem {
       fill(255, 230, 100, 220);
       textSize(18 * uiScale);
       textAlign(LEFT, CENTER);
-      double labelR = centerOnScreen ? Math.min(sR, Math.max(width, height) * 3.0) : sR;
-      text("Sun", (float)(sx + labelR + 5), (float)sy);
+      text("Sun", (float)(sx + drawR + 5), (float)sy);
+
+      // LOD 级别提示
+      String lodStr;
+      if (farCornerSq <= sR * sR) lodStr = "LOD: 4";
+      else if (drawR > width * 0.5 || drawR > height * 0.5) lodStr = "LOD: Scanline";
+      else if (drawR < 20) lodStr = "LOD: 0";
+      else if (drawR < 80) lodStr = "LOD: 1";
+      else if (drawR < 250) lodStr = "LOD: 2";
+      else lodStr = "LOD: 3";
+      fill(80, 200, 120, 200);
+      textSize(12 * uiScale);
+      text(lodStr, (float)(sx + drawR + 5), (float)sy + 18 * uiScale);
     }
   }
 

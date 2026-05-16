@@ -7,7 +7,7 @@
 ```
 SolarSystemNavigation/
 ├── SolarSystemNavigation.pde   # 主程序入口、setup/draw、全局工具函数
-├── A_Enums.pde                 # 枚举定义（ViewMode, ShipState, FrameType）
+├── A_Enums.pde                 # 枚举定义（ViewMode, ShipState, FrameType, BodyType）
 ├── B_OrbitalMath.pde           # 开普勒轨道数学（求解/坐标转换）
 ├── C_TimeManager.pde           # 模拟时间与时间加速
 ├── D_ReferenceFrame.pde        # 参考系系统（SURFACE/BODY_ORBIT/HELIOCENTRIC）
@@ -16,6 +16,7 @@ SolarSystemNavigation/
 ├── D_FlightComputer.pde        # 飞行计算机/制导算法（重力转弯/PEG/转移燃烧）
 ├── D_PhysicsEngine.pde         # 牛顿力学积分引擎（"not on rails"模式）
 ├── CelestialBody.pde           # 天体数据模型与LOD分级绘制
+├── CelestialBodyRenderer.pde   # 天体细节渲染器（程序化纹理/大气/光环/太阳日珥）
 ├── SolarSystem.pde             # 太阳系初始化（8大行星 + 太阳）
 ├── Spacecraft.pde              # 航天器状态容器 + 调度器
 ├── SpacecraftRenderer.pde      # 航天器绘制（地图图标 / 飞船视角详细模型）
@@ -79,6 +80,42 @@ LaunchController（纯状态机）
 - **HELIOCENTRIC** — 日心坐标系（行星际转移）
 
 ## 核心模块详解
+
+### CelestialBodyRenderer.pde — 天体细节渲染器
+
+程序化纹理渲染，无外部资源依赖，支持 LOD 分级：
+
+| LOD级别 | 触发条件 | 效果 |
+|---------|---------|------|
+| LOD0 | 屏幕半径 < 20px | 简单圆形 + 太阳基础光晕 |
+| LOD1 | 20~80px | 形状化条纹带（带宽1.2倍保证重叠无缺口） |
+| LOD2 | 80~250px | 更高细分条纹带 |
+| LOD3 | > 250px | 完整细节（大红斑等） + 光环 + 大气 |
+| Scanline | 半径 > 屏幕宽高50% | 逐行扫描填充，避免巨型椭圆性能问题 |
+| LOD4 | 包含屏幕四角 | 全屏太阳噪点表面 |
+
+**天体特殊效果：**
+- **太阳**：径向噪点变化 + 日珥脉动 + 多层光晕
+- **地球**：蓝绿海陆噪点分离 + 大气边缘发光
+- **火星**：红棕变化表面 + 稀薄大气
+- **木星**：条纹带 + 大红斑特征
+- **土星/天王星**：光环系统（多层半透明噪点）
+
+**渲染策略（无缺口保证）：**
+1. 所有颜色带使用闭合形状
+2. 相邻带宽度重叠20%
+3. 完整圆周采样（步长0.05弧度）
+4. 形状路径：上半圈 + 下半圈反向闭合
+
+### CelestialBody.pde — 天体数据模型
+
+扩展属性：
+- `BodyType`：SUN / TERRESTRIAL / GAS_GIANT / ICE_GIANT
+- 光环参数：`hasRing` / `ringInnerRadius` / `ringOuterRadius` / `ringTilt`
+- 大气参数：`hasAtmosphere` / `atmosphereColor` / `atmosphereThickness`
+- 渲染器引用：`renderer`（CelestialBodyRenderer实例）
+
+LOD选择完全基于**屏幕半径大小**，不再依赖中心是否在屏幕内，避免平移时跳变。
 
 ### D_PhysicsEngine.pde — 牛顿力学积分引擎（预留）
 
@@ -252,6 +289,18 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 ## 最近更新
 
 ### 2026-05-16
+- **天体 LOD 渲染系统重写**：
+  - 新增 `CelestialBodyRenderer.pde` 独立渲染模块
+  - 完全基于屏幕半径的 LOD 判定（<20/20~80/80~250/>250px）
+  - 所有天体使用闭合形状绘制，1.2倍带宽保证重叠无缺口
+  - 太阳彻底告别扇形，改用三角形扇形+高细分
+  - 超大天体使用扫描线填充避免巨型椭圆性能问题
+- **程序化纹理与效果**：
+  - 地球：海陆噪点分离 + 大气边缘发光（不遮挡地表）
+  - 木星：条纹带 + 大红斑
+  - 土星/天王星：多层半透明光环系统
+  - 太阳：径向噪点 + 日珥脉动 + 多层光晕
+- **星空背景优化**：星星数量增加至1500，颜色变异，银河带星云效果
 - **修复飞船旋转抖动**：移除 `updateDisplayAngle` 重复调用，统一在 `Spacecraft.update()` 内使用模拟时间更新，大时间步长自动拆分为 60fps 子步保证 PD 控制器稳定
 - **优化 RCS 羽流可见性**：从"随推力改变尺寸"改为"脉冲喷射模式"——小推力时低频(2Hz)短脉冲(15%)，大推力时高频(17Hz)长脉冲(90%)，羽流尺寸固定清晰可见
 

@@ -101,7 +101,6 @@ class CelestialBody {
     if (Double.isNaN(screenR) || Double.isInfinite(screenR)) return;
 
     double cx = sp[0], cy = sp[1];
-    boolean centerOnScreen = cx >= 0 && cx <= width && cy >= 0 && cy <= height;
 
     // Cull — use unclamped radius so near-surface bodies aren't lost
     if (cx + screenR < -10 || cx - screenR > width + 10 ||
@@ -117,36 +116,30 @@ class CelestialBody {
 
     noStroke();
 
+    // 完全按屏幕半径判定LOD，不看中心位置
+    double drawR = screenR;
+    if (drawR < 2) drawR = 2;
+
     if (renderer != null) {
       if (coversScreen) {
         renderer.drawLOD4(this, cx, cy, screenR);
-      } else if (centerOnScreen) {
-        double maxR = Math.max(width, height) * 3.0;
-        double drawR = Math.min(screenR, maxR);
-        if (drawR < 2) drawR = 2;
-        if (drawR < 30) {
-          renderer.drawLOD0(this, cx, cy, drawR);
-        } else if (drawR < 100) {
-          renderer.drawLOD1(this, cx, cy, drawR);
-        } else if (drawR < 300) {
-          renderer.drawLOD2(this, cx, cy, drawR);
-        } else {
-          renderer.drawLOD3(this, cx, cy, drawR);
-        }
+      } else if (drawR > width * 0.5 || drawR > height * 0.5) {
+        // 特别大时用扫描线方式避免巨形
+        renderer.drawScanlineLOD(this, cx, cy, screenR);
+      } else if (drawR < 20) {
+        renderer.drawLOD0(this, cx, cy, drawR);
+      } else if (drawR < 80) {
+        renderer.drawLOD1(this, cx, cy, drawR);
+      } else if (drawR < 250) {
+        renderer.drawLOD2(this, cx, cy, drawR);
       } else {
-        drawGroundScanline(cx, cy, screenR);
+        renderer.drawLOD3(this, cx, cy, drawR);
       }
     } else {
       // Fallback simple rendering
       if (coversScreen) {
         fill(col);
         rect(0, 0, width, height);
-      } else if (centerOnScreen) {
-        double maxR = Math.max(width, height) * 3.0;
-        double drawR = Math.min(screenR, maxR);
-        if (drawR < 2) drawR = 2;
-        fill(col);
-        ellipse((float)cx, (float)cy, (float)(drawR * 2), (float)(drawR * 2));
       } else {
         drawGroundScanline(cx, cy, screenR);
       }
@@ -156,12 +149,27 @@ class CelestialBody {
       fill(200, 200, 200, 200);
       textSize(17 * uiScale);
       textAlign(LEFT, CENTER);
-      float labelR = centerOnScreen ? (float)Math.min(screenR, Math.max(width, height) * 3.0) : (float)screenR;
+      float labelR = (float)drawR;
       if (labelR < 2) labelR = 2;
       float labelX = (float)(cx + labelR + 5);
       float labelY = (float)cy;
       text(name, labelX, labelY);
+
+      // LOD 级别提示
+      String lodStr = getLODString(drawR, coversScreen);
+      fill(80, 200, 120, 200);
+      textSize(12 * uiScale);
+      text(lodStr, labelX, labelY + 18 * uiScale);
     }
+  }
+
+  String getLODString(double drawR, boolean coversScreen) {
+    if (coversScreen) return "LOD: 4 (Scanline)";
+    if (drawR > width * 0.5 || drawR > height * 0.5) return "LOD: Scanline";
+    if (drawR < 20) return "LOD: 0";
+    if (drawR < 80) return "LOD: 1";
+    if (drawR < 250) return "LOD: 2";
+    return "LOD: 3";
   }
 
   void drawGroundScanline(double cx, double cy, double r) {
