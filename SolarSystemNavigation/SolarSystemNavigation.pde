@@ -93,6 +93,7 @@ void setup() {
   Spacecraft defaultShip = new Spacecraft(0, 0, 0, 0, 0, 0, 0, color(0, 255, 150));
   defaultShip.earthRelative = true;
   defaultShip.earthRef = earth;
+  defaultShip.frame = new ReferenceFrame(FrameType.SURFACE, earth);
   defaultShip.launchPadAngle = launchAngle;
   defaultShip.displayAngle = launchAngle;
   defaultShip.launchAltitude = 0.0488;  // ~49m, engines rest on pad surface
@@ -226,7 +227,7 @@ void drawOrbitPath(double a, double e, double i, double omega, double w, color c
 }
 
 void drawEarthRelOrbit(Spacecraft s) {
-  if (s.state == ShipState.LAUNCHING || s.state == ShipState.CIRCULARIZING) {
+  if (s.state == ShipState.LAUNCHING || s.state == ShipState.CIRCULARIZING || s.state == ShipState.TMI_BURN) {
     double[] ke = cartesianToKepler(
       new double[]{s.earthRelPos[0], s.earthRelPos[1], 0},
       new double[]{s.earthRelVel[0], s.earthRelVel[1], 0},

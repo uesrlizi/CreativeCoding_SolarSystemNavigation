@@ -360,7 +360,9 @@ class ShipStatusPanel {
         // 燃烧进度
         fill(180);
         textSize(12 * scale);
-        double tmiProgress = ctrl.burnDeltaVApplied / ctrl.burnDeltaVNeeded;
+        double tmiTarget = ctrl.currentMission != null ? ctrl.currentMission.tmiDeltaV : ship.tmiTargetDV;
+        double tmiApplied = ship.tmiAccumulatedDV;
+        double tmiProgress = tmiTarget > 0 ? tmiApplied / tmiTarget : 1.0;
         text(String.format("TMI: %d%% complete", (int)(tmiProgress * 100)),
              panelX + panelMargin, y + 22);
         // 进度条
@@ -369,7 +371,7 @@ class ShipStatusPanel {
         float tmiBarW = panelW - 2 * panelMargin;
         float tmiBarH = 12 * scale;
         drawProgressBar(tmiBarX, tmiBarY, tmiBarW, tmiBarH, (float)tmiProgress,
-                       String.format("%.2f / %.2f km/s", ctrl.burnDeltaVApplied, ctrl.burnDeltaVNeeded));
+                       String.format("%.2f / %.2f km/s", tmiApplied, tmiTarget));
         break;
 
       case TRANSFER:
@@ -431,7 +433,9 @@ class ShipStatusPanel {
         // 燃烧进度
         fill(180);
         textSize(12 * scale);
-        double toiProgress = ctrl.burnDeltaVApplied / ctrl.burnDeltaVNeeded;
+        double toiTarget = ctrl.currentMission != null ? ctrl.currentMission.toiDeltaV : ship.toiTargetDV;
+        double toiApplied = ship.toiAccumulatedDV;
+        double toiProgress = toiTarget > 0 ? toiApplied / toiTarget : 1.0;
         text(String.format("TOI: %d%% complete", (int)(toiProgress * 100)),
              panelX + panelMargin, y + 22);
         // 进度条
@@ -440,7 +444,7 @@ class ShipStatusPanel {
         float toiBarW = panelW - 2 * panelMargin;
         float toiBarH = 12 * scale;
         drawProgressBar(toiBarX, toiBarY, toiBarW, toiBarH, (float)toiProgress,
-                       String.format("%.2f / %.2f km/s", ctrl.burnDeltaVApplied, ctrl.burnDeltaVNeeded));
+                       String.format("%.2f / %.2f km/s", toiApplied, toiTarget));
         break;
 
       case CAPTURED:
