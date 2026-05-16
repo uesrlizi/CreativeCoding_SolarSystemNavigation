@@ -207,7 +207,7 @@ class LaunchController {
 
   void updateTMIBurn() {
     burnDeltaVApplied = currentShip.tmiAccumulatedDV;
-    if (!currentShip.thrustActive) {
+    if (!currentShip.thrustActive || currentShip.tmiAccumulatedDV >= currentShip.tmiTargetDV) {
       completeTMIBurn();
     }
   }
@@ -320,6 +320,44 @@ class LaunchController {
     state = ShipState.TOI_BURN;
     currentShip.state = ShipState.TOI_BURN;
 
+    // Switch to target-relative coordinates
+    currentShip.earthRelative = true;
+    currentShip.earthRef = approachTarget;
+
+    // Initialize position relative to target
+    double dx = currentShip.px - approachTarget.px;
+    double dy = currentShip.py - approachTarget.py;
+    currentShip.earthRelPos = new double[]{dx, dy, 0};
+
+    // Initialize velocity relative to target (estimate)
+    // Get target's heliocentric velocity
+    double n_target = 2 * PI / approachTarget.period;
+    double M_target = approachTarget.M0 + n_target * timeManager.simTime;
+    double E_target = solveKepler(M_target, approachTarget.e);
+    double nu_target = trueAnomaly(E_target, approachTarget.e);
+    double[] pos_target = orbitalToCartesian(approachTarget.a, approachTarget.e, approachTarget.i, approachTarget.omega, approachTarget.w, nu_target);
+
+    // Velocity from vis-viva
+    double r_target = Math.sqrt(pos_target[0]*pos_target[0] + pos_target[1]*pos_target[1]);
+    double v_target_mag = Math.sqrt(GM_SUN * (2.0/r_target - 1.0/approachTarget.a));
+    double theta_target = Math.atan2(pos_target[1], pos_target[0]) + PI/2; // perpendicular to radius
+    double vx_target = v_target_mag * Math.cos(theta_target);
+    double vy_target = v_target_mag * Math.sin(theta_target);
+
+    // Spacecraft velocity (approximate from transfer orbit)
+    double n_ship = 2 * PI / currentShip.period;
+    double M_ship = currentShip.M0 + n_ship * timeManager.simTime;
+    double E_ship = solveKepler(M_ship, currentShip.e);
+    double nu_ship = trueAnomaly(E_ship, currentShip.e);
+    double[] pos_ship = orbitalToCartesian(currentShip.a, currentShip.e, currentShip.i, currentShip.omega, currentShip.w, nu_ship);
+    double r_ship = Math.sqrt(pos_ship[0]*pos_ship[0] + pos_ship[1]*pos_ship[1]);
+    double v_ship_mag = Math.sqrt(GM_SUN * (2.0/r_ship - 1.0/currentShip.a));
+    double theta_ship = Math.atan2(pos_ship[1], pos_ship[0]) + PI/2;
+    double vx_ship = v_ship_mag * Math.cos(theta_ship);
+    double vy_ship = v_ship_mag * Math.sin(theta_ship);
+
+    currentShip.earthRelVel = new double[]{vx_ship - vx_target, vy_ship - vy_target, 0};
+
     currentShip.toiTargetDV = currentMission.toiDeltaV;
     currentShip.toiAccumulatedDV = 0;
     currentShip.lastUpdateTime = timeManager.simTime;
@@ -339,7 +377,7 @@ class LaunchController {
 
   void updateTOIBurn() {
     burnDeltaVApplied = currentShip.toiAccumulatedDV;
-    if (!currentShip.thrustActive) {
+    if (!currentShip.thrustActive || currentShip.toiAccumulatedDV >= currentShip.toiTargetDV) {
       completeTOIBurn();
     }
   }
@@ -351,16 +389,22 @@ class LaunchController {
   void completeTOIBurn() {
     currentShip.thrustActive = false;
 
-    currentShip.a = selectedTarget.a;
-    currentShip.e = selectedTarget.e;
-    currentShip.i = selectedTarget.i;
-    currentShip.omega = selectedTarget.omega;
-    currentShip.w = selectedTarget.w;
-    currentShip.period = selectedTarget.period;
+    // Stay in target-relative coordinates, set up a stable circular orbit
+    double rCapture = approachTarget.radius * 10.0;
+    double GM_target = planner.getTargetGM(approachTarget);
+    double vCaptureCirc = Math.sqrt(GM_target / rCapture);
 
-    double n = 2 * PI / selectedTarget.period;
-    double currentM = selectedTarget.M0 + n * timeManager.simTime;
-    currentShip.M0 = currentM - 0.02;
+    // Set up circular orbit
+    double angle = Math.atan2(currentShip.earthRelPos[1], currentShip.earthRelPos[0]);
+    currentShip.earthRelPos[0] = rCapture * Math.cos(angle);
+    currentShip.earthRelPos[1] = rCapture * Math.sin(angle);
+    currentShip.earthRelVel[0] = -vCaptureCirc * Math.sin(angle);
+    currentShip.earthRelVel[1] =  vCaptureCirc * Math.cos(angle);
+
+    currentShip.launchPadAngle = angle;
+    currentShip.earthOrbitAngle = angle;
+    currentShip.orbitStartTime = timeManager.simTime;
+    currentShip.launchAltitude = rCapture - approachTarget.radius;
 
     state = ShipState.CAPTURED;
     currentShip.state = ShipState.CAPTURED;

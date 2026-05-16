@@ -215,14 +215,22 @@ void updateBodyRelative(double t, double simDt) {
             // 每子步检查是否开始圆化燃烧
             // 每子步检查是否完成圆化
         }
-    } else if (state == ORBIT) {
-        // === 解析圆形轨道 ===
+    } else if (state == ORBIT || state == WAITING_FOR_WINDOW) {
+        // === 解析圆形轨道（地球） ===
+        orbitPropagator.propagateCircularOrbit(...);
+    } else if (state == CAPTURED) {
+        // === 解析圆形轨道（目标天体） ===
         orbitPropagator.propagateCircularOrbit(...);
     }
     // === 显示角度更新（与物理同步） ===
     updateDisplayAngle(targetAngle, simDt);  // 内部自动子步
 }
 ```
+
+**关键修复（2026-05-16）**：轨道传播现在完全独立于任务状态——
+- `WAITING_FOR_WINDOW` 状态复用 `ORBIT` 逻辑，继续绕地球旋转
+- `CAPTURED` 状态使用目标天体 GM 和轨道参数，持续绕目标旋转
+- 任何状态下都不会停止轨道传播
 
 ### LaunchController.pde — 纯任务状态机
 
@@ -297,6 +305,11 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 ## 最近更新
 
 ### 2026-05-16
+- **修复飞船在 WAITING_FOR_WINDOW 和 CAPTURED 状态下停止不动的问题**：
+  - 轨道传播与任务状态完全解耦
+  - `WAITING_FOR_WINDOW` 复用 `ORBIT` 状态的地球轨道传播逻辑
+  - `CAPTURED` 新增目标天体轨道传播（使用目标 GM 和 10x 半径轨道）
+  - 任何任务状态下飞船都会持续沿轨道运行
 - **天体 LOD 渲染系统重写**：
   - 新增 `CelestialBodyRenderer.pde` 独立渲染模块
   - 完全基于屏幕半径的 LOD 判定（<25/25~90/90~220/>220px）
@@ -314,11 +327,16 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
   - 正确的前后遮挡：先画整环→画行星→画下半圈
   - 星环层使用Perlin噪声实现透明度和颜色变化
 - **LOD过渡一致性优化**：
-  - 统一所有LOD的行星旋转参数（rotation * 0.05）
+  - 统一所有LOD的行星旋转参数（直接使用 rotation，移除缩放因子）
   - 统一太阳噪声采样坐标（基于角度而非屏幕位置）
   - 增加LOD1/2的条纹带数量（10/14条）
   - LOD0也显示星环和大气（达到阈值后）
 - **星空背景优化**：星星数量增加至1500，颜色变异，银河带星云效果
 - **修复飞船旋转抖动**：移除 `updateDisplayAngle` 重复调用，统一在 `Spacecraft.update()` 内使用模拟时间更新，大时间步长自动拆分为 60fps 子步保证 PD 控制器稳定
 - **优化 RCS 羽流可见性**：从"随推力改变尺寸"改为"脉冲喷射模式"——小推力时低频(2Hz)短脉冲(15%)，大推力时高频(17Hz)长脉冲(90%)，羽流尺寸固定清晰可见
+- **修复天体自转跳变**：
+  - 移除渲染时 `body.rotation * 0.05` 和 `* 0.1` 的缩放因子
+  - 自转现在与公转一样，直接基于 `simTime` 连续计算
+  - 符合真实周期数据（地球1天、木星0.41天等）
+  - 受时间流速影响，无跳变、无缩放
 

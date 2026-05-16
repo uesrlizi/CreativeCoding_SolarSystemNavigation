@@ -63,6 +63,7 @@ class Spacecraft {
   FlightComputer flightComputer;
   PhysicsEngine physicsEngine;
   AtmosphereModel atmosphereModel;
+  MissionPlanner planner;
 
   // ==============================================================
   //  Constructor
@@ -83,6 +84,7 @@ class Spacecraft {
     this.flightComputer = new FlightComputer();
     this.physicsEngine = new PhysicsEngine();
     this.atmosphereModel = new AtmosphereModel();
+    this.planner = new MissionPlanner();
 
     this.state = ShipState.IDLE;
     this.launchStartTime = 0;
@@ -314,8 +316,106 @@ class Spacecraft {
         updateDerivedValues();
       }
 
-    } else if (state == ShipState.ORBIT) {
-      // === Analytic circular orbit ===
+    } else if (state == ShipState.TMI_BURN) {
+      // === TMI Burn - Prograde thrust to escape Earth ===
+      double currentT = t - simDt;
+      double remainingDt = simDt;
+
+      while (remainingDt > 0) {
+        double step = Math.min(remainingDt, PhysicsEngine.FIXED_SUBSTEP);
+
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double r = Math.sqrt(rx * rx + ry * ry);
+
+        // Gravity
+        double gMag = MissionPlanner.GM_EARTH / (r * r);
+        double ax = -gMag * rx / r;
+        double ay = -gMag * ry / r;
+
+        // Thrust (prograde tangential)
+        if (thrustActive) {
+          double[] thrustDir = flightComputer.tangentialThrustDirection(rx, ry, true);
+          double thrustAx = FlightComputer.THRUST_ACCEL * thrustDir[0];
+          double thrustAy = FlightComputer.THRUST_ACCEL * thrustDir[1];
+          ax += thrustAx;
+          ay += thrustAy;
+
+          // Accumulate ΔV
+          double dvThisStep = FlightComputer.THRUST_ACCEL * step;
+          tmiAccumulatedDV += dvThisStep;
+
+          // Check burn completion
+          if (tmiAccumulatedDV >= tmiTargetDV) {
+            thrustActive = false;
+          }
+        }
+
+        // Semi-implicit Euler integration
+        earthRelVel[0] += ax * step;
+        earthRelVel[1] += ay * step;
+        earthRelPos[0] += earthRelVel[0] * step;
+        earthRelPos[1] += earthRelVel[1] * step;
+
+        currentT += step;
+        remainingDt -= step;
+      }
+
+      updateDerivedValues();
+
+    } else if (state == ShipState.TOI_BURN) {
+      // === TOI Burn - Retrograde thrust to brake into orbit ===
+      double currentT = t - simDt;
+      double remainingDt = simDt;
+
+      // Get target GM
+      double GM_target = MissionPlanner.GM_EARTH;
+      if (earthRef != null) {
+        GM_target = planner.getTargetGM(earthRef);
+      }
+
+      while (remainingDt > 0) {
+        double step = Math.min(remainingDt, PhysicsEngine.FIXED_SUBSTEP);
+
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double r = Math.sqrt(rx * rx + ry * ry);
+
+        // Gravity (target body)
+        double gMag = GM_target / (r * r);
+        double ax = -gMag * rx / r;
+        double ay = -gMag * ry / r;
+
+        // Thrust (retrograde - opposite to velocity)
+        if (thrustActive) {
+          double[] thrustDir = flightComputer.tangentialThrustDirection(earthRelVel, false);
+          double thrustAx = FlightComputer.THRUST_ACCEL * thrustDir[0];
+          double thrustAy = FlightComputer.THRUST_ACCEL * thrustDir[1];
+          ax += thrustAx;
+          ay += thrustAy;
+
+          // Accumulate ΔV
+          double dvThisStep = FlightComputer.THRUST_ACCEL * step;
+          toiAccumulatedDV += dvThisStep;
+
+          // Check burn completion
+          if (toiAccumulatedDV >= toiTargetDV) {
+            thrustActive = false;
+          }
+        }
+
+        // Semi-implicit Euler integration
+        earthRelVel[0] += ax * step;
+        earthRelVel[1] += ay * step;
+        earthRelPos[0] += earthRelVel[0] * step;
+        earthRelPos[1] += earthRelVel[1] * step;
+
+        currentT += step;
+        remainingDt -= step;
+      }
+
+      updateDerivedValues();
+
+    } else if (state == ShipState.ORBIT || state == ShipState.WAITING_FOR_WINDOW) {
+      // === Analytic circular orbit around Earth ===
       double orbitElapsed = t - orbitStartTime;
       double angVel = Math.sqrt(MissionPlanner.GM_EARTH / Math.pow(MissionPlanner.LEO_RADIUS_KM, 3));
       earthOrbitAngle = launchPadAngle + angVel * orbitElapsed;
@@ -325,6 +425,23 @@ class Spacecraft {
         MissionPlanner.LEO_RADIUS_KM,
         MissionPlanner.GM_EARTH);
       launchAltitude = MissionPlanner.LEO_ALTITUDE_KM;
+
+    } else if (state == ShipState.CAPTURED) {
+      // === Analytic circular orbit around target body ===
+      double GM_target = planner.getTargetGM(earthRef);
+      double orbitRadius = earthRef.radius * 10.0;
+      double orbitElapsed = t - orbitStartTime;
+      double angVel = Math.sqrt(GM_target / Math.pow(orbitRadius, 3));
+      earthOrbitAngle = launchPadAngle + angVel * orbitElapsed;
+
+      orbitPropagator.propagateCircularOrbit(
+        earthRelPos, earthRelVel,
+        earthRef, earthOrbitAngle,
+        orbitRadius,
+        GM_target);
+
+      launchAltitude = orbitRadius - earthRef.radius;
+      updateDerivedValues();
     }
 
     // Update world position
@@ -407,6 +524,13 @@ class Spacecraft {
         double vx = earthRelVel[0], vy = earthRelVel[1];
         double[] peg = flightComputer.pegGuidance(rx, ry, vx, vy, MissionPlanner.LEO_RADIUS_KM, MissionPlanner.GM_EARTH);
         return peg[1];
+      } else if (state == ShipState.TMI_BURN && thrustActive) {
+        double rx = earthRelPos[0], ry = earthRelPos[1];
+        double[] thrustDir = flightComputer.tangentialThrustDirection(rx, ry, true);
+        return Math.atan2(thrustDir[1], thrustDir[0]);
+      } else if (state == ShipState.TOI_BURN && thrustActive) {
+        double[] thrustDir = flightComputer.tangentialThrustDirection(earthRelVel, false);
+        return Math.atan2(thrustDir[1], thrustDir[0]);
       } else {
         return earthOrbitAngle + PI / 2.0;
       }
