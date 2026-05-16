@@ -149,7 +149,6 @@ void draw() {
 
     for (Spacecraft s : solarSystem.ships) {
       s.update(timeManager.simTime);
-      s.updateDisplayAngle(s.computeTargetWorldAngle(), deltaTime);
     }
 
     camera.update(deltaTime);

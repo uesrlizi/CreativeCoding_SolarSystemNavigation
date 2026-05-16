@@ -537,9 +537,21 @@ class SpacecraftRenderer {
                     + vel / Spacecraft.MAX_ANGULAR_VELOCITY;
     if (activity < 0.0005) return;
 
-    // Non-linear curve so small corrections are still visible
-    float thrustLevel = (float)Math.sqrt(Math.min(1.0, activity));
-    float oscPhase = millis() / 1000.0 * 35.0;
+    float thrustLevel = (float)Math.min(1.0, activity);
+    float time = millis() / 1000.0f;
+
+    // Pulsed jet logic:
+    // - Low thrust: low frequency, short pulses
+    // - High thrust: high frequency, long pulses (approaching continuous)
+    float pulseFreq = 2.0f + thrustLevel * 15.0f;  // 2Hz to 17Hz
+    float pulseDuty = 0.15f + thrustLevel * 0.75f; // 15% to 90% duty cycle
+
+    float cycle = time * pulseFreq;
+    float cycleFraction = cycle - (float)Math.floor(cycle);
+    boolean isFiring = cycleFraction < pulseDuty;
+
+    if (!isFiring) return;
+    float oscPhase = time * 35.0f;
 
     // Firing pair depends on sign of angular acceleration.
     // Processing rotate(+angle) = CW, so accel > 0 means accelerating CW.
@@ -547,22 +559,22 @@ class SpacecraftRenderer {
     //   CCW (nose up, tail down): forward-bottom (+Y plume), aft-top (-Y plume)
     if (accel > 0) {
       // CW: forward-top (-Y) + aft-bottom (+Y)
-      drawRCSPlume(bl, fwdX, -fwdR, -1, thrustLevel, oscPhase);         // forward-top
-      drawRCSPlume(bl, aftX,  aftR,  1, thrustLevel, oscPhase + 0.9);   // aft-bottom
+      drawRCSPlume(bl, fwdX, -fwdR, -1, 1.0f, oscPhase);         // forward-top
+      drawRCSPlume(bl, aftX,  aftR,  1, 1.0f, oscPhase + 0.9f);   // aft-bottom
     } else {
       // CCW: forward-bottom (+Y) + aft-top (-Y)
-      drawRCSPlume(bl, fwdX,  fwdR,  1, thrustLevel, oscPhase);         // forward-bottom
-      drawRCSPlume(bl, aftX, -aftR, -1, thrustLevel, oscPhase + 0.9);   // aft-top
+      drawRCSPlume(bl, fwdX,  fwdR,  1, 1.0f, oscPhase);         // forward-bottom
+      drawRCSPlume(bl, aftX, -aftR, -1, 1.0f, oscPhase + 0.9f);   // aft-top
     }
   }
 
   void drawRCSPlume(float bl, float originX, float originY, int dirSign, float level, float phase) {
     noStroke();
-    // Minimum visible size so weak corrections still show a small puff
-    float plumeLen = bl * Math.max(0.015, 0.06 * level);
-    float plumeW  = bl * Math.max(0.003, 0.010 * level);
-    float osc = (float)Math.sin(phase) * plumeLen * 0.2;
-    float alphaMul = Math.max(0.35, level);
+    // Fixed visible size (level now unused, kept for compatibility)
+    float plumeLen = bl * 0.05f;
+    float plumeW  = bl * 0.008f;
+    float osc = (float)Math.sin(phase) * plumeLen * 0.2f;
+    float alphaMul = 1.0f;
 
     // Outer fringe (cool blue-white)
     fill(180, 210, 255, 50 * alphaMul);

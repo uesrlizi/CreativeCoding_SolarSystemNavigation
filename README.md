@@ -37,34 +37,40 @@ SolarSystemNavigation/
 
 ## 核心架构（KSP 风格）
 
-架构重构为类似 Kerbal Space Program 的分层设计，把**轨迹模拟**与**飞行控制**完全分离：
+架构设计为类似 Kerbal Space Program 的分层设计，**制导算法与轨道传播分离**：
 
 ```
 Spacecraft（状态容器 + 调度器）
-    ├── D_ReferenceFrame（参考系切换）
-    ├── needsPhysics() → 选择模式
-    ├── [Physics Mode] → D_PhysicsEngine（牛顿积分）
-    ├──   └── SpacecraftForceModel（重力+推力+阻力）
-    ├── [Orbit Mode] → D_OrbitPropagator（开普勒传播）
-    └── D_FlightComputer（制导算法）
+    ├── [发射/圆化阶段] → 内置子步物理 + 制导状态机
+    ├──   ├── 重力转弯（FlightComputer）
+    ├──   ├── PEG 圆化（FlightComputer）
+    ├──   └── 大气阻力（AtmosphereModel）
+    ├── [轨道阶段] → D_OrbitPropagator（开普勒传播）
+    └── 显示角度平滑（独立于物理）
 
 LaunchController（纯状态机）
-    ├── 任务阶段切换
+    ├── 任务阶段切换（倒计时→点火→发射→...）
     ├── 时间保护逻辑
     └── 不包含任何物理计算
 ```
 
-### 物理/轨道模式自动切换
+### 发射/圆化制导状态机
 
-飞船根据当前状态和环境自动选择模式：
+完整的 KSP 风格发射流程：
 
-| 条件 | 模式 | 说明 |
+| 阶段 | 制导 | 完成条件 |
+|------|------|---------|
+| `LAUNCHING` | 重力转弯（10s 垂直后逐渐俯仰） | 远地点 ≥ 420km |
+| 滑行 | 无推力 | 到达远地点前 `burnDuration/2` |
+| `CIRCULARIZING` | PEG 制导 | 近地点 ≥ 419km 或 燃烧时间耗尽 |
+| `ORBIT` | 解析圆形轨道 | — |
+
+### 物理/轨道模式
+
+| 阶段 | 模式 | 说明 |
 |------|------|------|
-| `thrustActive = true` | Physics | 发动机工作，子步积分 |
-| `inAtmosphere = true` | Physics | 在大气层内（地球 <140km），有阻力 |
-| `state = LAUNCHING` | Physics | 上升段主动控制 |
-| `state = CIRCULARIZING` | Physics | 圆化段 PEG 制导 |
-| 其他状态（ORBIT/TRANSFER等） | Orbit | 开普勒解析传播，无物理计算开销 |
+| `LAUNCHING` / `CIRCULARIZING` | 内置物理 | 子步迭代，完整制导 |
+| `ORBIT` / `TRANSFER` / 其他 | Orbit | 开普勒解析传播 |
 
 ### 参考系系统 (FrameType)
 
@@ -74,9 +80,9 @@ LaunchController（纯状态机）
 
 ## 核心模块详解
 
-### D_PhysicsEngine.pde — 牛顿力学积分引擎
+### D_PhysicsEngine.pde — 牛顿力学积分引擎（预留）
 
-**半隐式欧拉积分**，固定子步长 `FIXED_SUBSTEP = 1s`，`maxSubSteps` 防止锁帧：
+**半隐式欧拉积分**，固定子步长 `FIXED_SUBSTEP = 1s`：
 
 ```
 每个子步:
@@ -85,9 +91,7 @@ LaunchController（纯状态机）
 3. pos += vel × step
 ```
 
-- **力模型可配置** — 通过抽象类 `ForceModel` 注入具体计算
-- **事件检测** — 子步内可检测坠毁、逃逸等状态变化
-- **精度保障** — 固定 1s 子步，适合实时可视化
+当前预留用于将来扩展（TMI/TOI 燃烧、行星际物理），**发射/圆化阶段目前直接在 Spacecraft 中实现**（为了精确的每子步制导状态更新）。
 
 ### D_OrbitPropagator.pde — 开普勒轨道传播器
 
@@ -148,24 +152,30 @@ a_drag = 0.5 × Cd × A × ρ × v² / mass
 
 ### Spacecraft.pde — 状态容器 + 调度器
 
-重构后精简为约 300 行，核心只有 `update()`：
+核心更新逻辑：
+- **发射/圆化阶段**：完整的子步物理 + 制导状态机（直接在 Spacecraft 中实现）
+  - 主动段重力转弯 + 精确推力切断
+  - 远地点检测 + 圆化燃烧中点对齐
+  - PEG 制导 + 燃烧计时完成判断
+  - 大气阻力计算
+- **轨道阶段**：OrbitPropagator 解析圆形轨道传播
+- **显示角度平滑**：独立 PD 控制器，使用模拟时间，大时间步长拆分为 60fps 子步确保稳定
 
 ```java
-void update(double t) {
-    double simDt = t - lastUpdateTime;
-    boolean needsPhysics = thrustActive ||
-        (frame != null && frame.inAtmosphere(earthRelPos)) ||
-        state == LAUNCHING ||
-        state == CIRCULARIZING ||
-        state == TMI_BURN;
-
-    if (needsPhysics) {
-        physicsEngine.integrate(earthRelPos, earthRelVel, simDt, forceModel);
-    } else {
+void updateBodyRelative(double t, double simDt) {
+    if (state == LAUNCHING || state == CIRCULARIZING) {
+        // === 物理上升 + 制导状态机 ===
+        while (remainingDt > 0) {
+            // 重力 + 推力 + 阻力
+            // 每子步检查是否开始圆化燃烧
+            // 每子步检查是否完成圆化
+        }
+    } else if (state == ORBIT) {
+        // === 解析圆形轨道 ===
         orbitPropagator.propagateCircularOrbit(...);
     }
-
-    updateDisplayAngle(...);
+    // === 显示角度更新（与物理同步） ===
+    updateDisplayAngle(targetAngle, simDt);  // 内部自动子步
 }
 ```
 
@@ -219,7 +229,7 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 - **不实现**：交会对接、兰伯特问题求解
 - **实现**：大气阻力（指数模型）
 - **实现**：KSP 风格 "on rails"/"not on rails" 模式切换
-- **表现层实现**：RCS 姿态控制（角速度/角加速度平滑 + RCS 喷口羽流动画），不影响轨道物理
+- **表现层实现**：RCS 姿态控制（角速度/角加速度平滑 + RCS 喷口羽流动画），不影响轨道物理；RCS 羽流采用脉冲喷射模式（小推力：低频短脉冲，大推力：高频长脉冲，尺寸固定清晰可见）
 - **简化**：所有轨道为 2D 平面（z=0），发射场固定在向阳面
 - **精度**：固定 1s 子步长，适合实时可视化而非高精度轨道预报
 
@@ -238,4 +248,10 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 | 滚轮 | 缩放 |
 | 拖拽 | 平移 |
 | 双击 | 聚焦点击的天体或飞船 |
+
+## 最近更新
+
+### 2026-05-16
+- **修复飞船旋转抖动**：移除 `updateDisplayAngle` 重复调用，统一在 `Spacecraft.update()` 内使用模拟时间更新，大时间步长自动拆分为 60fps 子步保证 PD 控制器稳定
+- **优化 RCS 羽流可见性**：从"随推力改变尺寸"改为"脉冲喷射模式"——小推力时低频(2Hz)短脉冲(15%)，大推力时高频(17Hz)长脉冲(90%)，羽流尺寸固定清晰可见
 
