@@ -95,7 +95,7 @@ class CelestialBodyRenderer {
       drawSunWithShapes((float)cx, (float)cy, fr, 14);
     } else {
       drawPlanetWithShapes(body, (float)cx, (float)cy, fr, 14);
-      if (body.name.equals("Jupiter")) drawRedSpot((float)cx, (float)cy, fr, body.rotation);
+      if (body.name.equals("Jupiter")) drawRedSpot(body, (float)cx, (float)cy, fr);
     }
 
     if (body.hasRing) drawRingMedium(body, (float)cx, (float)cy, (float)r);
@@ -114,7 +114,7 @@ class CelestialBodyRenderer {
       drawSolarProminences((float)cx, (float)cy, fr);
     } else {
       drawPlanetWithShapes(body, (float)cx, (float)cy, fr, 16);
-      if (body.name.equals("Jupiter")) drawRedSpot((float)cx, (float)cy, fr, body.rotation);
+      if (body.name.equals("Jupiter")) drawRedSpot(body, (float)cx, (float)cy, fr);
     }
 
     if (body.hasRing) drawRingDetailed(body, (float)cx, (float)cy, (float)r);
@@ -196,12 +196,13 @@ class CelestialBodyRenderer {
   void drawPlanetWithShapes(CelestialBody body, float cx, float cy, float r, int bands) {
     pushMatrix();
     translate(cx, cy);
-    // 统一旋转参数，确保各LOD朝向一致
+    // 先应用轴倾角，再应用自转
+    rotate(body.axialTilt);
     rotate(body.rotation * 0.05f);
 
     for (int i = -bands; i <= bands; i++) {
       float yCenter = i * r / bands;
-      float halfBand = r / bands * 1.3f; // 1.3倍宽度，更安全的重叠
+      float halfBand = r / bands * 1.3f;
       float y1 = yCenter - halfBand;
       float y2 = yCenter + halfBand;
 
@@ -209,14 +210,22 @@ class CelestialBodyRenderer {
       fill(c);
 
       beginShape();
-      // 上半圈
-      for (float a = 0; a <= PI; a += 0.03f) {
+      // 上半圈 - 使用整数循环避免缺口
+      float startAngle = 0;
+      float endAngle = PI;
+      float step = 0.03f;
+      int numSteps = (int)ceil((endAngle - startAngle) / step) + 1;
+      for (int s = 0; s < numSteps; s++) {
+        float a = startAngle + s * step;
+        if (a > endAngle) a = endAngle;
         float px = cos(a) * r;
         float py = sin(a) * r;
         if (py >= y1 && py <= y2) vertex(px, py);
       }
       // 下半圈反向
-      for (float a = PI; a >= 0; a -= 0.03f) {
+      for (int s = 0; s < numSteps; s++) {
+        float a = endAngle - s * step;
+        if (a < startAngle) a = startAngle;
         float px = cos(a) * r;
         float py = -sin(a) * r;
         if (py >= y1 && py <= y2) vertex(px, py);
@@ -257,14 +266,19 @@ class CelestialBodyRenderer {
     }
   }
 
-  void drawRedSpot(float cx, float cy, float r, float rot) {
-    float sx = cx + r * 0.28f;
-    float sy = cy + r * 0.32f;
+  void drawRedSpot(CelestialBody body, float cx, float cy, float r) {
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.axialTilt);
+    rotate(body.rotation * 0.05f);
+    float sx = r * 0.28f;
+    float sy = r * 0.32f;
     float sr = r * 0.14f;
     fill(175, 75, 40);
     ellipse(sx, sy, sr * 2, sr * 1.35f);
     fill(195, 95, 55, 120);
     ellipse(sx - sr * 0.15f, sy - sr * 0.1f, sr * 1.6f, sr * 1.1f);
+    popMatrix();
   }
 
   // ============================================================
@@ -464,6 +478,7 @@ class CelestialBodyRenderer {
   void drawPlanetWithShapesForRing(CelestialBody body, float cx, float cy, float r) {
     pushMatrix();
     translate(cx, cy);
+    rotate(body.axialTilt);
     rotate(body.rotation * 0.1f);
     int bands = 12;
 
@@ -477,12 +492,20 @@ class CelestialBodyRenderer {
       fill(c);
 
       beginShape();
-      for (float a = 0; a <= PI; a += 0.05f) {
+      float startAngle = 0;
+      float endAngle = PI;
+      float step = 0.05f;
+      int numSteps = (int)ceil((endAngle - startAngle) / step) + 1;
+      for (int s = 0; s < numSteps; s++) {
+        float a = startAngle + s * step;
+        if (a > endAngle) a = endAngle;
         float px = cos(a) * r;
         float py = sin(a) * r;
         if (py >= y1 && py <= y2) vertex(px, py);
       }
-      for (float a = PI; a >= 0; a -= 0.05f) {
+      for (int s = 0; s < numSteps; s++) {
+        float a = endAngle - s * step;
+        if (a < startAngle) a = startAngle;
         float px = cos(a) * r;
         float py = -sin(a) * r;
         if (py >= y1 && py <= y2) vertex(px, py);

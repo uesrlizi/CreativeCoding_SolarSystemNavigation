@@ -17,9 +17,11 @@ class CelestialBody {
 
   // Visual properties
   BodyType type;
-  float rotation;           // current rotation angle
-  float rotationRate;       // rotation speed
+  float rotation;           // current rotation angle (for rendering, mod TWO_PI)
+  float rotationRate;       // rotation speed (deprecated)
+  float rotationPeriodDays; // rotation period in Earth days
   float axialTilt;          // axial tilt in radians
+  float initialRotation;    // initial rotation angle at simTime 0
 
   // Ring system
   boolean hasRing;
@@ -65,8 +67,10 @@ class CelestialBody {
   }
 
   void initVisualProperties() {
-    rotation = random(TWO_PI);
-    rotationRate = 0.005f;
+    initialRotation = random(TWO_PI);
+    rotation = initialRotation;
+    rotationRate = 0.005f; // deprecated
+    rotationPeriodDays = 1.0f; // default 1 Earth day
     axialTilt = 0;
     hasRing = false;
     ringInnerRadius = 1.5f;
@@ -83,15 +87,23 @@ class CelestialBody {
   }
 
   void update(double t) {
-    if (a == 0) return;
-    double n = 2.0 * PI / period;
-    double M = (M0 + n * t) % (2.0 * PI);
-    double E = solveKepler(M, e);
-    double nu = trueAnomaly(E, e);
-    this.currentNu = nu;
-    double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
-    px = pos[0]; py = pos[1]; pz = pos[2];
-    rotation += rotationRate;
+    if (a != 0) {
+      double n = 2.0 * PI / period;
+      double M = (M0 + n * t) % (2.0 * PI);
+      double E = solveKepler(M, e);
+      double nu = trueAnomaly(E, e);
+      this.currentNu = nu;
+      double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
+      px = pos[0]; py = pos[1]; pz = pos[2];
+    }
+
+    // Calculate rotation directly from simTime - no accumulation, no clamping mid-calculation
+    double simDays = t / DAY_S;
+    double totalRotations = simDays / rotationPeriodDays;
+    double rotationRad = initialRotation + totalRotations * TWO_PI;
+    // Only mod when assigning to the final rotation value
+    rotation = (float)(rotationRad % TWO_PI);
+    if (rotation < 0) rotation += TWO_PI;
   }
 
   void draw(CameraController cam) {
