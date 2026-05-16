@@ -56,17 +56,19 @@ class CelestialBodyRenderer {
   }
 
   // ============================================================
-  //  LOD 0
+  //  LOD 0 - 基础圆形
   // ============================================================
   void drawLOD0(CelestialBody body, double cx, double cy, double r) {
     noStroke();
     if (body.type == BodyType.SUN) drawSunGlowSimple((float)cx, (float)cy, (float)r);
     fill(body.col);
     ellipse((float)cx, (float)cy, (float)(r * 2), (float)(r * 2));
+    if (body.hasRing && r > 40) drawRingSimple(body, (float)cx, (float)cy, (float)r);
+    if (body.hasAtmosphere && r > 30) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
   }
 
   // ============================================================
-  //  LOD 1 - 用形状，但形状要重叠！
+  //  LOD 1 - 基础形状分层
   // ============================================================
   void drawLOD1(CelestialBody body, double cx, double cy, double r) {
     noStroke();
@@ -75,32 +77,33 @@ class CelestialBodyRenderer {
     if (body.type == BodyType.SUN) {
       drawSunWithShapes((float)cx, (float)cy, fr, 8);
     } else {
-      drawPlanetWithShapes(body, (float)cx, (float)cy, fr, 8);
+      drawPlanetWithShapes(body, (float)cx, (float)cy, fr, 10);
     }
 
-    if (body.hasRing && r > 40) drawRingSimple(body, (float)cx, (float)cy, (float)r);
+    if (body.hasRing) drawRingMedium(body, (float)cx, (float)cy, (float)r);
     if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
   }
 
   // ============================================================
-  //  LOD 2
+  //  LOD 2 - 中等细节
   // ============================================================
   void drawLOD2(CelestialBody body, double cx, double cy, double r) {
     noStroke();
     float fr = (float)r;
 
     if (body.type == BodyType.SUN) {
-      drawSunWithShapes((float)cx, (float)cy, fr, 12);
+      drawSunWithShapes((float)cx, (float)cy, fr, 14);
     } else {
-      drawPlanetWithShapes(body, (float)cx, (float)cy, fr, 12);
+      drawPlanetWithShapes(body, (float)cx, (float)cy, fr, 14);
+      if (body.name.equals("Jupiter")) drawRedSpot((float)cx, (float)cy, fr, body.rotation);
     }
 
-    if (body.hasRing) drawRingSimple(body, (float)cx, (float)cy, (float)r);
+    if (body.hasRing) drawRingMedium(body, (float)cx, (float)cy, (float)r);
     if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
   }
 
   // ============================================================
-  //  LOD 3
+  //  LOD 3 - 高细节
   // ============================================================
   void drawLOD3(CelestialBody body, double cx, double cy, double r) {
     noStroke();
@@ -142,6 +145,8 @@ class CelestialBodyRenderer {
     drawSunGlowSimple(cx, cy, r);
     pushMatrix();
     translate(cx, cy);
+    // 固定初始角度，确保各LOD图案对齐
+    rotate(time * 0.02f);
     for (int i = 0; i < seg; i++) {
       float a1 = TWO_PI * i / seg;
       float a2 = TWO_PI * (i + 1) / seg;
@@ -151,7 +156,8 @@ class CelestialBodyRenderer {
         float a = lerp(a1, a2, j / 32.0f);
         float x = cos(a) * r;
         float y = sin(a) * r;
-        float n = noise(x * 0.02f + time * 0.1f, y * 0.02f);
+        // 统一噪声采样坐标，基于角度和半径，而不是屏幕像素
+        float n = noise(cos(a) * 3.0f + time * 0.08f, sin(a) * 3.0f);
         float bright = 0.75f + n * 0.35f;
         fill(255, (int)(200 * bright + 55), (int)(80 * bright + 30));
         vertex(x, y);
@@ -185,16 +191,17 @@ class CelestialBodyRenderer {
   }
 
   // ============================================================
-  //  行星 - 像Jupiter LOD3那样！形状要重叠！
+  //  行星 - 统一的渲染逻辑
   // ============================================================
   void drawPlanetWithShapes(CelestialBody body, float cx, float cy, float r, int bands) {
     pushMatrix();
     translate(cx, cy);
-    rotate(body.rotation * 0.1f);
+    // 统一旋转参数，确保各LOD朝向一致
+    rotate(body.rotation * 0.05f);
 
     for (int i = -bands; i <= bands; i++) {
       float yCenter = i * r / bands;
-      float halfBand = r / bands * 1.2f; // 1.2倍宽度，保证重叠！
+      float halfBand = r / bands * 1.3f; // 1.3倍宽度，更安全的重叠
       float y1 = yCenter - halfBand;
       float y2 = yCenter + halfBand;
 
@@ -203,13 +210,13 @@ class CelestialBodyRenderer {
 
       beginShape();
       // 上半圈
-      for (float a = 0; a <= PI; a += 0.05f) {
+      for (float a = 0; a <= PI; a += 0.03f) {
         float px = cos(a) * r;
         float py = sin(a) * r;
         if (py >= y1 && py <= y2) vertex(px, py);
       }
       // 下半圈反向
-      for (float a = PI; a >= 0; a -= 0.05f) {
+      for (float a = PI; a >= 0; a -= 0.03f) {
         float px = cos(a) * r;
         float py = -sin(a) * r;
         if (py >= y1 && py <= y2) vertex(px, py);
@@ -261,29 +268,170 @@ class CelestialBodyRenderer {
   }
 
   // ============================================================
-  //  光环
+  //  光环 - 统一朝向，带遮挡
   // ============================================================
   void drawRingSimple(CelestialBody body, float cx, float cy, float r) {
+    float inR = r * body.ringInnerRadius;
+    float outR = r * body.ringOuterRadius;
+
+    // 先画环的后半部分（在行星后面）
     pushMatrix();
     translate(cx, cy);
     rotate(body.ringTilt);
-    float inR = r * body.ringInnerRadius;
-    float outR = r * body.ringOuterRadius;
     noStroke();
     fill(body.ringColor);
     ellipse(0, 0, outR * 2, outR * 0.42f);
     fill(0, 0);
     ellipse(0, 0, inR * 2, inR * 0.42f);
     popMatrix();
+
+    // 画行星本体遮挡环的中间部分
+    fill(body.col);
+    ellipse(cx, cy, r * 2, r * 2);
+
+    // 再画环的前半部分（在行星前面）
+    drawRingFrontHalf(body, cx, cy, r, inR, outR, body.ringColor, 150);
+  }
+
+  void drawRingMedium(CelestialBody body, float cx, float cy, float r) {
+    float inR = r * body.ringInnerRadius;
+    float outR = r * body.ringOuterRadius;
+    int layers = 6;
+
+    // 先画环的后半部分（在行星后面）
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.ringTilt);
+    noStroke();
+    for (int i = 0; i < layers; i++) {
+      float k1 = i / (float)layers;
+      float k2 = (i + 1) / (float)layers;
+      float r1 = inR + (outR - inR) * k1;
+      float r2 = inR + (outR - inR) * k2;
+      float alpha = 70 + noise(i * 0.8f) * 80;
+      float variation = 0.8f + noise(i * 2.5f) * 0.4f;
+      fill((int)(200 * variation), (int)(180 * variation), (int)(140 * variation), (int)alpha);
+      // 只画后半部分 (PI ~ TWO_PI)
+      beginShape(QUAD_STRIP);
+      float startAngle = PI;
+      float endAngle = TWO_PI;
+      float step = 0.25f;
+      int numSteps = (int)ceil((endAngle - startAngle) / step) + 1;
+      for (int s = 0; s < numSteps; s++) {
+        float a = startAngle + s * step;
+        if (a > endAngle) a = endAngle;
+        float x1 = cos(a) * r1;
+        float y1 = sin(a) * r1 * 0.42f;
+        float x2 = cos(a) * r2;
+        float y2 = sin(a) * r2 * 0.42f;
+        vertex(x1, y1);
+        vertex(x2, y2);
+      }
+      endShape();
+    }
+    popMatrix();
+
+    // 画行星本体遮挡环的中间部分
+    drawPlanetWithShapesForRing(body, cx, cy, r);
+
+    // 再画环的前半部分（在行星前面）
+    drawRingFrontHalfMedium(body, cx, cy, r, inR, outR, layers);
   }
 
   void drawRingDetailed(CelestialBody body, float cx, float cy, float r) {
-    pushMatrix();
-    translate(cx, cy);
-    rotate(body.ringTilt + time * 0.01f);
     float inR = r * body.ringInnerRadius;
     float outR = r * body.ringOuterRadius;
     int layers = 12;
+
+    // 先画环的后半部分（在行星后面）
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.ringTilt);
+    noStroke();
+    for (int i = 0; i < layers; i++) {
+      float k1 = i / (float)layers;
+      float k2 = (i + 1) / (float)layers;
+      float r1 = inR + (outR - inR) * k1;
+      float r2 = inR + (outR - inR) * k2;
+      float alpha = 60 + noise(i * 0.6f, time * 0.08f) * 110;
+      float variation = 0.78f + noise(i * 2.2f) * 0.44f;
+      fill((int)(200 * variation), (int)(180 * variation), (int)(140 * variation), (int)alpha);
+      // 只画后半部分 (PI ~ TWO_PI)
+      beginShape(QUAD_STRIP);
+      float startAngle = PI;
+      float endAngle = TWO_PI;
+      float step = 0.18f;
+      int numSteps = (int)ceil((endAngle - startAngle) / step) + 1;
+      for (int s = 0; s < numSteps; s++) {
+        float a = startAngle + s * step;
+        if (a > endAngle) a = endAngle;
+        float x1 = cos(a) * r1;
+        float y1 = sin(a) * r1 * 0.42f;
+        float x2 = cos(a) * r2;
+        float y2 = sin(a) * r2 * 0.42f;
+        vertex(x1, y1);
+        vertex(x2, y2);
+      }
+      endShape();
+    }
+    popMatrix();
+
+    // 画行星本体遮挡环的中间部分
+    drawPlanetWithShapesForRing(body, cx, cy, r);
+
+    // 再画环的前半部分（在行星前面）
+    drawRingFrontHalfDetailed(body, cx, cy, r, inR, outR, layers);
+  }
+
+  void drawRingFrontHalf(CelestialBody body, float cx, float cy, float r, float inR, float outR, color c, int alpha) {
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.ringTilt);
+    noStroke();
+    fill(red(c), green(c), blue(c), alpha);
+    arc(0, 0, outR * 2, outR * 0.42f, 0, PI);
+    fill(0, 0);
+    arc(0, 0, inR * 2, inR * 0.42f, 0, PI);
+    popMatrix();
+  }
+
+  void drawRingFrontHalfMedium(CelestialBody body, float cx, float cy, float r, float inR, float outR, int layers) {
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.ringTilt);
+    noStroke();
+    for (int i = 0; i < layers; i++) {
+      float k1 = i / (float)layers;
+      float k2 = (i + 1) / (float)layers;
+      float r1 = inR + (outR - inR) * k1;
+      float r2 = inR + (outR - inR) * k2;
+      float alpha = 70 + noise(i * 0.8f) * 80;
+      float variation = 0.8f + noise(i * 2.5f) * 0.4f;
+      fill((int)(200 * variation), (int)(180 * variation), (int)(140 * variation), (int)alpha);
+      beginShape(QUAD_STRIP);
+      float startAngle = 0;
+      float endAngle = PI;
+      float step = 0.25f;
+      int numSteps = (int)ceil((endAngle - startAngle) / step) + 1;
+      for (int s = 0; s < numSteps; s++) {
+        float a = startAngle + s * step;
+        if (a > endAngle) a = endAngle;
+        float x1 = cos(a) * r1;
+        float y1 = sin(a) * r1 * 0.42f;
+        float x2 = cos(a) * r2;
+        float y2 = sin(a) * r2 * 0.42f;
+        vertex(x1, y1);
+        vertex(x2, y2);
+      }
+      endShape();
+    }
+    popMatrix();
+  }
+
+  void drawRingFrontHalfDetailed(CelestialBody body, float cx, float cy, float r, float inR, float outR, int layers) {
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.ringTilt);
     noStroke();
     for (int i = 0; i < layers; i++) {
       float k1 = i / (float)layers;
@@ -294,13 +442,50 @@ class CelestialBodyRenderer {
       float variation = 0.78f + noise(i * 2.2f) * 0.44f;
       fill((int)(200 * variation), (int)(180 * variation), (int)(140 * variation), (int)alpha);
       beginShape(QUAD_STRIP);
-      for (float a = 0; a <= TWO_PI; a += 0.18f) {
+      float startAngle = 0;
+      float endAngle = PI;
+      float step = 0.18f;
+      int numSteps = (int)ceil((endAngle - startAngle) / step) + 1;
+      for (int s = 0; s < numSteps; s++) {
+        float a = startAngle + s * step;
+        if (a > endAngle) a = endAngle;
         float x1 = cos(a) * r1;
         float y1 = sin(a) * r1 * 0.42f;
         float x2 = cos(a) * r2;
         float y2 = sin(a) * r2 * 0.42f;
         vertex(x1, y1);
         vertex(x2, y2);
+      }
+      endShape();
+    }
+    popMatrix();
+  }
+
+  void drawPlanetWithShapesForRing(CelestialBody body, float cx, float cy, float r) {
+    pushMatrix();
+    translate(cx, cy);
+    rotate(body.rotation * 0.1f);
+    int bands = 12;
+
+    for (int i = -bands; i <= bands; i++) {
+      float yCenter = i * r / bands;
+      float halfBand = r / bands * 1.2f;
+      float y1 = yCenter - halfBand;
+      float y2 = yCenter + halfBand;
+
+      color c = getPlanetBandColor(body, i, yCenter / r);
+      fill(c);
+
+      beginShape();
+      for (float a = 0; a <= PI; a += 0.05f) {
+        float px = cos(a) * r;
+        float py = sin(a) * r;
+        if (py >= y1 && py <= y2) vertex(px, py);
+      }
+      for (float a = PI; a >= 0; a -= 0.05f) {
+        float px = cos(a) * r;
+        float py = -sin(a) * r;
+        if (py >= y1 && py <= y2) vertex(px, py);
       }
       endShape(CLOSE);
     }

@@ -126,11 +126,11 @@ class CelestialBody {
       } else if (drawR > width * 0.5 || drawR > height * 0.5) {
         // 特别大时用扫描线方式避免巨形
         renderer.drawScanlineLOD(this, cx, cy, screenR);
-      } else if (drawR < 20) {
+      } else if (drawR < 25) {
         renderer.drawLOD0(this, cx, cy, drawR);
-      } else if (drawR < 80) {
+      } else if (drawR < 90) {
         renderer.drawLOD1(this, cx, cy, drawR);
-      } else if (drawR < 250) {
+      } else if (drawR < 220) {
         renderer.drawLOD2(this, cx, cy, drawR);
       } else {
         renderer.drawLOD3(this, cx, cy, drawR);
