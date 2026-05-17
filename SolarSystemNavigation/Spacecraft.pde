@@ -1,51 +1,59 @@
 // ============================================================
-//  Spacecraft — refactored to be a state container + scheduler
-//  Physics, guidance, and orbit propagation delegated to new classes
+//  Spacecraft - 纯状态容器
+//  物理、制导和轨道传播委托给外部系统
 // ============================================================
 
 class Spacecraft {
-  // Basic identity
+  // 基本标识
   String name;
   color col;
   color trailColor;
 
-  // Orbital elements (for heliocentric Keplerian propagation)
+  // 日心轨道根数（用于日心轨道传播）
   double a, e, i, omega, w, M0, period;
-  double px, py, pz;
   double currentNu;
 
-  // Reference frame
-  ReferenceFrame frame;
+  // 当前中心天体 - null 表示日心
+  CelestialBody currentCentralBody;
 
-  // Earth-relative tracking (preserved for backward compatibility)
-  boolean earthRelative;
-  CelestialBody earthRef;
+  // 位置和速度向量 - 根据 currentCentralBody 解释
+  double[] pos;    // [x, y, z] km
+  double[] vel;    // [vx, vy, vz] km/s
+
+  // 兼容旧接口的字段名称（内部统一使用 pos/vel）
+  double[] earthRelPos;  // 别名，指向 pos
+  double[] earthRelVel;  // 别名，指向 vel
+  CelestialBody earthRef;  // 别名，指向 currentCentralBody
+  boolean earthRelative;  // 兼容字段：currentCentralBody != null
+
+  // 轨道角度和时间（用于轨道模式）
   double launchPadAngle;
   double launchAltitude;
-  double earthOrbitAngle;
+  double orbitAngle;       // 别名
+  double earthOrbitAngle;  // 别名
   double orbitStartTime;
-  double[] earthRelPos;
-  double[] earthRelVel;
 
-  // Mission state
+  // 兼容性：参考系
+  ReferenceFrame frame;
+
+  // 任务状态
   ShipState state;
   double launchStartTime;
   double transferStartTime;
   double countdownStartTime;
   double ignitionStartTime;
 
-  // Thrust/burn tracking
+  // 推力/燃烧跟踪
   boolean thrustActive;
-  double circBurnDuration;
-  double tmiTargetDV = 0;
-  double tmiAccumulatedDV = 0;
-  double toiTargetDV = 0;
-  double toiAccumulatedDV = 0;
+  double tmiTargetDV;
+  double tmiAccumulatedDV;
+  double toiTargetDV;
+  double toiAccumulatedDV;
 
-  // Last physics update time
+  // 上次物理更新时间
   double lastUpdateTime;
 
-  // Display-only angular dynamics (cosmetic only)
+  // 仅显示用的角动力学（纯装饰）
   double displayAngle;
   double angularVelocity;
   double angularAcceleration;
@@ -58,18 +66,15 @@ class Spacecraft {
   static final double SHIP_LENGTH_KM = 0.08;
   static final double SHIP_WIDTH_KM = 0.006;
 
-  // External systems (instance fields)
-  OrbitPropagator orbitPropagator;
-  FlightComputer flightComputer;
-  PhysicsEngine physicsEngine;
-  AtmosphereModel atmosphereModel;
+  // 世界位置（日心坐标）缓存
+  double px, py, pz;
 
-  // ==============================================================
-  //  Constructor
-  // ==============================================================
+  // ============================================================
+  //  构造函数
+  // ============================================================
 
   Spacecraft(double a, double e, double i,
-      double omega, double w, double M0, double period, color col) {
+             double omega, double w, double M0, double period, color col) {
     this.name = "Spacecraft";
     this.a = a; this.e = e; this.i = i;
     this.omega = omega; this.w = w;
@@ -78,11 +83,13 @@ class Spacecraft {
     this.col = col;
     this.trailColor = col;
 
-    // Initialize external systems
-    this.orbitPropagator = new OrbitPropagator();
-    this.flightComputer = new FlightComputer();
-    this.physicsEngine = new PhysicsEngine();
-    this.atmosphereModel = new AtmosphereModel();
+    // 初始化状态向量
+    this.pos = new double[3];
+    this.vel = new double[3];
+
+    // 兼容性别名
+    this.earthRelPos = this.pos;
+    this.earthRelVel = this.vel;
 
     this.state = ShipState.IDLE;
     this.launchStartTime = 0;
@@ -90,340 +97,170 @@ class Spacecraft {
     this.countdownStartTime = 0;
     this.ignitionStartTime = 0;
 
-    this.earthRelative = false;
+    this.currentCentralBody = null;
     this.earthRef = null;
+    this.earthRelative = false;
+
     this.launchPadAngle = 0;
     this.launchAltitude = 0;
+    this.orbitAngle = 0;
     this.earthOrbitAngle = 0;
     this.orbitStartTime = 0;
-    this.earthRelPos = new double[]{0, 0, 0};
-    this.earthRelVel = new double[]{0, 0, 0};
 
     this.displayAngle = 0;
     this.angularVelocity = 0;
     this.angularAcceleration = 0;
+
+    this.px = 0;
+    this.py = 0;
+    this.pz = 0;
   }
 
-  // ==============================================================
-  //  Main update dispatcher — heart of the new architecture
-  //  Decides whether to use PhysicsEngine or OrbitPropagator
-  // ==============================================================
+  // ============================================================
+  //  主更新调度器
+  // ============================================================
 
-  void update(double t) {
-    double simDt = t - lastUpdateTime;
+  void update(double simTime) {
+    double simDt = simTime - lastUpdateTime;
     if (simDt <= 0) simDt = 1.0 / 60.0;
-    if (simDt > 3600) simDt = 3600; // max 1 hour to prevent skipping too much
-    lastUpdateTime = t;
+    if (simDt > 3600) simDt = 3600;
+    lastUpdateTime = simTime;
 
-    if (earthRelative && earthRef != null) {
-      updateBodyRelative(t, simDt);
+    // 根据当前中心天体和状态选择更新模式
+    if (currentCentralBody != null) {
+      updateBodyRelative(simTime, simDt);
     } else {
-      updateHeliocentric(t, simDt);
+      updateHeliocentric(simTime, simDt);
     }
 
-    // Update display angle — use small substeps for stability even with large simDt
-    double targetAngle = computeTargetWorldAngle();
-    double remainingDt = simDt;
-    double maxSubStep = 1.0 / 60.0;
-    while (remainingDt > 0) {
-      double dt = Math.min(remainingDt, maxSubStep);
-      updateDisplayAngle(targetAngle, dt);
-      remainingDt -= dt;
-    }
+    // 更新显示角度
+    updateDisplayAngleSmooth(simTime, simDt);
   }
 
-  // ==============================================================
-  //  Body-relative mode (Earth orbit)
-  // ==============================================================
+  // ============================================================
+  //  中心天体相对模式更新
+  // ============================================================
 
-  void updateBodyRelative(double t, double simDt) {
+  void updateBodyRelative(double simTime, double simDt) {
     if (state == ShipState.LAUNCHING || state == ShipState.CIRCULARIZING) {
-      // === Physics-based ascent with guidance state machine ===
-      double currentT = t - simDt;
-      double remainingDt = simDt;
-
-      while (remainingDt > 0) {
-        double step = Math.min(remainingDt, PhysicsEngine.FIXED_SUBSTEP);
-
-        double rx = earthRelPos[0], ry = earthRelPos[1];
-        double r = Math.sqrt(rx * rx + ry * ry);
-        if (r < MissionPlanner.EARTH_RADIUS_KM * 0.5) {
-          // Ship crashed or in degenerate state — abort
-          dbgLog("PHYSICS ABORT: r=" + r + " too low, state=" + state);
-          remainingDt = 0;
-          break;
-        }
-
-        // Gravity
-        double gMag = MissionPlanner.GM_EARTH / (r * r);
-        double ax = -gMag * rx / r;
-        double ay = -gMag * ry / r;
-
-        // Thrust
-        boolean ascentStepApplied = false;
-        if (thrustActive) {
-          if (state == ShipState.LAUNCHING) {
-            // === Active Pitch Ascent ===
-            double burnTime = currentT - launchStartTime;
-            double thrustAngle = flightComputer.ascentThrustDirection(rx, ry, burnTime, MissionPlanner.LEO_ALTITUDE_KM);
-            double thrustDirX = Math.cos(thrustAngle);
-            double thrustDirY = Math.sin(thrustAngle);
-
-            double thrustAx = FlightComputer.THRUST_ACCEL * thrustDirX;
-            double thrustAy = FlightComputer.THRUST_ACCEL * thrustDirY;
-
-            // Save pre-step state
-            double preRx = earthRelPos[0], preRy = earthRelPos[1];
-            double preVx = earthRelVel[0], preVy = earthRelVel[1];
-
-            // Compute post-step state with full thrust (tentative) and check apoapsis
-            double tmpVx = preVx + (ax + thrustAx) * step;
-            double tmpVy = preVy + (ay + thrustAy) * step;
-            double tmpRx = preRx + tmpVx * step;
-            double tmpRy = preRy + tmpVy * step;
-
-            double apoFull = flightComputer.apoapsisAltitude(tmpRx, tmpRy, tmpVx, tmpVy, MissionPlanner.EARTH_RADIUS_KM, MissionPlanner.GM_EARTH);
-
-            if (apoFull >= MissionPlanner.LEO_ALTITUDE_KM) {
-              // Will cross target — find the fraction of thrust needed
-              double gVx = preVx + ax * step;
-              double gVy = preVy + ay * step;
-              double gRx = preRx + gVx * step;
-              double gRy = preRy + gVy * step;
-              double apoGrav = flightComputer.apoapsisAltitude(gRx, gRy, gVx, gVy, MissionPlanner.EARTH_RADIUS_KM, MissionPlanner.GM_EARTH);
-
-              double f = 0.0;
-              if (apoFull > apoGrav && apoGrav < MissionPlanner.LEO_ALTITUDE_KM) {
-                f = (MissionPlanner.LEO_ALTITUDE_KM - apoGrav) / (apoFull - apoGrav);
-                f = Math.max(0.0, Math.min(1.0, f));
-              }
-
-              earthRelVel[0] = preVx + (ax + thrustAx * f) * step;
-              earthRelVel[1] = preVy + (ay + thrustAy * f) * step;
-              earthRelPos[0] = preRx + earthRelVel[0] * step;
-              earthRelPos[1] = preRy + earthRelVel[1] * step;
-
-              thrustActive = false;
-            } else {
-              // No overshoot yet — apply full thrust step
-              earthRelVel[0] = tmpVx;
-              earthRelVel[1] = tmpVy;
-              earthRelPos[0] = tmpRx;
-              earthRelPos[1] = tmpRy;
-            }
-            ascentStepApplied = true;
-
-          } else if (state == ShipState.CIRCULARIZING) {
-            // PEG-inspired fixed-target circularization guidance
-            double vx = earthRelVel[0], vy = earthRelVel[1];
-            double[] peg = flightComputer.pegGuidance(rx, ry, vx, vy, MissionPlanner.LEO_RADIUS_KM, MissionPlanner.GM_EARTH);
-            double thrX = FlightComputer.THRUST_ACCEL * Math.cos(peg[1]);
-            double thrY = FlightComputer.THRUST_ACCEL * Math.sin(peg[1]);
-            if (Double.isNaN(thrX) || Double.isNaN(thrY)) {
-              dbgLog("PEG NaN thrust — aborting circularization");
-              finalizeOrbitInsertion();
-              remainingDt = 0;
-              break;
-            }
-            ax += thrX;
-            ay += thrY;
-          }
-        }
-
-        // Drag (atmosphere)
-        if (atmosphereModel != null && earthRef != null) {
-          double[] dragAccel = new double[2];
-          atmosphereModel.dragAcceleration(earthRelPos, earthRelVel, earthRef, dragAccel);
-          ax += dragAccel[0];
-          ay += dragAccel[1];
-        }
-
-        // Semi-implicit Euler (skipped if ascent already applied above)
-        if (!ascentStepApplied) {
-          earthRelVel[0] += ax * step;
-          earthRelVel[1] += ay * step;
-          earthRelPos[0] += earthRelVel[0] * step;
-          earthRelPos[1] += earthRelVel[1] * step;
-        }
-
-        currentT += step;
-        remainingDt -= step;
-
-        // === Per-sub-step guidance ===
-        double rxNew = earthRelPos[0], ryNew = earthRelPos[1];
-        double rNew = Math.sqrt(rxNew * rxNew + ryNew * ryNew);
-        double altNew = rNew - MissionPlanner.EARTH_RADIUS_KM;
-
-        if (state == ShipState.LAUNCHING) {
-          if (!thrustActive) {
-            // Compute circularization parameters from osculating orbit.
-            // The burn must be CENTERED on apoapsis: start before it,
-            // finish after it. This prevents the spacecraft from
-            // descending while burning.
-            double vx = earthRelVel[0], vy = earthRelVel[1];
-            double v2 = vx * vx + vy * vy;
-            double energy = v2 / 2.0 - MissionPlanner.GM_EARTH / rNew;
-            double timeToApo = flightComputer.timeToApoapsis(rx, ry, vx, vy, MissionPlanner.GM_EARTH);
-            boolean startBurn = false;
-
-            if (energy < 0) {
-              double a = -MissionPlanner.GM_EARTH / (2.0 * energy);
-              double h = rxNew * vy - ryNew * vx;
-              double e2 = 1.0 - h * h / (MissionPlanner.GM_EARTH * a);
-              double e = Math.sqrt(Math.max(0.0, e2));
-              double rApo = a * (1.0 + e);
-              double vApo = Math.sqrt(MissionPlanner.GM_EARTH * (2.0 / rApo - 1.0 / a));
-              double vCirc = Math.sqrt(MissionPlanner.GM_EARTH / rApo);
-              double dv = vCirc - vApo;          // Δv needed at apoapsis
-              double burnTime = Math.max(0.0, dv / FlightComputer.THRUST_ACCEL);
-              double startOffset = burnTime / 2.0;  // center burn on apoapsis
-
-              if (timeToApo < 0 || e < 0.001) {
-                startBurn = true;  // past apoapsis or near-circular
-                circBurnDuration = Math.max(burnTime, 0.5);
-              } else if (timeToApo <= startOffset) {
-                startBurn = true;  // within centering window
-                circBurnDuration = burnTime;
-              }
-            } else {
-              // Hyperbolic (shouldn't happen) — start burn as safety
-              startBurn = true;
-              circBurnDuration = 5.0;
-            }
-
-            if (startBurn) {
-              dbgLog("CIRC START: state->CIRCULARIZING, burnDuration=" + circBurnDuration
-                + " timeToApo=" + timeToApo);
-              state = ShipState.CIRCULARIZING;
-              thrustActive = true;
-            }
-          }
-        } else if (state == ShipState.CIRCULARIZING) {
-          circBurnDuration -= step;
-          double periAlt = flightComputer.perigeeAltitude(rxNew, ryNew, earthRelVel[0], earthRelVel[1], MissionPlanner.EARTH_RADIUS_KM, MissionPlanner.GM_EARTH);
-          if (periAlt >= MissionPlanner.LEO_ALTITUDE_KM - 1.0 || circBurnDuration <= 0) {
-            dbgLog("CIRC DONE: finalizing orbit insertion");
-            finalizeOrbitInsertion();
-            remainingDt = 0;
-          }
-        }
+      // 制导物理模式 - 委托给 GuidanceSystem
+      if (guidanceSystem != null) {
+        guidanceSystem.update(this, simDt, simTime);
       }
-
-      // Update derived values (finalizeOrbitInsertion sets these for ORBIT state)
-      if (state != ShipState.ORBIT) {
-        updateDerivedValues();
-      }
-
+      updateDerivedValues();
     } else if (state == ShipState.ORBIT) {
-      // === Analytic circular orbit ===
-      double orbitElapsed = t - orbitStartTime;
+      // 解析轨道模式 - 使用 OrbitPropagator
+      double orbitElapsed = simTime - orbitStartTime;
       double angVel = Math.sqrt(MissionPlanner.GM_EARTH / Math.pow(MissionPlanner.LEO_RADIUS_KM, 3));
-      earthOrbitAngle = launchPadAngle + angVel * orbitElapsed;
+      orbitAngle = launchPadAngle + angVel * orbitElapsed;
+      earthOrbitAngle = orbitAngle;  // 兼容性
+
       orbitPropagator.propagateCircularOrbit(
-        earthRelPos, earthRelVel,
-        earthRef, earthOrbitAngle,
+        pos, vel,
+        currentCentralBody, orbitAngle,
         MissionPlanner.LEO_RADIUS_KM,
         MissionPlanner.GM_EARTH);
       launchAltitude = MissionPlanner.LEO_ALTITUDE_KM;
     }
 
-    // Update world position
-    px = earthRef.px + earthRelPos[0];
-    py = earthRef.py + earthRelPos[1];
-    pz = 0;
-  }
-
-  // ==============================================================
-  //  Heliocentric mode (interplanetary transfer)
-  // ==============================================================
-
-  void updateHeliocentric(double t, double simDt) {
-    boolean needsPhysics = thrustActive || state == ShipState.APPROACHING_TARGET || state == ShipState.TOI_BURN;
-
-    if (needsPhysics && earthRelative == false) {
-      // TODO: full heliocentric physics not needed yet
-      orbitPropagator.propagateHeliocentric(this, t);
-    } else {
-      orbitPropagator.propagateHeliocentric(this, t);
+    // 更新世界位置
+    if (currentCentralBody != null) {
+      px = currentCentralBody.px + pos[0];
+      py = currentCentralBody.py + pos[1];
+      pz = currentCentralBody.pz + pos[2];
     }
   }
 
-  // ==============================================================
-  //  Helper: update derived values after physics
-  // ==============================================================
+  // ============================================================
+  //  日心模式更新
+  // ============================================================
+
+  void updateHeliocentric(double simTime, double simDt) {
+    // 使用开普勒轨道传播
+    orbitPropagator.propagateHeliocentric(this, simTime);
+  }
+
+  // ============================================================
+  //  辅助：更新派生值
+  // ============================================================
 
   void updateDerivedValues() {
-    if (earthRelPos != null) {
-      double rx = earthRelPos[0], ry = earthRelPos[1];
+    if (currentCentralBody != null) {
+      double rx = pos[0], ry = pos[1];
       double r = Math.sqrt(rx * rx + ry * ry);
       launchAltitude = r - MissionPlanner.EARTH_RADIUS_KM;
-      earthOrbitAngle = Math.atan2(ry, rx);
+      orbitAngle = Math.atan2(ry, rx);
+      earthOrbitAngle = orbitAngle;  // 兼容性
     }
   }
 
-  // ==============================================================
-  //  Finalize orbit insertion — clean transition to stable orbit
-  // ==============================================================
+  // ============================================================
+  //  完成轨道插入 - 过渡到稳定轨道
+  // ============================================================
 
-  void finalizeOrbitInsertion() {
-    double rx = earthRelPos[0], ry = earthRelPos[1];
+  void finalizeOrbitInsertion(double simTime) {
+    double rx = pos[0], ry = pos[1];
     double r = Math.sqrt(rx * rx + ry * ry);
     double radX = rx / r, radY = ry / r;
     double tanX = -ry / r, tanY = rx / r;
 
     double circSpeed = Math.sqrt(MissionPlanner.GM_EARTH / MissionPlanner.LEO_RADIUS_KM);
-    earthRelVel[0] = tanX * circSpeed;
-    earthRelVel[1] = tanY * circSpeed;
-    earthRelVel[2] = 0;
+    vel[0] = tanX * circSpeed;
+    vel[1] = tanY * circSpeed;
+    vel[2] = 0;
 
-    earthRelPos[0] = MissionPlanner.LEO_RADIUS_KM * radX;
-    earthRelPos[1] = MissionPlanner.LEO_RADIUS_KM * radY;
-    earthRelPos[2] = 0;
+    pos[0] = MissionPlanner.LEO_RADIUS_KM * radX;
+    pos[1] = MissionPlanner.LEO_RADIUS_KM * radY;
+    pos[2] = 0;
 
     launchAltitude = MissionPlanner.LEO_ALTITUDE_KM;
-    launchPadAngle = Math.atan2(earthRelPos[1], earthRelPos[0]);
-    earthOrbitAngle = launchPadAngle;
-    orbitStartTime = lastUpdateTime;
+    launchPadAngle = Math.atan2(pos[1], pos[0]);
+    orbitAngle = launchPadAngle;
+    earthOrbitAngle = orbitAngle;
+    orbitStartTime = simTime;
     thrustActive = false;
     state = ShipState.ORBIT;
+
+    dbgLog("ORBIT INSERTED: finalizing orbit");
   }
 
-  // ==============================================================
-  //  Target display angle — copied verbatim from old code
-  // ==============================================================
+  // ============================================================
+  //  更新显示角度（平滑版本）
+  // ============================================================
 
-  double computeTargetWorldAngle() {
-    if (earthRelative && earthRef != null) {
-      if (state == ShipState.IDLE ||
-          state == ShipState.COUNTDOWN ||
-          state == ShipState.IGNITION) {
-        return earthOrbitAngle;
-      } else if (state == ShipState.LAUNCHING && thrustActive) {
-        double rx = earthRelPos[0], ry = earthRelPos[1];
-        double burnTime = (timeManager != null ? timeManager.simTime : 0) - launchStartTime;
-        return flightComputer.ascentThrustDirection(rx, ry, burnTime, MissionPlanner.LEO_ALTITUDE_KM);
-      } else if (state == ShipState.CIRCULARIZING && thrustActive) {
-        double rx = earthRelPos[0], ry = earthRelPos[1];
-        double vx = earthRelVel[0], vy = earthRelVel[1];
-        double[] peg = flightComputer.pegGuidance(rx, ry, vx, vy, MissionPlanner.LEO_RADIUS_KM, MissionPlanner.GM_EARTH);
-        return peg[1];
-      } else {
-        return earthOrbitAngle + PI / 2.0;
-      }
-    } else {
-      double nuForward = currentNu + 0.01;
-      double[] posForward = orbitalToCartesian(a, e, i, omega, w, nuForward);
-      double vx = posForward[0] - px;
-      double vy = posForward[1] - py;
-      return Math.atan2(vy, vx);
+  void updateDisplayAngleSmooth(double simTime, double simDt) {
+    double targetAngle = computeTargetWorldAngle(simTime);
+    double remainingDt = simDt;
+    double maxSubStep = 1.0 / 60.0;
+
+    while (remainingDt > 0) {
+      double dt = Math.min(remainingDt, maxSubStep);
+      updateDisplayAngleStep(targetAngle, dt);
+      remainingDt -= dt;
     }
   }
 
-  // ==============================================================
-  //  Display angle update — copied verbatim from old code
-  // ==============================================================
+  // ============================================================
+  //  计算目标世界角度
+  // ============================================================
 
-  void updateDisplayAngle(double targetAngle, double dt) {
+  double computeTargetWorldAngle(double simTime) {
+    if (guidanceSystem != null) {
+      return guidanceSystem.computeTargetDisplayAngle(this, simTime);
+    }
+    // 回退到简单实现
+    if (currentCentralBody != null) {
+      return orbitAngle + PI / 2.0;
+    } else {
+      return Math.atan2(vel[1], vel[0]);
+    }
+  }
+
+  // ============================================================
+  //  显示角度单步更新
+  // ============================================================
+
+  void updateDisplayAngleStep(double targetAngle, double dt) {
     if (dt <= 0 || dt > 0.5) return;
     double error = angleDifference(targetAngle, displayAngle);
     double desiredAccel = error * ANGLE_KP - angularVelocity * ANGLE_KD;
@@ -434,9 +271,9 @@ class Spacecraft {
     displayAngle = normalizeAngle(displayAngle);
   }
 
-  // ==============================================================
-  //  Math helpers — preserved from old code
-  // ==============================================================
+  // ============================================================
+  //  数学辅助函数
+  // ============================================================
 
   double clamp(double v, double min, double max) {
     return Math.max(min, Math.min(max, v));
@@ -450,83 +287,129 @@ class Spacecraft {
     return ((target - current + 3.0 * PI) % (2.0 * PI)) - PI;
   }
 
-  // ==============================================================
-  //  Backward compatibility: old method signatures preserved
-  // ==============================================================
+  // ============================================================
+  //  向后兼容的辅助方法
+  // ============================================================
 
   double[] getOsculatingOrbitalParams() {
-    return flightComputer.osculatingParams(
-      earthRelPos[0], earthRelPos[1],
-      earthRelVel[0], earthRelVel[1],
-      MissionPlanner.GM_EARTH);
+    if (flightComputer != null) {
+      return flightComputer.osculatingParams(
+        pos[0], pos[1],
+        vel[0], vel[1],
+        MissionPlanner.GM_EARTH);
+    }
+    return new double[]{0, 0, 0, 0};
   }
 
   double computeApoapsis() {
-    return flightComputer.apoapsisAltitude(
-      earthRelPos[0], earthRelPos[1],
-      earthRelVel[0], earthRelVel[1],
-      MissionPlanner.EARTH_RADIUS_KM,
-      MissionPlanner.GM_EARTH);
+    if (flightComputer != null) {
+      return flightComputer.apoapsisAltitude(
+        pos[0], pos[1],
+        vel[0], vel[1],
+        MissionPlanner.EARTH_RADIUS_KM,
+        MissionPlanner.GM_EARTH);
+    }
+    return 0;
   }
 
   double computePerigee() {
-    return flightComputer.perigeeAltitude(
-      earthRelPos[0], earthRelPos[1],
-      earthRelVel[0], earthRelVel[1],
-      MissionPlanner.EARTH_RADIUS_KM,
-      MissionPlanner.GM_EARTH);
+    if (flightComputer != null) {
+      return flightComputer.perigeeAltitude(
+        pos[0], pos[1],
+        vel[0], vel[1],
+        MissionPlanner.EARTH_RADIUS_KM,
+        MissionPlanner.GM_EARTH);
+    }
+    return 0;
   }
 
   double timeToApoapsis() {
-    return flightComputer.timeToApoapsis(
-      earthRelPos[0], earthRelPos[1],
-      earthRelVel[0], earthRelVel[1],
-      MissionPlanner.GM_EARTH);
+    if (flightComputer != null) {
+      return flightComputer.timeToApoapsis(
+        pos[0], pos[1],
+        vel[0], vel[1],
+        MissionPlanner.GM_EARTH);
+    }
+    return 0;
   }
 }
 
-// ==============================================================
-//  SpacecraftForceModel — concrete ForceModel implementation
-//  Computes gravity + thrust + drag
-// ==============================================================
+// ============================================================
+//  SpacecraftForceModel - 力模型实现
+//  计算重力 + 推力 + 阻力
+// ============================================================
 
 class SpacecraftForceModel extends ForceModel {
-  Spacecraft ship;
-  double[] tempDrag = new double[2];
+  // 通过参数接收状态，不再持有 Spacecraft 引用
+  double[] currentPos;
+  double[] currentVel;
+  boolean currentThrustActive;
+  ShipState currentState;
+  CelestialBody currentCentralBody;
+  double currentSimTime;
+  double currentLaunchStartTime;
 
-  SpacecraftForceModel(Spacecraft ship) {
-    this.ship = ship;
+  // 临时数组
+  private double[] tempDrag;
+
+  SpacecraftForceModel() {
+    tempDrag = new double[2];
+    reset();
+  }
+
+  void reset() {
+    currentPos = null;
+    currentVel = null;
+    currentThrustActive = false;
+    currentState = ShipState.IDLE;
+    currentCentralBody = null;
+    currentSimTime = 0;
+    currentLaunchStartTime = 0;
+  }
+
+  // 设置当前状态（在积分前调用）
+  void setState(double[] pos, double[] vel, boolean thrustActive,
+                ShipState state, CelestialBody centralBody,
+                double simTime, double launchStartTime) {
+    this.currentPos = pos;
+    this.currentVel = vel;
+    this.currentThrustActive = thrustActive;
+    this.currentState = state;
+    this.currentCentralBody = centralBody;
+    this.currentSimTime = simTime;
+    this.currentLaunchStartTime = launchStartTime;
   }
 
   void computeForce(double[] pos, double[] vel, double[] accelOut) {
-    computeForce(pos, vel, accelOut, ship.thrustActive);
+    computeForce(pos, vel, accelOut, currentThrustActive);
   }
 
   void computeForce(double[] pos, double[] vel, double[] accelOut, boolean useThrust) {
     double rx = pos[0], ry = pos[1];
     double r = Math.sqrt(rx * rx + ry * ry);
 
+    // 确定 GM
     double GM = MissionPlanner.GM_EARTH;
-    if (ship.frame != null) GM = ship.frame.gm();
+    if (currentCentralBody != null && currentCentralBody.name.equals("Earth")) {
+      GM = MissionPlanner.GM_EARTH;
+    }
 
-    // Gravity
+    // 重力
     double gMag = GM / (r * r);
-    double gravX = -gMag * rx / r;
-    double gravY = -gMag * ry / r;
+    accelOut[0] = -gMag * rx / r;
+    accelOut[1] = -gMag * ry / r;
+    accelOut[2] = 0;
 
-    accelOut[0] = gravX;
-    accelOut[1] = gravY;
-
-    // Thrust
+    // 推力
     if (useThrust) {
       double[] thrustDir = getThrustDirection(pos, vel);
       accelOut[0] += FlightComputer.THRUST_ACCEL * thrustDir[0];
       accelOut[1] += FlightComputer.THRUST_ACCEL * thrustDir[1];
     }
 
-    // Drag
-    if (ship.frame != null && ship.earthRef != null) {
-      ship.atmosphereModel.dragAcceleration(pos, vel, ship.earthRef, tempDrag);
+    // 大气阻力
+    if (atmosphereModel != null && currentCentralBody != null) {
+      atmosphereModel.dragAcceleration(pos, vel, currentCentralBody, tempDrag);
       accelOut[0] += tempDrag[0];
       accelOut[1] += tempDrag[1];
     }
@@ -536,31 +419,28 @@ class SpacecraftForceModel extends ForceModel {
     double rx = pos[0], ry = pos[1];
     double vx = vel[0], vy = vel[1];
 
-    if (ship.state == ShipState.LAUNCHING) {
-      double burnTime = (timeManager != null ? timeManager.simTime : 0) - ship.launchStartTime;
-      double angle = ship.flightComputer.ascentThrustDirection(rx, ry, burnTime, MissionPlanner.LEO_ALTITUDE_KM);
+    if (currentState == ShipState.LAUNCHING) {
+      double burnTime = currentSimTime - currentLaunchStartTime;
+      double angle = flightComputer.ascentThrustDirection(rx, ry, burnTime, MissionPlanner.LEO_ALTITUDE_KM);
       return new double[]{Math.cos(angle), Math.sin(angle)};
-    } else if (ship.state == ShipState.CIRCULARIZING) {
-      double[] peg = ship.flightComputer.pegGuidance(rx, ry, vx, vy, MissionPlanner.LEO_RADIUS_KM, MissionPlanner.GM_EARTH);
+    } else if (currentState == ShipState.CIRCULARIZING) {
+      double[] peg = flightComputer.pegGuidance(rx, ry, vx, vy, MissionPlanner.LEO_RADIUS_KM, MissionPlanner.GM_EARTH);
       return new double[]{Math.cos(peg[1]), Math.sin(peg[1])};
-    } else if (ship.state == ShipState.TMI_BURN) {
-      return ship.flightComputer.tangentialThrustDirection(rx, ry, true);
-    } else if (ship.state == ShipState.TOI_BURN) {
-      return ship.flightComputer.tangentialThrustDirection(vel, true);
+    } else if (currentState == ShipState.TMI_BURN || currentState == ShipState.TOI_BURN) {
+      return flightComputer.tangentialThrustDirection(vel, true);
     }
-    // Default: thrust in velocity direction
+    // 默认：沿速度方向
     double v = Math.sqrt(vx * vx + vy * vy);
     if (v < 0.001) return new double[]{1, 0};
     return new double[]{vx / v, vy / v};
   }
 
   double bodyRadius() {
-    if (ship.frame != null) return ship.frame.bodyRadius();
-    if (ship.earthRef != null) return ship.earthRef.radius;
+    if (currentCentralBody != null) return currentCentralBody.radius;
     return MissionPlanner.EARTH_RADIUS_KM;
   }
 
   boolean thrustActive() {
-    return ship.thrustActive;
+    return currentThrustActive;
   }
 }

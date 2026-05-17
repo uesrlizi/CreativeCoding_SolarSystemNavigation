@@ -30,6 +30,7 @@ String formatSimTime(double simSeconds) {
 boolean showOrbits = true;
 boolean showLabels = true;
 boolean showTrails = true;
+boolean showSOI = false;       // SOI边界显示开关
 
 // ---------- Double-click / Focus ----------
 long lastClickTime = 0;
@@ -45,6 +46,14 @@ int[] starSeed;
 float deltaTime = 1.0 / 60.0;
 int lastFrameMillis;
 
+// ---------- Global Systems (新架构) ----------
+GuidanceSystem guidanceSystem;
+OrbitPropagator orbitPropagator;
+FlightComputer flightComputer;
+PhysicsEngine physicsEngine;
+AtmosphereModel atmosphereModel;
+SpacecraftForceModel spacecraftForceModel;
+
 // ---------- Global Objects ----------
 CameraController camera;
 SolarSystem solarSystem;
@@ -55,6 +64,7 @@ SpacecraftRenderer spacecraftRenderer;
 LaunchSite launchSite;
 LaunchSiteRenderer launchSiteRenderer;
 float uiScale;
+SOISystem soiSystem;  // SOI系统
 
 // ============================================================
 //  settings / setup / draw
@@ -80,10 +90,21 @@ void setup() {
     starSeed[i] = (int)random(10000);
   }
 
+  // 初始化新架构的系统
+  guidanceSystem = new GuidanceSystem();
+  orbitPropagator = new OrbitPropagator();
+  flightComputer = new FlightComputer();
+  physicsEngine = new PhysicsEngine();
+  atmosphereModel = new AtmosphereModel();
+  spacecraftForceModel = new SpacecraftForceModel();
+
   timeManager = new TimeManager();
   launchController = new LaunchController();
 
   solarSystem = new SolarSystem();
+
+  // 初始化SOI系统
+  soiSystem = new SOISystem(solarSystem, launchController.planner);
   solarSystem.initialize();
 
   // Create default spacecraft on Earth's day-side launch pad
@@ -91,25 +112,27 @@ void setup() {
   double launchAngle = Math.atan2(-earth.py, -earth.px);
 
   Spacecraft defaultShip = new Spacecraft(0, 0, 0, 0, 0, 0, 0, color(0, 255, 150));
-  defaultShip.earthRelative = true;
-  defaultShip.earthRef = earth;
-  defaultShip.frame = new ReferenceFrame(FrameType.SURFACE, earth);
+  defaultShip.currentCentralBody = earth;
+  defaultShip.earthRef = earth;  // 兼容性
+  defaultShip.earthRelative = true;  // 兼容性
   defaultShip.launchPadAngle = launchAngle;
   defaultShip.displayAngle = launchAngle;
   defaultShip.launchAltitude = 0.0488;  // ~49m, engines rest on pad surface
-  defaultShip.earthOrbitAngle = launchAngle;
+  defaultShip.orbitAngle = launchAngle;
+  defaultShip.earthOrbitAngle = launchAngle;  // 兼容性
   defaultShip.orbitStartTime = 0;
   double startRadius = MissionPlanner.EARTH_RADIUS_KM + defaultShip.launchAltitude;
-  defaultShip.earthRelPos = new double[]{
-    startRadius * Math.cos(launchAngle),
-    startRadius * Math.sin(launchAngle),
-    0};
-  defaultShip.earthRelVel = new double[]{0, 0, 0};
+  defaultShip.pos[0] = startRadius * Math.cos(launchAngle);
+  defaultShip.pos[1] = startRadius * Math.sin(launchAngle);
+  defaultShip.pos[2] = 0;
+  defaultShip.vel[0] = 0;
+  defaultShip.vel[1] = 0;
+  defaultShip.vel[2] = 0;
   defaultShip.lastUpdateTime = 0;
   defaultShip.thrustActive = false;
   defaultShip.state = ShipState.IDLE;
-  defaultShip.px = earth.px + defaultShip.earthRelPos[0];
-  defaultShip.py = earth.py + defaultShip.earthRelPos[1];
+  defaultShip.px = earth.px + defaultShip.pos[0];
+  defaultShip.py = earth.py + defaultShip.pos[1];
 
   solarSystem.ships.add(defaultShip);
   launchController.currentShip = defaultShip;
@@ -150,11 +173,16 @@ void draw() {
 
     for (Spacecraft s : solarSystem.ships) {
       s.update(timeManager.simTime);
+      // 检测SOI穿越
+      soiSystem.checkAndProcessSOICrossing(s, timeManager.simTime);
     }
 
     camera.update(deltaTime);
     drawStars();
     drawOrbits();
+    if (showSOI) {
+      drawSOIBoundaries();
+    }
     solarSystem.drawSun(camera);
     solarSystem.drawPlanets(camera);
 
@@ -469,6 +497,10 @@ void keyPressed() {
   }
 
   if (key == 'o' || key == 'O') showOrbits = !showOrbits;
+  if (key == 'k' || key == 'K') {
+    showSOI = !showSOI;
+    dbgLog("SOI显示: " + (showSOI ? "开启" : "关闭"));
+  }
   if (key == 'l' || key == 'L') {
     if (launchController.canLaunch()) {
       launchController.startLaunch();
@@ -501,5 +533,59 @@ void keyPressed() {
 }
 
 void keyTyped() {
+}
+
+// ============================================================
+//  SOI Boundaries
+// ============================================================
+void drawSOIBoundaries() {
+  if (camera.getMode() == ViewMode.SHIP_VIEW) return;
+
+  // 绘制行星的SOI
+  for (CelestialBody planet : solarSystem.planets) {
+    drawSingleSOI(planet);
+  }
+
+  // 绘制卫星的SOI
+  for (CelestialBody moon : solarSystem.moons) {
+    drawSingleSOI(moon);
+  }
+}
+
+void drawSingleSOI(CelestialBody body) {
+  double soiRadius = soiSystem.calculateSOIRadius(body);
+
+  // 如果太小就不绘制（小于1像素）
+  double screenRadius = soiRadius * camera.scale;
+  if (screenRadius < 2) return;
+
+  // 获取颜色
+  int soiColor = soiSystem.getSOIColor(body);
+
+  // 绘制圆
+  noFill();
+  stroke(soiColor);
+  strokeWeight(1.0f);
+  ellipseMode(CENTER);
+
+  int steps = 60;
+  beginShape();
+  for (int i = 0; i <= steps; i++) {
+    double angle = 2.0 * PI * i / steps;
+    double worldX = body.px + soiRadius * Math.cos(angle);
+    double worldY = body.py + soiRadius * Math.sin(angle);
+    double[] sp = camera.worldToScreen(worldX, worldY);
+    vertex((float)sp[0], (float)sp[1]);
+  }
+  endShape(CLOSE);
+
+  // 绘制SOI标签（只在足够大时显示）
+  if (screenRadius > 30 && showLabels) {
+    double[] labelPos = camera.worldToScreen(body.px + soiRadius * 1.05, body.py);
+    fill(soiColor);
+    textSize(12 * uiScale);
+    textAlign(LEFT, CENTER);
+    text(body.name + " SOI", (float)labelPos[0], (float)labelPos[1]);
+  }
 }
 

@@ -9,6 +9,10 @@ class MissionPlanner {
   static final double GM_VENUS = 3.2486e5;
   static final double GM_MERCURY = 2.2032e4;
   static final double GM_JUPITER = 1.26687e8;
+  static final double GM_SATURN = 3.79312e7;
+  static final double GM_URANUS = 5.79395e6;
+  static final double GM_NEPTUNE = 6.83653e6;
+  static final double GM_MOON = 4.90486e3;
 
   // 计算两个角度的最小差值（归一化到 [-π, π]）
   double angleDifference(double a, double b) {
@@ -119,21 +123,50 @@ class MissionPlanner {
 
   // 获取目标天体的 GM 值
   double getTargetGM(CelestialBody body) {
+    if (body.GM > 0) return body.GM; // 优先使用天体自身的GM
     if (body.name.equals("Mars")) return GM_MARS;
     if (body.name.equals("Venus")) return GM_VENUS;
     if (body.name.equals("Mercury")) return GM_MERCURY;
     if (body.name.equals("Jupiter")) return GM_JUPITER;
+    if (body.name.equals("Saturn")) return GM_SATURN;
+    if (body.name.equals("Uranus")) return GM_URANUS;
+    if (body.name.equals("Neptune")) return GM_NEPTUNE;
+    if (body.name.equals("Moon")) return GM_MOON;
     return GM_EARTH;  // 默认地球
   }
 
-  // 计算天体的影响球半径 (km)
+  // 计算天体的影响球半径 (km) - 使用标准公式 r_SOI = a * (m/M)^(2/5)
   double calculateSOI(CelestialBody body) {
-    if (body.name.equals("Mars")) return 578000.0;
-    if (body.name.equals("Venus")) return 616000.0;
-    if (body.name.equals("Earth")) return 925000.0;
-    if (body.name.equals("Mercury")) return 112000.0;
-    if (body.name.equals("Jupiter")) return 48200000.0;
-    return 500000.0;  // 默认
+    // 如果天体有缓存的SOI半径，直接返回
+    if (body.soiRadius > 0) return body.soiRadius;
+
+    // 如果是太阳，没有SOI（或者说整个太阳系都是）
+    if (body.name.equals("Sun")) return AU_KM * 100;
+
+    // 获取主天体GM（默认太阳）
+    double GM_primary = GM_SUN;
+    double a = body.a;
+
+    // 如果是卫星（有父天体且不是太阳），使用父天体作为主天体
+    if (body.parentBody != null && !body.parentBody.name.equals("Sun")) {
+      GM_primary = getTargetGM(body.parentBody);
+      // 对于卫星，a是相对于父天体的半长轴
+    }
+
+    double GM_body = getTargetGM(body);
+
+    if (GM_primary <= 0 || a <= 0) {
+      return 500000.0; // 默认值
+    }
+
+    // 计算质量比 (因为 GM = G*M，所以 m/M = GM_body / GM_primary)
+    double massRatio = GM_body / GM_primary;
+    double soiRadius = a * Math.pow(massRatio, 2.0/5.0);
+
+    // 缓存结果
+    body.setSOIRadius(soiRadius);
+
+    return soiRadius;
   }
 
   double calculateLaunchVelocity(double altitude_km) {

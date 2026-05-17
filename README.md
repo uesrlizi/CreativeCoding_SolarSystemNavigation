@@ -7,23 +7,26 @@
 ```
 SolarSystemNavigation/
 ├── SolarSystemNavigation.pde   # 主程序入口、setup/draw、全局工具函数
-├── A_Enums.pde                 # 枚举定义（ViewMode, ShipState, FrameType, BodyType）
+├── A_Enums.pde                 # 枚举定义（ViewMode, ShipState, FrameType, BodyType, SOIEventType）
 ├── B_OrbitalMath.pde           # 开普勒轨道数学（求解/坐标转换）
+├── B_SOISystem.pde             # SOI（影响球）系统核心
+├── F_SOIEvent.pde              # SOI事件记录系统
 ├── C_TimeManager.pde           # 模拟时间与时间加速
 ├── D_ReferenceFrame.pde        # 参考系系统（SURFACE/BODY_ORBIT/HELIOCENTRIC）
 ├── D_AtmosphereModel.pde       # 大气模型（密度/阻力/截止高度）
 ├── D_OrbitPropagator.pde       # 开普勒轨道传播器（"on rails"模式）
 ├── D_FlightComputer.pde        # 飞行计算机/制导算法（重力转弯/PEG/转移燃烧）
 ├── D_PhysicsEngine.pde         # 牛顿力学积分引擎（"not on rails"模式）
+├── D_GuidanceSystem.pde        # 制导系统（上升/圆化状态机）
 ├── CelestialBody.pde           # 天体数据模型与LOD分级绘制
 ├── CelestialBodyRenderer.pde   # 天体细节渲染器（程序化纹理/大气/光环/太阳日珥）
-├── SolarSystem.pde             # 太阳系初始化（8大行星 + 太阳）
-├── Spacecraft.pde              # 航天器状态容器 + 调度器
+├── SolarSystem.pde             # 太阳系初始化（太阳 + 8大行星 + 月球）
+├── Spacecraft.pde              # 航天器状态容器
 ├── SpacecraftRenderer.pde      # 航天器绘制（地图图标 / 飞船视角详细模型）
 ├── LaunchSite.pde              # 发射场数据模型（地表位置跟踪）
 ├── LaunchSiteRenderer.pde      # 发射场绘制（发射台/勤务塔/脐带臂/避雷塔/地形）
 ├── CameraController.pde        # 摄像机控制（平移/缩放/跟随/双视角）
-├── MissionPlanner.pde          # 轨道力学常数与霍曼转移计算
+├── MissionPlanner.pde          # 轨道力学常数、霍曼转移、SOI计算
 ├── LaunchController.pde        # 发射流程状态机
 ├── E_Button.pde                # 统一按钮组件（hover/点击状态/tooltip）
 ├── E_Tooltip.pde               # 浮动提示组件（自动定位/文本换行）
@@ -36,24 +39,64 @@ SolarSystemNavigation/
 
 所有 `.pde` 文件会被 Processing 连接为单一编译单元（按文件名排序），因此跨文件的类和方法可直接引用。
 
-## 核心架构（KSP 风格）
+## 核心架构
 
-架构设计为类似 Kerbal Space Program 的分层设计，**制导算法与轨道传播分离**：
+架构设计为类似 Kerbal Space Program 的分层设计，**制导算法与轨道传播分离**，**状态与逻辑分离**：
 
 ```
-Spacecraft（状态容器 + 调度器）
-    ├── [发射/圆化阶段] → 内置子步物理 + 制导状态机
-    ├──   ├── 重力转弯（FlightComputer）
-    ├──   ├── PEG 圆化（FlightComputer）
-    ├──   └── 大气阻力（AtmosphereModel）
-    ├── [轨道阶段] → D_OrbitPropagator（开普勒传播）
+Spacecraft（纯状态容器）
+    ├── 状态
+    │   ├── pos, vel (唯一状态源，单位: km, km/s)
+    │   └── currentCentralBody (CelestialBody)
+    ├── [发射/圆化阶段] → GuidanceSystem（制导状态机）
+    ├── [轨道阶段] → OrbitPropagator（开普勒传播）
     └── 显示角度平滑（独立于物理）
 
-LaunchController（纯状态机）
+GuidanceSystem（制导系统）
+    ├── 上升段重力转弯（FlightComputer）
+    ├── PEG 圆化制导（FlightComputer）
+    ├── 远地点检测 + 圆化燃烧中点对齐
+    └── 大气阻力（AtmosphereModel）
+
+LaunchController（纯任务状态机）
     ├── 任务阶段切换（倒计时→点火→发射→...）
     ├── 时间保护逻辑
     └── 不包含任何物理计算
 ```
+
+### 架构详解
+
+```
+Spacecraft (纯状态容器)
+├── 核心状态
+│   ├── pos, vel (唯一状态源，单位: km, km/s)
+│   └── currentCentralBody (CelestialBody)
+├── OrbitPropagator
+│   ├── 从 pos/vel/GM 实时计算密切轨道根数（导出量，非状态）
+│   └── 开普勒轨道传播
+├── PhysicsEngine
+│   └── 用 ForceModel 做子步积分
+└── FlightComputer
+    └── 纯函数：输入状态 → 输出推力方向（不持有状态）
+
+GuidanceSystem
+├── 上升段状态机
+├── 圆化段状态机
+├── 远地点检测
+└── 燃烧时间控制
+
+ForceModel (统一接口)
+└── SpacecraftForceModel
+    ├── 引力计算
+    ├── 推力方向（由 FlightComputer 提供）
+    └── 大气阻力
+```
+
+### 关键解耦原则
+1. **Spacecraft 是纯状态容器** — 不包含物理积分逻辑
+2. **状态只有一套** — `(pos, vel)` + `currentCentralBody`
+3. **制导算法是纯函数** — FlightComputer 不持有状态，只做计算
+4. **GuidanceSystem 处理制导状态机** — 从 Spacecraft 中独立出来
 
 ### 发射/圆化制导状态机
 
@@ -70,7 +113,7 @@ LaunchController（纯状态机）
 
 | 阶段 | 模式 | 说明 |
 |------|------|------|
-| `LAUNCHING` / `CIRCULARIZING` | 内置物理 | 子步迭代，完整制导 |
+| `LAUNCHING` / `CIRCULARIZING` | GuidanceSystem | 子步迭代，完整制导 |
 | `ORBIT` / `TRANSFER` / 其他 | Orbit | 开普勒解析传播 |
 
 ### 参考系系统 (FrameType)
@@ -78,6 +121,82 @@ LaunchController（纯状态机）
 - **SURFACE** — 地表坐标系，发射初始阶段
 - **BODY_ORBIT** — 行星相对坐标系（地球轨道）
 - **HELIOCENTRIC** — 日心坐标系（行星际转移）
+
+## SOI系统
+
+实现了完整的引力影响球（Sphere of Influence）系统，支持真实的 patched conic 轨道转移：
+
+### 核心特性
+
+- **真实SOI计算**：使用标准公式 r_SOI = a * (m/M)^(2/5)，基于天体质量比和轨道半长轴
+- **自动参考系切换**：穿越SOI边界时自动切换日心/天体中心参考系
+- **多体SOI检测**：同时检测行星和卫星的SOI，优先进入较小天体的SOI
+- **事件记录系统**：所有SOI穿越事件记录在日志中
+- **可视化支持**：SOI边界显示（按键[K]切换）
+
+### SOI半径
+
+| 天体 | SOI半径 (km) | 说明 |
+|------|--------------|------|
+| 地球 | ~929,000 | 基于地球-太阳质量比 |
+| 月球 | ~66,100 | 基于月球-地球质量比 |
+| 火星 | ~578,000 | 基于火星-太阳质量比 |
+| 木星 | ~48,200,000 | 基于木星-太阳质量比 |
+
+### SOI系统架构
+
+```
+SOISystem
+├── calculateSOIRadius(body, primary) → r
+├── findDominantBody(ship) → CelestialBody
+├── checkAndProcessSOICrossing(ship, t)
+│   ├── 检测SOI边界穿越
+│   ├── 切换参考系
+│   └── 记录SOI事件
+├── switchToBodyCentric(ship, body)
+│   ├── pos_rel = pos_helio - body_pos
+│   └── vel_rel = vel_helio - body_vel
+└── switchToHeliocentric(ship)
+    ├── pos_helio = body_pos + pos_rel
+    └── vel_helio = body_vel + vel_rel
+
+SOIEventLog
+├── logEnterSOI(t, body, pos, vel)
+├── logExitSOI(t, body, pos, vel)
+└── logSwitchSOI(t, from, to, pos, vel)
+```
+
+### CelestialBody扩展属性
+
+```java
+double GM                // 引力参数 (km³/s²)
+double mass              // 质量 (kg)
+CelestialBody parentBody // 父天体（用于卫星）
+double soiRadius        // 缓存的SOI半径
+```
+
+### SOI事件类型 (SOIEventType)
+
+| 事件 | 说明 |
+|------|------|
+| `ENTER_SOI` | 进入某个天体的SOI |
+| `EXIT_SOI` | 离开某个天体的SOI |
+| `SWITCH_SOI` | 从一个天体SOI直接切换到另一个 |
+
+### 与现有系统的集成
+
+- **LaunchController**：保留原有的2xSOI检测逻辑（用于TOI触发）
+- **Spacecraft**：SOI系统会更新 `currentCentralBody` 来切换参考系
+- **HUD**：右下角面板显示当前SOI状态，提示[K]键
+- **SolarSystem**：包含月球卫星系统
+
+### 地月系统SOI关系
+
+```
+太阳SOI (整个太阳系)
+└── 地球SOI (~929,000 km)
+    └── 月球SOI (~66,100 km)
+```
 
 ## 核心模块详解
 
@@ -121,11 +240,78 @@ LaunchController（纯状态机）
 - `BodyType`：SUN / TERRESTRIAL / GAS_GIANT / ICE_GIANT
 - 光环参数：`hasRing` / `ringInnerRadius` / `ringOuterRadius` / `ringTilt`
 - 大气参数：`hasAtmosphere` / `atmosphereColor` / `atmosphereThickness`
+- 物理参数：`GM` / `mass` / `parentBody` / `soiRadius`
 - 渲染器引用：`renderer`（CelestialBodyRenderer实例）
 
 LOD选择完全基于**屏幕半径大小**，不再依赖中心是否在屏幕内，避免平移时跳变。
 
-### D_PhysicsEngine.pde — 牛顿力学积分引擎（预留）
+卫星支持：月球作为地球的卫星，相对轨道独立计算。
+
+### MissionPlanner.pde — 任务规划与SOI计算
+
+轨道力学常数与霍曼转移计算，新增SOI计算功能：
+
+- **GM常量**：所有行星+月球的GM值 (km³/s²)
+- **SOI计算**：使用公式 r_SOI = a * (m/M)^(2/5)，自动缓存结果
+- **getTargetGM(body)**：获取任意天体的GM值
+- **霍曼转移**：计算ΔV预算、转移时间、发射窗口
+
+GM常量表：
+```
+GM_SUN     = 1.327124e11
+GM_MERCURY = 2.2032e4
+GM_VENUS   = 3.2486e5
+GM_EARTH   = 3.986004e5
+GM_MOON    = 4.90486e3
+GM_MARS    = 4.2828e4
+GM_JUPITER = 1.26687e8
+GM_SATURN  = 3.79312e7
+GM_URANUS  = 5.79395e6
+GM_NEPTUNE = 6.83653e6
+```
+
+### B_SOISystem.pde — SOI系统核心
+
+完整的引力影响球系统实现：
+
+```java
+// 核心功能
+double calculateSOIRadius(body, primary)      // 计算SOI半径
+CelestialBody findDominantBody(ship)         // 查找当前主导天体
+boolean checkAndProcessSOICrossing(ship, t)  // 检测并处理SOI穿越
+void switchToBodyCentric(ship, body, t)      // 切换到天体中心参考系
+void switchToHeliocentric(ship, t)           // 切换到日心参考系
+
+// 辅助功能
+double[][] getSOIBoundaryPoints(body, n)     // 获取绘制边界点
+String getSOIStatusString(ship)              // 获取SOI状态描述
+int getSOIColor(body)                         // 获取SOI颜色
+```
+
+### F_SOIEvent.pde — SOI事件系统
+
+记录SOI穿越事件：
+
+```java
+SOIEvent {
+    double timestamp
+    SOIEventType type
+    CelestialBody bodyA
+    CelestialBody bodyB  // SWITCH事件时使用
+    double[] spacecraftPos
+    double[] spacecraftVel
+}
+
+SOIEventLog {
+    void addEvent(event)
+    void logEnterSOI(t, body, pos, vel)
+    void logExitSOI(t, body, pos, vel)
+    void logSwitchSOI(t, from, to, pos, vel)
+    List<SOIEvent> getRecentEvents(n)
+}
+```
+
+### D_PhysicsEngine.pde — 牛顿力学积分引擎
 
 **半隐式欧拉积分**，固定子步长 `FIXED_SUBSTEP = 1s`：
 
@@ -135,8 +321,6 @@ LOD选择完全基于**屏幕半径大小**，不再依赖中心是否在屏幕�
 2. vel += accel × step
 3. pos += vel × step
 ```
-
-当前预留用于将来扩展（TMI/TOI 燃烧、行星际物理），**发射/圆化阶段目前直接在 Spacecraft 中实现**（为了精确的每子步制导状态更新）。
 
 ### D_OrbitPropagator.pde — 开普勒轨道传播器
 
@@ -171,6 +355,20 @@ thrustDir = tangential × cos(pitchOffset) + radial × sin(pitchOffset)
 - `timeToApoapsis()` — 到达远地点时间估算
 - `estimateThrustFraction()` — 上升段精确切断逻辑
 
+### D_GuidanceSystem.pde — 制导系统
+
+从 Spacecraft 中独立出来的制导状态机：
+
+- **上升段制导** — 重力转弯 + 精确推力切断 + 远地点检测
+- **圆化段制导** — PEG 制导 + 燃烧计时完成判断
+- **显示角度计算** — 为 Spacecraft 提供目标角度
+
+主要方法：
+```java
+void update(Spacecraft ship, double simDt, double simTime)
+double computeTargetDisplayAngle(Spacecraft ship, double simTime)
+```
+
 ### D_AtmosphereModel.pde — 大气模型
 
 指数密度剖面（地球）：
@@ -195,32 +393,41 @@ a_drag = 0.5 × Cd × A × ρ × v² / mass
 - `A = π × (3m)^2` (6m 直径火箭横截面积)
 - `mass = 500,000 kg` (猎鹰 9 级)
 
-### Spacecraft.pde — 状态容器 + 调度器
+### SolarSystem.pde — 太阳系初始化
+
+包含太阳、8大行星、月球卫星系统：
+- **太阳**：中心天体，GM_SUN = 1.327124e11 km³/s²
+- **行星**：水星、金星、地球、火星、木星、土星、天王星、海王星
+- **卫星**：月球（绕地球运行）
+
+所有天体都配置了GM值用于SOI计算。
+
+```java
+List<CelestialBody> getAllBodies()  // 获取太阳+行星+卫星
+CelestialBody getEarth()            // 快速获取地球
+```
+
+### Spacecraft.pde — 纯状态容器
+
+核心状态：
+- **位置速度**：`pos` / `vel` 数组（兼容旧接口：`earthRelPos` / `earthRelVel`）
+- **中心天体**：`currentCentralBody`（兼容旧接口：`earthRelative` / `earthRef`）
+- **任务状态**：`state`（ShipState 枚举）
+- **显示角度**：`displayAngle` / `angularVelocity` / `angularAcceleration`
 
 核心更新逻辑：
-- **发射/圆化阶段**：完整的子步物理 + 制导状态机（直接在 Spacecraft 中实现）
-  - 主动段重力转弯 + 精确推力切断
-  - 远地点检测 + 圆化燃烧中点对齐
-  - PEG 制导 + 燃烧计时完成判断
-  - 大气阻力计算
+- **发射/圆化阶段**：调用 GuidanceSystem 处理制导
 - **轨道阶段**：OrbitPropagator 解析圆形轨道传播
 - **显示角度平滑**：独立 PD 控制器，使用模拟时间，大时间步长拆分为 60fps 子步确保稳定
 
 ```java
 void updateBodyRelative(double t, double simDt) {
     if (state == LAUNCHING || state == CIRCULARIZING) {
-        // === 物理上升 + 制导状态机 ===
-        while (remainingDt > 0) {
-            // 重力 + 推力 + 阻力
-            // 每子步检查是否开始圆化燃烧
-            // 每子步检查是否完成圆化
-        }
+        guidanceSystem.update(this, simDt, simTime);
     } else if (state == ORBIT) {
-        // === 解析圆形轨道 ===
         orbitPropagator.propagateCircularOrbit(...);
     }
-    // === 显示角度更新（与物理同步） ===
-    updateDisplayAngle(targetAngle, simDt);  // 内部自动子步
+    updateDisplayAngleSmooth(simTime, simDt);
 }
 ```
 
@@ -233,7 +440,7 @@ void updateBodyRelative(double t, double simDt) {
 
 状态驱动，每个阶段调用对应的 `monitorXXX()` 或 `updateXXX()`。
 
-## 状态机（未改动）
+## 状态机
 
 ```
 IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
@@ -258,7 +465,7 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 | `TOI_BURN` | 目标轨道插入燃烧（Target Orbit Insertion） |
 | `CAPTURED` | 被目标行星捕获，在目标轨道运行 |
 
-## 时间控制系统（未改动）
+## 时间控制系统
 
 三重保护机制确保关键事件不被跳过：
 
@@ -268,7 +475,7 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 | 第二重 | 燃烧阶段解锁 | TMI/TOI 燃烧阶段允许用户自由加速 |
 | 第三重 | 子步保护 | 帧级检查确保不会因大时间步长跳过关键事件 |
 
-## 技术约束更新
+## 技术约束
 
 - **不实现**：燃料消耗、助推器分离、多级火箭
 - **不实现**：交会对接、兰伯特问题求解
@@ -278,7 +485,7 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 - **简化**：所有轨道为 2D 平面（z=0），发射场固定在向阳面
 - **精度**：固定 1s 子步长，适合实时可视化而非高精度轨道预报
 
-## 快捷键（未改动）
+## 快捷键
 
 | 按键 | 功能 |
 |------|------|
@@ -287,38 +494,10 @@ IDLE → COUNTDOWN → IGNITION → LAUNCHING → CIRCULARIZING → ORBIT
 | `V` | 切换 Map View / Ship View |
 | `F` | 聚焦重置（目标缩放更小时第一次直接缩放到位） |
 | `O` | 切换轨道线显示 |
+| `K` | 切换SOI边界显示 |
 | `L` | 发射飞船 / 切换标签显示 |
 | `T` | 执行转移 / 切换尾迹显示 |
 | `ESC` | 关闭弹窗 |
 | 滚轮 | 缩放 |
 | 拖拽 | 平移 |
 | 双击 | 聚焦点击的天体或飞船 |
-
-## 最近更新
-
-### 2026-05-16
-- **天体 LOD 渲染系统重写**：
-  - 新增 `CelestialBodyRenderer.pde` 独立渲染模块
-  - 完全基于屏幕半径的 LOD 判定（<25/25~90/90~220/>220px）
-  - 所有天体使用闭合形状绘制，1.3倍带宽保证重叠无缺口
-  - 太阳彻底告别扇形，改用三角形扇形+高细分
-  - 超大天体使用扫描线填充避免巨型椭圆性能问题
-- **程序化纹理与效果**：
-  - 地球：海陆噪点分离 + 大气边缘发光（不遮挡地表）
-  - 木星：条纹带 + 大红斑（LOD2+显示）
-  - 土星/天王星：三层细节星环系统 + 正确遮挡
-  - 太阳：径向噪点 + 日珥脉动 + 多层光晕
-- **星环渲染优化**：
-  - 统一所有LOD的星环朝向（仅使用ringTilt）
-  - 三层细节级别：Simple(LOD0)/Medium(LOD1~2)/Detailed(LOD3)
-  - 正确的前后遮挡：先画整环→画行星→画下半圈
-  - 星环层使用Perlin噪声实现透明度和颜色变化
-- **LOD过渡一致性优化**：
-  - 统一所有LOD的行星旋转参数（rotation * 0.05）
-  - 统一太阳噪声采样坐标（基于角度而非屏幕位置）
-  - 增加LOD1/2的条纹带数量（10/14条）
-  - LOD0也显示星环和大气（达到阈值后）
-- **星空背景优化**：星星数量增加至1500，颜色变异，银河带星云效果
-- **修复飞船旋转抖动**：移除 `updateDisplayAngle` 重复调用，统一在 `Spacecraft.update()` 内使用模拟时间更新，大时间步长自动拆分为 60fps 子步保证 PD 控制器稳定
-- **优化 RCS 羽流可见性**：从"随推力改变尺寸"改为"脉冲喷射模式"——小推力时低频(2Hz)短脉冲(15%)，大推力时高频(17Hz)长脉冲(90%)，羽流尺寸固定清晰可见
-

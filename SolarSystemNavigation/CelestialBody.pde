@@ -15,6 +15,12 @@ class CelestialBody {
   double px, py, pz;
   double currentNu;
 
+  // SOI/物理属性
+  double GM;                // 重力参数 GM (km³/s²)
+  double mass;              // 质量 (kg) - 可选，用于计算
+  CelestialBody parentBody; // 父天体（对于卫星）
+  double soiRadius;         // 缓存的SOI半径
+
   // Visual properties
   BodyType type;
   float rotation;           // current rotation angle (for rendering, mod TWO_PI)
@@ -51,6 +57,10 @@ class CelestialBody {
     this.radius = R_km;
     this.col = col;
     this.type = type;
+    this.GM = 0;
+    this.mass = 0;
+    this.parentBody = null;
+    this.soiRadius = 0;
     initVisualProperties();
   }
 
@@ -63,7 +73,31 @@ class CelestialBody {
     this.col = col;
     this.px = x; this.py = y; this.pz = 0;
     this.type = type;
+    this.GM = 0;
+    this.mass = 0;
+    this.parentBody = null;
+    this.soiRadius = 0;
     initVisualProperties();
+  }
+
+  // 设置GM值
+  void setGM(double gm) {
+    this.GM = gm;
+  }
+
+  // 设置质量（可选）
+  void setMass(double m) {
+    this.mass = m;
+  }
+
+  // 设置父天体
+  void setParentBody(CelestialBody parent) {
+    this.parentBody = parent;
+  }
+
+  // 缓存SOI半径
+  void setSOIRadius(double r) {
+    this.soiRadius = r;
   }
 
   void initVisualProperties() {

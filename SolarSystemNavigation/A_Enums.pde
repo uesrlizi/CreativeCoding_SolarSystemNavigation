@@ -23,3 +23,9 @@ enum ShipState {
   TOI_BURN,
   CAPTURED
 }
+
+enum SOIEventType {
+  ENTER_SOI,    // 进入天体SOI
+  EXIT_SOI,     // 离开天体SOI
+  SWITCH_SOI    // 从一个SOI切换到另一个
+}

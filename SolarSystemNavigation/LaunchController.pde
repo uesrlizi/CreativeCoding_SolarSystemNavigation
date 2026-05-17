@@ -232,8 +232,9 @@ class LaunchController {
     double n_transfer = 2 * PI / period;
     double M0_transfer = -n_transfer * transferStartTime;
 
-    currentShip.earthRelative = false;
-    currentShip.earthRef = null;
+    currentShip.currentCentralBody = null;
+    currentShip.earthRef = null;  // 兼容性
+    currentShip.earthRelative = false;  // 兼容性
 
     currentShip.a = a_transfer;
     currentShip.e = e_transfer;

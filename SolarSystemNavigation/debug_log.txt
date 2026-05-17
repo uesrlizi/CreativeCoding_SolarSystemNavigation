@@ -1,9 +1,3 @@
-1642: CIRC START: state->CIRCULARIZING, burnDuration=258.35010409027996 timeToApo=128.69296068920679
-1894: CIRC DONE: finalizing orbit insertion
-1896: Auto warp control released
-2209: Mission planned: Launch at simTime=6.3069275380017705E7 (+729.9583 days)
-2210: Entering auto warp phase
-2833: Jumped to 15s before launch window
-2833: launch window approaching: TIME LOCKED to 1x
-3727: TMI burn started: ΔV=2.9446719 km/s
-3728: BURN PHASE: Manual warp control allowed
+404: SOI显示: 开启
+577: SOI显示: 关闭
+596: SOI显示: 开启

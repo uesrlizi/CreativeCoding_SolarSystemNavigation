@@ -13,7 +13,7 @@ class ShipStatusPanel {
   ShipStatusPanel() {
     float scale = uiScale;
     panelW = 275 * scale;
-    panelH = 360 * scale;
+    panelH = 390 * scale;
     panelX = width - panelW - 10 * scale;
     panelY = height - panelH - 10 * scale;
     panelMargin = 10 * scale;
@@ -197,6 +197,20 @@ class ShipStatusPanel {
       textAlign(LEFT, TOP);
       text("ENGINE: OFF", panelX + panelMargin, engineY);
     }
+
+    // SOI状态显示
+    float soiY = engineY + 20 * scale;
+    String soiStatus = soiSystem.getSOIStatusString(ship);
+    fill(180, 200, 255);
+    textSize(11 * scale);
+    textAlign(LEFT, TOP);
+    text("SOI: " + soiStatus, panelX + panelMargin, soiY);
+
+    // 提示按键
+    fill(100, 120, 100);
+    textSize(10 * scale);
+    textAlign(RIGHT, TOP);
+    text("[K] Toggle SOI", panelX + panelW - panelMargin, soiY);
   }
 
   void drawPhaseIndicator(Spacecraft ship, ShipState state, LaunchController ctrl,
