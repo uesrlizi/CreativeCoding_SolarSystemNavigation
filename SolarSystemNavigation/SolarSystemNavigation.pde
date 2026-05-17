@@ -47,6 +47,8 @@ float deltaTime = 1.0 / 60.0;
 int lastFrameMillis;
 
 // ---------- Global Systems (新架构) ----------
+FlightSystem flightSystem;
+PhysicsSystem physicsSystem;
 GuidanceSystem guidanceSystem;
 OrbitPropagator orbitPropagator;
 FlightComputer flightComputer;
@@ -91,7 +93,9 @@ void setup() {
   }
 
   // 初始化新架构的系统
-  guidanceSystem = new GuidanceSystem();
+  flightSystem = new FlightSystem();
+  physicsSystem = new PhysicsSystem();
+  guidanceSystem = new GuidanceSystem(flightSystem);
   orbitPropagator = new OrbitPropagator();
   flightComputer = new FlightComputer();
   physicsEngine = new PhysicsEngine();
@@ -100,11 +104,14 @@ void setup() {
 
   timeManager = new TimeManager();
   launchController = new LaunchController();
+  launchController.setFlightSystem(flightSystem);
+  launchController.setGuidanceSystem(guidanceSystem);
 
   solarSystem = new SolarSystem();
 
   // 初始化SOI系统
   soiSystem = new SOISystem(solarSystem, launchController.planner);
+  soiSystem.setOrbitPropagator(orbitPropagator);
   solarSystem.initialize();
 
   // Create default spacecraft on Earth's day-side launch pad
@@ -171,10 +178,21 @@ void draw() {
     solarSystem.update(timeManager.simTime);
     solarSystem.updateRenderer(deltaTime);
 
+    // 新架构的更新流程
     for (Spacecraft s : solarSystem.ships) {
-      s.update(timeManager.simTime);
-      // 检测SOI穿越
-      soiSystem.checkAndProcessSOICrossing(s, timeManager.simTime);
+      double simDt = timeManager.simTime - s.lastUpdateTime;
+      if (simDt <= 0) simDt = 1.0 / 60.0;
+      if (simDt > 3600) simDt = 3600;
+      s.lastUpdateTime = timeManager.simTime;
+
+      // 1. 制导计算（输出推力命令）
+      guidanceSystem.update(s, simDt, timeManager.simTime);
+
+      // 2. 飞行系统更新（运动计算）
+      flightSystem.update(s, simDt, timeManager.simTime);
+
+      // 3. 显示角度更新
+      s.updateDisplayAngleSmooth(timeManager.simTime, simDt);
     }
 
     camera.update(deltaTime);

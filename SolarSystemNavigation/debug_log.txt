@@ -1,3 +1,5 @@
-404: SOI显示: 开启
-577: SOI显示: 关闭
-596: SOI显示: 开启
+673: Launch: 解除发射台固定，点火起飞
+992: CIRC START: burnDuration=256.74698954315653
+992: Physics: INTEGRATED→ORBITAL, a=-2929.2456km alt, e=0.9737353
+993: ORBIT INSERTED: finalizing orbit
+995: Auto warp control released

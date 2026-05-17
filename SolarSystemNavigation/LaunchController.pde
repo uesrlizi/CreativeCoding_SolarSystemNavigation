@@ -35,8 +35,10 @@ class LaunchController {
   // Previous state for transition detection
   ShipState previousState = ShipState.IDLE;
 
-  // FlightComputer instance
+  // System references
   FlightComputer flightComputer;
+  FlightSystem flightSystem;
+  GuidanceSystem guidanceSystem;
 
   // ==============================================================
   //  Constructor
@@ -49,6 +51,16 @@ class LaunchController {
     planner = new MissionPlanner();
     currentMission = null;
     flightComputer = new FlightComputer();
+    flightSystem = null;
+    guidanceSystem = null;
+  }
+
+  void setFlightSystem(FlightSystem fs) {
+    flightSystem = fs;
+  }
+
+  void setGuidanceSystem(GuidanceSystem gs) {
+    guidanceSystem = gs;
   }
 
   // ==============================================================
@@ -60,6 +72,7 @@ class LaunchController {
     currentShip.state = ShipState.COUNTDOWN;
     currentShip.countdownStartTime = timeManager.simTime;
     currentShip.thrustActive = false;
+    // 保持固定直到发射阶段开始
     state = ShipState.COUNTDOWN;
     launchStartTime = timeManager.simTime;
   }
@@ -186,12 +199,16 @@ class LaunchController {
     currentShip.tmiTargetDV = currentMission.tmiDeltaV;
     currentShip.tmiAccumulatedDV = 0;
     currentShip.lastUpdateTime = timeManager.simTime;
-    currentShip.thrustActive = true;
 
     burnStartTime = timeManager.simTime;
     burnDeltaVNeeded = currentMission.tmiDeltaV;
     burnDeltaVApplied = 0;
     burnDuration = burnDeltaVNeeded / FlightComputer.THRUST_ACCEL;
+
+    // 调用制导系统开始 TMI 燃烧
+    if (guidanceSystem != null) {
+      guidanceSystem.startTMIBurn(currentMission.tmiDeltaV, selectedTarget);
+    }
 
     if (currentMission.tmiDeltaV <= 0) {
       completeTMIBurn();
@@ -207,7 +224,7 @@ class LaunchController {
 
   void updateTMIBurn() {
     burnDeltaVApplied = currentShip.tmiAccumulatedDV;
-    if (!currentShip.thrustActive) {
+    if (burnDeltaVApplied >= burnDeltaVNeeded) {
       completeTMIBurn();
     }
   }
@@ -218,39 +235,12 @@ class LaunchController {
 
   void completeTMIBurn() {
     currentShip.thrustActive = false;
-
-    CelestialBody earth = getEarth();
-    double r1 = earth.a;
-    double r2 = selectedTarget.a;
-    double a_transfer = (r1 + r2) / 2.0;
-    double e_transfer = Math.abs(r2 - r1) / (r2 + r1);
-    double period = 2 * PI * Math.sqrt(Math.pow(a_transfer, 3) / GM_SUN);
-
     transferStartTime = timeManager.simTime;
-
-    double w_transfer = Math.atan2(earth.py, earth.px);
-    double n_transfer = 2 * PI / period;
-    double M0_transfer = -n_transfer * transferStartTime;
-
-    currentShip.currentCentralBody = null;
-    currentShip.earthRef = null;  // 兼容性
-    currentShip.earthRelative = false;  // 兼容性
-
-    currentShip.a = a_transfer;
-    currentShip.e = e_transfer;
-    currentShip.i = 0;
-    currentShip.omega = 0;
-    currentShip.w = Math.toDegrees(w_transfer);
-    currentShip.M0 = M0_transfer;
-    currentShip.period = period;
 
     state = ShipState.TRANSFER;
     currentShip.state = ShipState.TRANSFER;
 
-    // Backward compatibility: set the transferOrbitParams
-    transferOrbitParams = new double[]{a_transfer / 1000.0, e_transfer};
-
-    dbgLog("TMI complete: Transfer orbit a=" + (float)(currentShip.a / AU_KM) + " AU");
+    dbgLog("TMI complete");
   }
 
   // ==============================================================
@@ -324,12 +314,16 @@ class LaunchController {
     currentShip.toiTargetDV = currentMission.toiDeltaV;
     currentShip.toiAccumulatedDV = 0;
     currentShip.lastUpdateTime = timeManager.simTime;
-    currentShip.thrustActive = true;
 
     burnStartTime = timeManager.simTime;
     burnDeltaVNeeded = currentMission.toiDeltaV;
     burnDeltaVApplied = 0;
     burnDuration = burnDeltaVNeeded / FlightComputer.THRUST_ACCEL;
+
+    // 调用制导系统开始 TOI 燃烧
+    if (guidanceSystem != null) {
+      guidanceSystem.startTOIBurn(currentMission.toiDeltaV);
+    }
 
     dbgLog("TOI burn started: ΔV=" + (float)currentMission.toiDeltaV + " km/s");
   }
@@ -340,7 +334,7 @@ class LaunchController {
 
   void updateTOIBurn() {
     burnDeltaVApplied = currentShip.toiAccumulatedDV;
-    if (!currentShip.thrustActive) {
+    if (burnDeltaVApplied >= burnDeltaVNeeded) {
       completeTOIBurn();
     }
   }
@@ -351,17 +345,6 @@ class LaunchController {
 
   void completeTOIBurn() {
     currentShip.thrustActive = false;
-
-    currentShip.a = selectedTarget.a;
-    currentShip.e = selectedTarget.e;
-    currentShip.i = selectedTarget.i;
-    currentShip.omega = selectedTarget.omega;
-    currentShip.w = selectedTarget.w;
-    currentShip.period = selectedTarget.period;
-
-    double n = 2 * PI / selectedTarget.period;
-    double currentM = selectedTarget.M0 + n * timeManager.simTime;
-    currentShip.M0 = currentM - 0.02;
 
     state = ShipState.CAPTURED;
     currentShip.state = ShipState.CAPTURED;
@@ -432,7 +415,11 @@ class LaunchController {
           currentShip.launchStartTime = timeManager.simTime;
           currentShip.lastUpdateTime = timeManager.simTime;
           currentShip.thrustActive = true;
+          if (flightSystem != null) {
+            flightSystem.setFixed(false);  // 通过 FlightSystem 解除固定
+          }
           state = ShipState.LAUNCHING;
+          dbgLog("Launch: 解除发射台固定，点火起飞");
         }
         break;
       }

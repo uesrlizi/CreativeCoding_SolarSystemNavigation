@@ -3,6 +3,7 @@ class SOISystem {
   SolarSystem solarSystem;
   MissionPlanner planner;
   SOIEventLog eventLog;
+  OrbitPropagator orbitPropagator;
 
   // 缓存的SOI计算结果
   HashMap<String, Double> soiRadiusCache;
@@ -12,6 +13,11 @@ class SOISystem {
     this.planner = mp;
     this.eventLog = new SOIEventLog();
     this.soiRadiusCache = new HashMap<String, Double>();
+    this.orbitPropagator = null;
+  }
+
+  void setOrbitPropagator(OrbitPropagator op) {
+    this.orbitPropagator = op;
   }
 
   // 获取SOI事件日志
@@ -236,6 +242,21 @@ class SOISystem {
     ship.vel[0] = relVel[0] + bodyVel[0];
     ship.vel[1] = relVel[1] + bodyVel[1];
     ship.vel[2] = relVel[2] + bodyVel[2];
+
+    // 从日心位置和速度计算轨道根数
+    if (orbitPropagator != null) {
+      double[] helioPos = new double[]{ship.px, ship.py, ship.pz};
+      double[] elements = orbitPropagator.osculatingElements(helioPos, ship.vel, GM_SUN);
+      if (elements[0] < Double.MAX_VALUE) {
+        ship.a = elements[0];
+        ship.e = elements[1];
+        ship.i = elements[2];
+        ship.omega = elements[3];
+        ship.w = elements[4];
+        ship.M0 = elements[5] - Math.sqrt(GM_SUN / (ship.a * ship.a * ship.a)) * simTime;
+        ship.period = 2.0 * PI * Math.sqrt(ship.a * ship.a * ship.a / GM_SUN);
+      }
+    }
 
     ship.currentCentralBody = null;
     ship.earthRef = null; // 兼容性

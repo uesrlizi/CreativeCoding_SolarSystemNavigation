@@ -43,8 +43,12 @@ class Spacecraft {
   double countdownStartTime;
   double ignitionStartTime;
 
+  // 发射状态
+  boolean isFixed;
+
   // 推力/燃烧跟踪
   boolean thrustActive;
+  double thrustDirection;  // 推力方向（弧度）
   double tmiTargetDV;
   double tmiAccumulatedDV;
   double toiTargetDV;
@@ -97,6 +101,8 @@ class Spacecraft {
     this.countdownStartTime = 0;
     this.ignitionStartTime = 0;
 
+    this.isFixed = true;  // 初始固定在发射台
+
     this.currentCentralBody = null;
     this.earthRef = null;
     this.earthRelative = false;
@@ -106,6 +112,9 @@ class Spacecraft {
     this.orbitAngle = 0;
     this.earthOrbitAngle = 0;
     this.orbitStartTime = 0;
+
+    this.thrustActive = false;
+    this.thrustDirection = 0.0;
 
     this.displayAngle = 0;
     this.angularVelocity = 0;
@@ -117,71 +126,7 @@ class Spacecraft {
   }
 
   // ============================================================
-  //  主更新调度器
-  // ============================================================
-
-  void update(double simTime) {
-    double simDt = simTime - lastUpdateTime;
-    if (simDt <= 0) simDt = 1.0 / 60.0;
-    if (simDt > 3600) simDt = 3600;
-    lastUpdateTime = simTime;
-
-    // 根据当前中心天体和状态选择更新模式
-    if (currentCentralBody != null) {
-      updateBodyRelative(simTime, simDt);
-    } else {
-      updateHeliocentric(simTime, simDt);
-    }
-
-    // 更新显示角度
-    updateDisplayAngleSmooth(simTime, simDt);
-  }
-
-  // ============================================================
-  //  中心天体相对模式更新
-  // ============================================================
-
-  void updateBodyRelative(double simTime, double simDt) {
-    if (state == ShipState.LAUNCHING || state == ShipState.CIRCULARIZING) {
-      // 制导物理模式 - 委托给 GuidanceSystem
-      if (guidanceSystem != null) {
-        guidanceSystem.update(this, simDt, simTime);
-      }
-      updateDerivedValues();
-    } else if (state == ShipState.ORBIT) {
-      // 解析轨道模式 - 使用 OrbitPropagator
-      double orbitElapsed = simTime - orbitStartTime;
-      double angVel = Math.sqrt(MissionPlanner.GM_EARTH / Math.pow(MissionPlanner.LEO_RADIUS_KM, 3));
-      orbitAngle = launchPadAngle + angVel * orbitElapsed;
-      earthOrbitAngle = orbitAngle;  // 兼容性
-
-      orbitPropagator.propagateCircularOrbit(
-        pos, vel,
-        currentCentralBody, orbitAngle,
-        MissionPlanner.LEO_RADIUS_KM,
-        MissionPlanner.GM_EARTH);
-      launchAltitude = MissionPlanner.LEO_ALTITUDE_KM;
-    }
-
-    // 更新世界位置
-    if (currentCentralBody != null) {
-      px = currentCentralBody.px + pos[0];
-      py = currentCentralBody.py + pos[1];
-      pz = currentCentralBody.pz + pos[2];
-    }
-  }
-
-  // ============================================================
-  //  日心模式更新
-  // ============================================================
-
-  void updateHeliocentric(double simTime, double simDt) {
-    // 使用开普勒轨道传播
-    orbitPropagator.propagateHeliocentric(this, simTime);
-  }
-
-  // ============================================================
-  //  辅助：更新派生值
+  //  辅助：更新派生值（供外部系统调用）
   // ============================================================
 
   void updateDerivedValues() {
@@ -192,36 +137,6 @@ class Spacecraft {
       orbitAngle = Math.atan2(ry, rx);
       earthOrbitAngle = orbitAngle;  // 兼容性
     }
-  }
-
-  // ============================================================
-  //  完成轨道插入 - 过渡到稳定轨道
-  // ============================================================
-
-  void finalizeOrbitInsertion(double simTime) {
-    double rx = pos[0], ry = pos[1];
-    double r = Math.sqrt(rx * rx + ry * ry);
-    double radX = rx / r, radY = ry / r;
-    double tanX = -ry / r, tanY = rx / r;
-
-    double circSpeed = Math.sqrt(MissionPlanner.GM_EARTH / MissionPlanner.LEO_RADIUS_KM);
-    vel[0] = tanX * circSpeed;
-    vel[1] = tanY * circSpeed;
-    vel[2] = 0;
-
-    pos[0] = MissionPlanner.LEO_RADIUS_KM * radX;
-    pos[1] = MissionPlanner.LEO_RADIUS_KM * radY;
-    pos[2] = 0;
-
-    launchAltitude = MissionPlanner.LEO_ALTITUDE_KM;
-    launchPadAngle = Math.atan2(pos[1], pos[0]);
-    orbitAngle = launchPadAngle;
-    earthOrbitAngle = orbitAngle;
-    orbitStartTime = simTime;
-    thrustActive = false;
-    state = ShipState.ORBIT;
-
-    dbgLog("ORBIT INSERTED: finalizing orbit");
   }
 
   // ============================================================
@@ -398,7 +313,7 @@ class SpacecraftForceModel extends ForceModel {
     double gMag = GM / (r * r);
     accelOut[0] = -gMag * rx / r;
     accelOut[1] = -gMag * ry / r;
-    accelOut[2] = 0;
+    // 注意：只使用2D，不设置 accelOut[2]
 
     // 推力
     if (useThrust) {
