@@ -1,5 +1,5 @@
 // Solar System Spaceflight Simulation - Refactored Version
-// Stage 4: Dual-Mode Physics System
+// Stage 5: Maneuver Planning & Auto-Execution
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +29,11 @@ ViewToggleButton viewToggleButton;
 PhysicsSystem physicsSystem;  // 新增：物理系统
 DebugPanel debugPanel;         // 新增：调试面板
 float uiScale;
+
+// ========== MISSION SYSTEMS (Stage 5) ==========
+MissionPlanner missionPlanner;
+MissionValidator missionValidator;
+MissionExecutor missionExecutor;
 
 // ========== SPACECRAFT & RENDERER ==========
 SpacecraftRenderer spacecraftRenderer;
@@ -67,6 +72,11 @@ void setup() {
 
   // Initialize physics system
   physicsSystem = new PhysicsSystem(solarSystem);
+
+  // Initialize mission systems (Stage 5)
+  missionPlanner = new MissionPlanner();
+  missionValidator = new MissionValidator();
+  missionExecutor = new MissionExecutor();
 
   // Initialize spacecraft renderer and trajectory predictor
   spacecraftRenderer = new SpacecraftRenderer();
@@ -120,6 +130,9 @@ void draw() {
   solarSystem.update(timeManager.simTime);
   solarSystem.updateRenderer(deltaTime);
 
+  // Update mission executor (Stage 5)
+  missionExecutor.update(timeManager.simTime, deltaTime);
+
   // Update spacecraft positions using PhysicsSystem
   for (Spacecraft ship : solarSystem.ships) {
     double simDt = timeManager.simTime - ship.lastUpdateTime;
@@ -131,11 +144,23 @@ void draw() {
     physicsSystem.update(ship, simDt, timeManager.simTime);
   }
 
-  // 更新智能warp限制
-  for (Spacecraft ship : solarSystem.ships) {
-    int maxWarp = physicsSystem.getMaxTimeWarp(ship, timeManager);
-    timeManager.setMaxWarpIndex(maxWarp);
+  // 更新智能warp限制 - 优先使用missionExecutor的建议
+  int globalMaxWarp = timeManager.WARP_LEVELS.length - 1;
+  if (missionExecutor.state != MissionExecutorState.IDLE) {
+    int executorMaxWarp = missionExecutor.getRecommendedWarpLevel(timeManager);
+    if (executorMaxWarp >= 0) {
+      globalMaxWarp = executorMaxWarp;
+    }
+  } else {
+    // 普通情况：使用physicsSystem的限制
+    for (Spacecraft ship : solarSystem.ships) {
+      int maxWarp = physicsSystem.getMaxTimeWarp(ship, timeManager);
+      if (maxWarp < globalMaxWarp) {
+        globalMaxWarp = maxWarp;
+      }
+    }
   }
+  timeManager.setMaxWarpIndex(globalMaxWarp);
 
   camera.update(deltaTime);
   hud.update();

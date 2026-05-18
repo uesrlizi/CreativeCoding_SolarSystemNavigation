@@ -8,29 +8,33 @@ class TaskMenu {
 
   List<MissionPreset> presets;
   MissionPreset selectedPreset;
+  MissionValidationResult validationResult;
   int hoveredIndex;
   int hoveredFrames;
   boolean closeButtonHover;
   boolean startButtonHover;
+  boolean abortButtonHover;
   int buttonHoverFrames;
 
   TaskMenu() {
     visible = false;
     float scale = uiScale;
-    panelX = width - 290 * scale;
+    panelX = width - 320 * scale;
     panelY = 120 * scale;
-    panelW = 270 * scale;
+    panelW = 300 * scale;
     rowH = 26 * scale;
     headerH = 42 * scale;
-    detailH = 110 * scale;
-    footerH = 50 * scale;
+    detailH = 160 * scale;
+    footerH = 80 * scale;
     panelMargin = 10 * scale;
     hoveredIndex = -1;
     hoveredFrames = 0;
     closeButtonHover = false;
     startButtonHover = false;
+    abortButtonHover = false;
     buttonHoverFrames = 0;
     selectedPreset = null;
+    validationResult = null;
   }
 
   void toggle() {
@@ -38,13 +42,25 @@ class TaskMenu {
     if (visible && presets == null) {
       presets = getAllMissionPresets(solarSystem);
     }
+    if (visible) {
+      validateSelected();
+    }
+  }
+
+  void validateSelected() {
+    if (selectedPreset == null || solarSystem.ships.size() == 0) {
+      validationResult = null;
+      return;
+    }
+    Spacecraft craft = solarSystem.ships.get(0);
+    validationResult = missionValidator.validateMission(selectedPreset, craft, solarSystem);
   }
 
   void update() {
     if (!visible) return;
     float scale = uiScale;
 
-    panelX = width - 290 * scale;
+    panelX = width - 320 * scale;
     int presetCount = (presets != null) ? presets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
@@ -78,7 +94,12 @@ class TaskMenu {
     float btnH = 28 * scale;
     startButtonHover = (mouseX >= btnX && mouseX <= btnX + btnW &&
                         mouseY >= btnY && mouseY <= btnY + btnH);
-    if (startButtonHover || closeButtonHover) {
+
+    float abortBtnY = footerY + 44 * scale;
+    abortButtonHover = (mouseX >= btnX && mouseX <= btnX + btnW &&
+                       mouseY >= abortBtnY && mouseY <= abortBtnY + btnH);
+
+    if (startButtonHover || closeButtonHover || abortButtonHover) {
       buttonHoverFrames++;
     } else {
       buttonHoverFrames = 0;
@@ -139,6 +160,28 @@ class TaskMenu {
       float textY = detailY + 36 * scale;
       float lineH = 16 * scale;
       drawWrappedText(desc, panelX + panelMargin + 8 * scale, textY, maxW, lineH);
+
+      float valY = detailY + 80 * scale;
+      if (validationResult != null) {
+        if (validationResult.canExecute) {
+          fill(100, 255, 100);
+        } else {
+          fill(255, 100, 100);
+        }
+        textSize(11 * scale);
+        drawWrappedText(validationResult.reason, panelX + panelMargin + 8 * scale, valY, maxW, lineH);
+
+        if (validationResult.requiredDeltaV > 0) {
+          fill(200, 200, 255);
+          textSize(12 * scale);
+          text(String.format("Δv: %.3f km/s", validationResult.requiredDeltaV),
+               panelX + panelMargin + 8 * scale, valY + 40 * scale);
+        }
+      } else {
+        fill(150);
+        textSize(11 * scale);
+        text("Validation pending...", panelX + panelMargin + 8 * scale, valY);
+      }
     } else {
       fill(150);
       textSize(12 * scale);
@@ -152,7 +195,7 @@ class TaskMenu {
     float btnW = 80 * scale;
     float btnH = 28 * scale;
 
-    boolean canStart = selectedPreset != null;
+    boolean canStart = selectedPreset != null && validationResult != null && validationResult.canExecute;
     if (canStart) {
       fill(startButtonHover ? color(80, 200, 100) : color(60, 160, 80));
     } else {
@@ -163,6 +206,37 @@ class TaskMenu {
     textSize(14 * scale);
     textAlign(CENTER, CENTER);
     text("START", btnX + btnW / 2, btnY + btnH / 2);
+
+    boolean canAbort = missionExecutor.state == MissionExecutorState.WAITING_FOR_MANEUVER ||
+                       missionExecutor.state == MissionExecutorState.ORIENTING ||
+                       missionExecutor.state == MissionExecutorState.BURNING;
+    float abortBtnY = footerY + 44 * scale;
+    if (canAbort) {
+      fill(abortButtonHover ? color(220, 80, 80) : color(180, 60, 60));
+    } else {
+      fill(60, 60, 60);
+    }
+    rect(btnX, abortBtnY, btnW, btnH, 6 * scale);
+    fill(canAbort ? 255 : 100);
+    textSize(14 * scale);
+    textAlign(CENTER, CENTER);
+    text("ABORT", btnX + btnW / 2, abortBtnY + btnH / 2);
+
+    if (missionExecutor.state != MissionExecutorState.IDLE) {
+      fill(200);
+      textSize(11 * scale);
+      textAlign(LEFT, CENTER);
+      text(missionExecutor.statusText, panelX + panelMargin, footerY + 24 * scale);
+
+      float progressW = (panelW - 2 * panelMargin - btnW - 10 * scale);
+      float progressX = panelX + panelMargin;
+      float progressY = footerY + 50 * scale;
+      float progressH = 10 * scale;
+      fill(60);
+      rect(progressX, progressY, progressW, progressH, 4 * scale);
+      fill(80, 160, 220);
+      rect(progressX, progressY, (float)(progressW * missionExecutor.progress), progressH, 4 * scale);
+    }
 
     popStyle();
   }
@@ -188,9 +262,6 @@ class TaskMenu {
   }
 
   void drawWrappedText(String text, float x, float y, float maxW, float lineH) {
-    float scale = uiScale;
-    textSize(12 * scale);
-
     String[] words = text.split(" ");
     String line = "";
     float currentY = y;
@@ -237,6 +308,7 @@ class TaskMenu {
       int idx = (int)((my - listY) / rowH);
       if (idx >= 0 && idx < presets.size()) {
         selectedPreset = presets.get(idx);
+        validateSelected();
         return true;
       }
     }
@@ -246,11 +318,17 @@ class TaskMenu {
     float btnY = footerY + 10 * scale;
     float btnW = 80 * scale;
     float btnH = 28 * scale;
+
     if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
-      if (selectedPreset != null) {
+      if (selectedPreset != null && validationResult != null && validationResult.canExecute) {
         startMission(selectedPreset);
-        visible = false;
       }
+      return true;
+    }
+
+    float abortBtnY = footerY + 44 * scale;
+    if (mx >= btnX && mx <= btnX + btnW && my >= abortBtnY && my <= abortBtnY + btnH) {
+      missionExecutor.abortMission();
       return true;
     }
 
@@ -277,7 +355,7 @@ class TaskMenu {
         preset.initialOrbit.e,
         preset.initialOrbit.w,
         preset.initialOrbit.M0,
-        timeManager.simTime, // epoch = now
+        timeManager.simTime,
         preset.initialOrbit.period,
         body
       );
@@ -291,6 +369,10 @@ class TaskMenu {
     if (trajectoryPredictor != null) {
       trajectoryPredictor.markDirty();
     }
+
+    MissionTask task = new MissionTask(preset);
+    List<ManeuverNode> maneuvers = validationResult.maneuvers;
+    missionExecutor.startMission(task, maneuvers, ship, solarSystem, timeManager.simTime);
   }
 
   String getHoveredTooltipText() {
@@ -298,6 +380,7 @@ class TaskMenu {
     if (buttonHoverFrames >= Button.TOOLTIP_DELAY) {
       if (closeButtonHover) return "Close menu";
       if (startButtonHover) return "Start selected mission";
+      if (abortButtonHover) return "Abort current mission";
     }
     return null;
   }

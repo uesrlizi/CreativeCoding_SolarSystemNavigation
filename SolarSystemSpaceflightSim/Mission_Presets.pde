@@ -4,6 +4,10 @@ static final String MISSION_PRESET_LEO = "leo";
 static final String MISSION_PRESET_GEO = "geo";
 static final String MISSION_PRESET_LUNAR_TRANSFER = "lunar_transfer";
 
+static final String MISSION_TEST_LEO_RAISE = "test_leo_raise";
+static final String MISSION_TEST_GEO_TRANSFER = "test_geo_transfer";
+static final String MISSION_TEST_MOON_FLYBY = "test_moon_flyby";
+
 private List<MissionPreset> missionPresets;
 
 void initMissionPresets(CelestialSystem system) {
@@ -67,6 +71,59 @@ void initMissionPresets(CelestialSystem system) {
       lunar.goal.type = MissionGoalType.TRANSFER_TO_BODY;
       lunar.goal.targetBody = moon;
       missionPresets.add(lunar);
+    }
+
+    // 测试任务1：LEO轨道提升
+    MissionPreset testLeoRaise = new MissionPreset(
+      MISSION_TEST_LEO_RAISE,
+      "TEST: LEO Raise",
+      "Test mission: Raise orbit from 200 km to 500 km."
+    );
+    testLeoRaise.requiredSpacecraftPreset = PRESET_LEO_SATELLITE;
+    testLeoRaise.initialBody = earth;
+    double aInit = EARTH_RADIUS_KM + 200;
+    double periodInit = 2 * PI * Math.sqrt(aInit * aInit * aInit / GM_EARTH);
+    testLeoRaise.initialOrbit = new Orbit(aInit, 0.001, 0.0, 0.0, 0.0, periodInit, earth);
+    testLeoRaise.goal.type = MissionGoalType.REACH_ORBIT;
+    testLeoRaise.goal.targetBody = earth;
+    double aTarget = EARTH_RADIUS_KM + 500;
+    double periodTarget = 2 * PI * Math.sqrt(aTarget * aTarget * aTarget / GM_EARTH);
+    testLeoRaise.goal.targetOrbit = new Orbit(aTarget, 0.001, 0.0, 0.0, 0.0, periodTarget, earth);
+    missionPresets.add(testLeoRaise);
+
+    // 测试任务2：GEO转移
+    MissionPreset testGeoTransfer = new MissionPreset(
+      MISSION_TEST_GEO_TRANSFER,
+      "TEST: GEO Transfer",
+      "Test mission: Hohmann transfer to geostationary orbit."
+    );
+    testGeoTransfer.requiredSpacecraftPreset = PRESET_LEO_SATELLITE;
+    testGeoTransfer.initialBody = earth;
+    double aGeoInit = EARTH_RADIUS_KM + 400;
+    double periodGeoInit = 2 * PI * Math.sqrt(aGeoInit * aGeoInit * aGeoInit / GM_EARTH);
+    testGeoTransfer.initialOrbit = new Orbit(aGeoInit, 0.001, 0.0, 0.0, 0.0, periodGeoInit, earth);
+    testGeoTransfer.goal.type = MissionGoalType.REACH_ORBIT;
+    testGeoTransfer.goal.targetBody = earth;
+    double aGeoTarget = EARTH_RADIUS_KM + 35786;
+    double periodGeoTarget = 2 * PI * Math.sqrt(aGeoTarget * aGeoTarget * aGeoTarget / GM_EARTH);
+    testGeoTransfer.goal.targetOrbit = new Orbit(aGeoTarget, 0.001, 0.0, 0.0, 0.0, periodGeoTarget, earth);
+    missionPresets.add(testGeoTransfer);
+
+    // 测试任务3：月球飞越（占位）
+    if (moon != null) {
+      MissionPreset testMoonFlyby = new MissionPreset(
+        MISSION_TEST_MOON_FLYBY,
+        "TEST: Moon Flyby (Placeholder)",
+        "Test mission: Flyby the Moon (placeholder for future implementation)."
+      );
+      testMoonFlyby.requiredSpacecraftPreset = PRESET_LEO_SATELLITE;
+      testMoonFlyby.initialBody = earth;
+      double aMoonInit = EARTH_RADIUS_KM + 400;
+      double periodMoonInit = 2 * PI * Math.sqrt(aMoonInit * aMoonInit * aMoonInit / GM_EARTH);
+      testMoonFlyby.initialOrbit = new Orbit(aMoonInit, 0.001, 0.0, 0.0, 0.0, periodMoonInit, earth);
+      testMoonFlyby.goal.type = MissionGoalType.TRANSFER_TO_BODY;
+      testMoonFlyby.goal.targetBody = moon;
+      missionPresets.add(testMoonFlyby);
     }
   }
 }

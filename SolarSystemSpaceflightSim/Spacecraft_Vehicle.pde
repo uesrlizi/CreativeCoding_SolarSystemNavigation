@@ -133,20 +133,35 @@ class Spacecraft {
   void updateOffRails(double dt) {
     // 这里可以添加一些轻量级的更新逻辑
     // 主要的物理更新在PhysicsSystem.update中处理
+
+    // 更新自动控制 (Stage 5)
+    if (autoControl.isActive) {
+      autoControl.update(this, dt);
+    }
+
+    // 更新引擎油门 (Stage 5)
+    if (mainEngine != null && autoControl.isActive) {
+      mainEngine.setThrottle(autoControl.targetThrottle);
+    }
   }
 
   // === 质量获取 ===
   double getCurrentMass() {
     double mass = this.dryMass;
     if (this.mainEngine != null) {
-      mass += this.mainEngine.mass;
+      mass += this.mainEngine.mass_tons;
     }
     return mass;
   }
 
-  // === 模式切换（占位）===
+  // === 模式切换 ===
   void enterOnRails() {
     this.physicsMode = PhysicsMode.ON_RAILS;
+
+    // 如果正在任务执行中，从状态向量重新计算轨道
+    if (this.referenceBody != null) {
+      this.orbit = Orbit_fromStateVector(this.stateVector.position, this.stateVector.velocity, this.referenceBody, lastUpdateTime);
+    }
   }
 
   void enterOffRails() {
@@ -172,18 +187,19 @@ class Spacecraft {
 
   // === 自动控制 ===
   void setAutoTargetDirection(Vector2 direction) {
-    this.autoControl.targetDirection = direction.clone();
-    this.autoControl.hasTargetDirection = true;
+    this.autoControl.setTargetDirection(direction);
   }
 
   void setEngineThrottle(float throttle) {
+    if (mainEngine != null) {
+      mainEngine.setThrottle(throttle);
+    }
     this.autoControl.targetThrottle = throttle;
     // 如果开启推力且没有目标方向，自动指向速度方向
     if (throttle > 0.01f && !this.autoControl.hasTargetDirection) {
       Vector2 prograde = getPrograde();
       if (prograde.magnitude() > 0.001) {
-        this.autoControl.targetDirection = prograde.clone();
-        this.autoControl.hasTargetDirection = true;
+        this.autoControl.setTargetDirection(prograde);
       }
     }
   }
