@@ -22,6 +22,7 @@ CameraController camera;
 TimeManager timeManager;
 HUD hud;
 SOISystem soiSystem;
+GameStateManager gameStateManager;
 float uiScale;
 
 // ========== DOUBLE-CLICK / FOCUS ==========
@@ -50,6 +51,7 @@ void setup() {
   timeManager = new TimeManager();
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
+  gameStateManager = new GameStateManager();
 
   solarSystem = new SolarSystem();
   soiSystem = new SOISystem(solarSystem);

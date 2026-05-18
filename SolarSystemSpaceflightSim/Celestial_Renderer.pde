@@ -470,7 +470,7 @@ class CelestialBodyRenderer {
   }
 
   void drawAtmosphereEdgeOnly(CelestialBody body, float cx, float cy, float r) {
-    color atmos = body.atmosphereColor;
+    color atmos = body.hasAtmosphere ? body.atmosphereColor : (body.atmosphere != null ? body.atmosphere.atmosphereColor : color(100, 180, 255, 100));
     int layers = 4;
     for (int i = layers; i > 0; i--) {
       float k = i / (float)layers;
