@@ -58,12 +58,12 @@ class CameraController {
       offsetX += (targetOffsetX - offsetX) * offsetT;
       offsetY += (targetOffsetY - offsetY) * offsetT;
       double tx = 0, ty = 0;
-      if (focusShip != null) {
-        tx = focusShip.px;
-        ty = focusShip.py;
-      } else if (focusBody != null) {
+      if (focusBody != null) {
         tx = focusBody.px;
         ty = focusBody.py;
+      } else if (focusShip != null) {
+        tx = focusShip.px;
+        ty = focusShip.py;
       }
       camX = tx + offsetX;
       camY = ty + offsetY;
@@ -175,8 +175,8 @@ class CameraController {
   void focusOn(CelestialBody body) {
     focusBody = body;
     focusShip = null;
-    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetX;
-    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetY;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : camX - body.px;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : camY - body.py;
     targetOffsetX = offsetX;
     targetOffsetY = offsetY;
     setViewMode(ViewMode.MAP_VIEW);
@@ -198,8 +198,8 @@ class CameraController {
   void focusOn(Spacecraft craft) {
     focusBody = null;
     focusShip = craft;
-    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetX;
-    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetY;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : camX - craft.px;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : camY - craft.py;
     targetOffsetX = offsetX;
     targetOffsetY = offsetY;
     setViewMode(ViewMode.MAP_VIEW);
@@ -215,37 +215,62 @@ class CameraController {
   void snapFocus() {
     if (mode == ViewMode.SHIP_VIEW) return;
 
+    // First, calculate desired target scale
     double desiredScale = targetScale;
     boolean hasSpecificTarget = false;
 
     if (focusShip != null) {
       hasSpecificTarget = true;
       if (focusShip.earthRelative && focusShip.earthRef != null) {
-        CelestialBody ref = focusShip.earthRef;
-        desiredScale = height / (8.0 * ref.radius);
+        // Earth-relative phase
+        double r = Math.sqrt(focusShip.earthRelPos[0] * focusShip.earthRelPos[0] +
+                             focusShip.earthRelPos[1] * focusShip.earthRelPos[1]);
+        double altitude = r - EARTH_RADIUS_KM;
+        if (altitude < 50.0) {
+          // On surface: zoom to planet scale
+          desiredScale = height / (2.0 * focusShip.earthRef.radius);
+        } else {
+          // In flight: zoom to orbit semi-major axis scale
+          if (focusShip.a > 0.0 && focusShip.a < Double.MAX_VALUE / 2.0) {
+            desiredScale = height / (4.0 * focusShip.a);
+          } else {
+            desiredScale = height / (4.0 * r);
+          }
+        }
       } else {
-        desiredScale = (width * 0.15) / AU_KM;
+        // Heliocentric phase: use solar orbit semi-major axis
+        if (focusShip.a > 0.0) {
+          desiredScale = height / (4.0 * focusShip.a);
+        } else {
+          double r = Math.sqrt(focusShip.px * focusShip.px + focusShip.py * focusShip.py);
+          desiredScale = height / (4.0 * Math.max(r, AU_KM));
+        }
       }
     } else if (focusBody != null) {
       hasSpecificTarget = true;
       if (focusBody.a != 0) {
+        // Planet: zoom to planet radius scale
         desiredScale = height / (4.0 * focusBody.radius);
       } else {
+        // Sun: use default solar system scale
         desiredScale = (width * 0.15) / AU_KM;
       }
     } else {
       desiredScale = (width * 0.15) / AU_KM;
     }
 
+    // Check if we need to center
     boolean needsCenter = Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01;
 
     if (needsCenter) {
       targetOffsetX = 0;
       targetOffsetY = 0;
+      // If desired scale is smaller than current, also zoom in on first snap
       if (hasSpecificTarget && desiredScale < scale) {
         targetScale = desiredScale;
       }
     } else {
+      // Already centered, just set the scale
       targetScale = desiredScale;
     }
   }

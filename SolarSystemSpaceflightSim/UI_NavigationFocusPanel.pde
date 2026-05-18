@@ -369,6 +369,7 @@ class NavigationFocusPanel {
       }
       return true;
     }
+    rowY += rowH;
 
     float scale = uiScale;
     float footerY = rowY + 8 * scale;
@@ -426,8 +427,8 @@ class NavigationFocusPanel {
   }
 
   String getFocusName(CameraController cam) {
-    if (cam.focusShip != null) return "Spacecraft";
     if (cam.focusBody != null) return cam.focusBody.name;
+    if (cam.focusShip != null) return "Spacecraft";
     return null;
   }
 }
