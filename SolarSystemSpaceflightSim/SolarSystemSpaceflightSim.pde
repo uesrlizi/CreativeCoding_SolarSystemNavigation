@@ -125,9 +125,41 @@ void draw() {
   if (deltaTime <= 0 || deltaTime > 0.5f) deltaTime = 1.0f / 60.0f;
   lastFrameMillis = now;
 
-  // Update systems
-  timeManager.update(deltaTime);
-  solarSystem.update(timeManager.simTime);
+  // Update systems - 先预判机动（只在高倍速时）
+  double timeToNextManeuver = missionExecutor.getTimeToNextManeuver(timeManager.simTime);
+  boolean jumpedToManeuver = false;
+
+  // 只在 warp >= 10分钟/秒（第4级及以上）时才进行跳转判定
+  if (timeToNextManeuver > 0 && timeManager.warpIndex >= 4) {
+    // 计算这一帧本来要推进的时间
+    double frameAdvance = timeManager.timeWarp * DAY_S * deltaTime;
+
+    if (timeToNextManeuver < frameAdvance) {
+      // 会跳过机动，直接跳转到机动前5秒
+      double targetSimTime = timeManager.simTime + timeToNextManeuver - 5.0;
+      timeManager.simTime = targetSimTime;
+
+      // 强制降到实时
+      timeManager.forceSetWarpIndex(0);
+
+      // 更新所有系统到新时间
+      solarSystem.update(timeManager.simTime);
+      for (Spacecraft ship : solarSystem.ships) {
+        ship.lastUpdateTime = timeManager.simTime;
+        if (ship.orbit != null && ship.physicsMode == PhysicsMode.ON_RAILS) {
+          ship.updateOnRails(timeManager.simTime);
+        }
+      }
+
+      jumpedToManeuver = true;
+    }
+  }
+
+  // 正常推进时间（如果没跳转）
+  if (!jumpedToManeuver) {
+    timeManager.update(deltaTime);
+    solarSystem.update(timeManager.simTime);
+  }
   solarSystem.updateRenderer(deltaTime);
 
   // Update mission executor (Stage 5)
@@ -146,7 +178,10 @@ void draw() {
 
   // 更新智能warp限制 - 优先使用missionExecutor的建议
   int globalMaxWarp = timeManager.WARP_LEVELS.length - 1;
-  if (missionExecutor.state != MissionExecutorState.IDLE) {
+  if (missionExecutor.state != MissionExecutorState.IDLE &&
+      missionExecutor.state != MissionExecutorState.COMPLETED &&
+      missionExecutor.state != MissionExecutorState.FAILED) {
+    // 任务正在执行中（非IDLE/COMPLETED/FAILED），使用执行器的限制
     int executorMaxWarp = missionExecutor.getRecommendedWarpLevel(timeManager);
     if (executorMaxWarp >= 0) {
       globalMaxWarp = executorMaxWarp;

@@ -28,6 +28,8 @@ class MissionExecutor {
   String statusText;
   double progress;
 
+  private double lastUpdateSimTime;  // 上次更新的模拟时间
+
   MissionExecutor() {
     this.state = MissionExecutorState.IDLE;
     this.currentTask = null;
@@ -37,6 +39,7 @@ class MissionExecutor {
     this.solarSystem = null;
     this.missionStartTime = 0;
     this.currentManeuverTime = 0;
+    this.lastUpdateSimTime = 0;
     this.statusText = "Idle";
     this.progress = 0;
   }
@@ -47,6 +50,7 @@ class MissionExecutor {
     this.assignedCraft = craft;
     this.solarSystem = system;
     this.missionStartTime = simTime;
+    this.lastUpdateSimTime = simTime;
     this.currentManeuverIndex = 0;
 
     if (maneuvers == null || maneuvers.size() == 0) {
@@ -78,11 +82,17 @@ class MissionExecutor {
     if (state == MissionExecutorState.IDLE ||
         state == MissionExecutorState.COMPLETED ||
         state == MissionExecutorState.FAILED) {
+      lastUpdateSimTime = simTime;
       return;
     }
 
+    // 计算模拟时间步长
+    double simDt = (lastUpdateSimTime > 0) ? (simTime - lastUpdateSimTime) : 0;
+    if (simDt <= 0) simDt = 1.0 / 60.0;
+    lastUpdateSimTime = simTime;
+
     if (assignedCraft.autoControl != null) {
-      assignedCraft.autoControl.update(assignedCraft, dt);
+      assignedCraft.autoControl.update(assignedCraft, simDt);
     }
 
     switch (state) {
@@ -272,15 +282,28 @@ class MissionExecutor {
         return timeManager.WARP_LEVELS.length - 2;
       case ORIENTING:
       case BURNING:
-        return 0;
+        return 3;  // 允许低档加速到10分钟/秒，物理系统有子步保证精度
       default:
-        return 0;
+        return -1;  // IDLE/COMPLETED/FAILED: no special restriction
     }
   }
 
   boolean shouldPauseWarp() {
     return state == MissionExecutorState.ORIENTING ||
            state == MissionExecutorState.BURNING;
+  }
+
+  // 获取距离下一个机动的时间（秒），返回负数表示没有或已错过
+  double getTimeToNextManeuver(double currentSimTime) {
+    if (state != MissionExecutorState.WAITING_FOR_MANEUVER) {
+      return -1;
+    }
+    if (currentManeuverIndex >= maneuverSequence.size()) {
+      return -1;
+    }
+    ManeuverNode node = maneuverSequence.get(currentManeuverIndex);
+    double timeSinceStart = currentSimTime - missionStartTime;
+    return node.time - timeSinceStart;
   }
 
   void abortMission() {

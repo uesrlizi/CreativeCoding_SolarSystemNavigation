@@ -94,7 +94,7 @@ class AutoControl {
     this.burnTimeRemaining = 0;
   }
 
-  void update(Spacecraft craft, double dt) {
+  void update(Spacecraft craft, double simDt) {
     if (!isActive) return;
 
     if (hasTargetDirection) {
@@ -110,7 +110,7 @@ class AutoControl {
     isBurning = targetThrottle > 0.01f;
 
     if (isBurning && burnTimeRemaining > 0) {
-      burnTimeRemaining -= dt;
+      burnTimeRemaining -= simDt;
       if (burnTimeRemaining <= 0) {
         burnTimeRemaining = 0;
         targetThrottle = 0;

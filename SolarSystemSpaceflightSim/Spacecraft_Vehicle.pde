@@ -130,13 +130,13 @@ class Spacecraft {
 
   // === Off-rails更新 ===
   // 注意：实际物理更新由PhysicsSystem处理
-  void updateOffRails(double dt) {
+  void updateOffRails(double simDt) {
     // 这里可以添加一些轻量级的更新逻辑
     // 主要的物理更新在PhysicsSystem.update中处理
 
     // 更新自动控制 (Stage 5)
     if (autoControl.isActive) {
-      autoControl.update(this, dt);
+      autoControl.update(this, simDt);
     }
 
     // 更新引擎油门 (Stage 5)
