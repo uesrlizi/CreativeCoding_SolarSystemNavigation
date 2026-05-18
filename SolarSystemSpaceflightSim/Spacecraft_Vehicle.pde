@@ -22,12 +22,15 @@ class Spacecraft {
   // === 引擎 ===
   SimpleEngine mainEngine;
   double dryMass;  // 干质量（吨）
+  double dragCoefficient;   // 阻力系数
+  double crossSectionArea;  // 横截面积（m²）
 
   // === 自动控制 ===
   AutoControl autoControl;
 
   // === 缓存的世界位置 ===
   double worldX, worldY;
+  double worldVelX, worldVelY;
 
   // === 上次更新时间 ===
   double lastUpdateTime;
@@ -56,11 +59,15 @@ class Spacecraft {
 
     this.mainEngine = null;
     this.dryMass = 2.0;  // 默认2吨
+    this.dragCoefficient = 0.5;  // 默认阻力系数
+    this.crossSectionArea = 4.0;  // 默认横截面积
 
     this.autoControl = new AutoControl();
 
     this.worldX = 0;
     this.worldY = 0;
+    this.worldVelX = 0;
+    this.worldVelY = 0;
     this.lastUpdateTime = 0;
   }
 
@@ -95,14 +102,35 @@ class Spacecraft {
       // 计算世界位置
       this.worldX = this.referenceBody.px + p.x;
       this.worldY = this.referenceBody.py + p.y;
+
+      // 计算世界速度
+      if (this.referenceBody.a > 0) {
+        // 需要加上天体的速度
+        double n = 2.0 * PI / this.referenceBody.period;
+        double M = (this.referenceBody.M0 + n * simTime) % (2.0 * PI);
+        if (M < 0) M += 2.0 * PI;
+        double E = solveKepler(M, this.referenceBody.e);
+        double nu = trueAnomaly(E, this.referenceBody.e);
+        double r = this.referenceBody.a * (1 - this.referenceBody.e * this.referenceBody.e) / (1 + this.referenceBody.e * Math.cos(nu));
+        double GM = GM_SUN;
+        double h = Math.sqrt(GM * this.referenceBody.a * (1 - this.referenceBody.e * this.referenceBody.e));
+        double v_r = (GM * this.referenceBody.e * Math.sin(nu)) / h;
+        double v_t = h / r;
+        double theta = this.referenceBody.w + nu;
+        this.worldVelX = v.x + v_r * Math.cos(theta) - v_t * Math.sin(theta);
+        this.worldVelY = v.y + v_r * Math.sin(theta) + v_t * Math.cos(theta);
+      } else {
+        this.worldVelX = v.x;
+        this.worldVelY = v.y;
+      }
     }
   }
 
-  // === Off-rails更新（阶段4占位）===
+  // === Off-rails更新 ===
+  // 注意：实际物理更新由PhysicsSystem处理
   void updateOffRails(double dt) {
-    // 阶段4实现：数值积分物理模拟
-    // 包括：引力计算、推力应用、碰撞检测
-    // 占位，暂不实现
+    // 这里可以添加一些轻量级的更新逻辑
+    // 主要的物理更新在PhysicsSystem.update中处理
   }
 
   // === 质量获取 ===

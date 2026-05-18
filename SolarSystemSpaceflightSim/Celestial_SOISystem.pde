@@ -1,9 +1,9 @@
 // ========== SOI SYSTEM ==========
 
 class SOISystem {
-  SolarSystem solarSystem;
+  CelestialSystem solarSystem;
 
-  SOISystem(SolarSystem ss) {
+  SOISystem(CelestialSystem ss) {
     this.solarSystem = ss;
   }
 

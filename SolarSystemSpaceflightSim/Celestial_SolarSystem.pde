@@ -1,13 +1,13 @@
 // ========== SOLAR SYSTEM ==========
 
-class SolarSystem {
+class CelestialSystem {
   CelestialBody sun;
   List<CelestialBody> planets;
   List<CelestialBody> moons;
   List<Spacecraft> ships;      // 航天器列表
   CelestialBodyRenderer renderer;
 
-  SolarSystem() {
+  CelestialSystem() {
     planets = new ArrayList<CelestialBody>();
     moons = new ArrayList<CelestialBody>();
     ships = new ArrayList<Spacecraft>();
@@ -19,7 +19,7 @@ class SolarSystem {
   }
 
   void initSolarSystem() {
-    sun = new CelestialBody("Sun", 0, 0, 696340, color(255, 230, 80), BodyType.SUN);
+    sun = new CelestialBody("Sun", 0, 0, 696340, color(255, 230, 100), BodyType.SUN);
     sun.setRenderer(renderer);
     sun.rotationPeriodDays = 27.0f;
     sun.setGM(GM_SUN);

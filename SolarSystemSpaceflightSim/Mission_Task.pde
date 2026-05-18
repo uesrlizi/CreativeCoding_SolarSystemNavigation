@@ -55,11 +55,11 @@ class MissionTask {
     this.startTime = 0;
   }
 
-  boolean canExecute(Spacecraft craft, SolarSystem system) {
+  boolean canExecute(Spacecraft craft, CelestialSystem system) {
     return true; // 阶段3暂不验证
   }
 
-  void startExecution(Spacecraft craft, SolarSystem system, double simTime) {
+  void startExecution(Spacecraft craft, CelestialSystem system, double simTime) {
     this.assignedCraft = craft;
     this.startTime = simTime;
     this.state = MissionState.IN_PROGRESS;

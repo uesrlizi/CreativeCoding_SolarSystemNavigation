@@ -1,5 +1,5 @@
 // Solar System Spaceflight Simulation - Refactored Version
-// Stage 2: Single Spacecraft in LEO
+// Stage 4: Dual-Mode Physics System
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,12 +20,14 @@ float deltaTime = 1.0f / 60.0f;
 int lastFrameMillis;
 
 // ========== GLOBAL SYSTEMS ==========
-SolarSystem solarSystem;
+CelestialSystem solarSystem;  // 原来的SolarSystem改名为CelestialSystem
 CameraController camera;
 TimeManager timeManager;
 HUD hud;
 SOISystem soiSystem;
 ViewToggleButton viewToggleButton;
+PhysicsSystem physicsSystem;  // 新增：物理系统
+DebugPanel debugPanel;         // 新增：调试面板
 float uiScale;
 
 // ========== SPACECRAFT & RENDERER ==========
@@ -59,13 +61,19 @@ void setup() {
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
 
-  solarSystem = new SolarSystem();
+  solarSystem = new CelestialSystem();  // 使用新的类名
   soiSystem = new SOISystem(solarSystem);
   solarSystem.initialize();
+
+  // Initialize physics system
+  physicsSystem = new PhysicsSystem(solarSystem);
 
   // Initialize spacecraft renderer and trajectory predictor
   spacecraftRenderer = new SpacecraftRenderer();
   trajectoryPredictor = new TrajectoryPredictor();
+
+  // Initialize debug panel
+  debugPanel = new DebugPanel();
 
   // Initialize spacecraft presets
   if (spacecraftPresets == null) initSpacecraftPresets();
@@ -99,7 +107,7 @@ void createInitialSpacecraft() {
 }
 
 void draw() {
-  background(5, 5, 15);
+  background(5, 5, 35);
 
   // Calculate delta time
   int now = millis();
@@ -112,26 +120,28 @@ void draw() {
   solarSystem.update(timeManager.simTime);
   solarSystem.updateRenderer(deltaTime);
 
-  // Update spacecraft positions
+  // Update spacecraft positions using PhysicsSystem
   for (Spacecraft ship : solarSystem.ships) {
     double simDt = timeManager.simTime - ship.lastUpdateTime;
     if (simDt <= 0) simDt = 1.0f / 60.0f;
     if (simDt > 3600) simDt = 3600;
     ship.lastUpdateTime = timeManager.simTime;
 
-    // Update
-    if (ship.physicsMode == PhysicsMode.ON_RAILS) {
-      ship.updateOnRails(timeManager.simTime);
-    } else {
-      ship.updateOffRails(simDt);
-    }
+    // 使用PhysicsSystem统一更新
+    physicsSystem.update(ship, simDt, timeManager.simTime);
+  }
+
+  // 更新智能warp限制
+  for (Spacecraft ship : solarSystem.ships) {
+    int maxWarp = physicsSystem.getMaxTimeWarp(ship, timeManager);
+    timeManager.setMaxWarpIndex(maxWarp);
   }
 
   camera.update(deltaTime);
   hud.update();
   viewToggleButton.update();
 
-  // Render order: background -> orbits -> SOI -> sun -> planets -> spacecraft -> HUD
+  // Render order: background -> orbits -> SOI -> sun -> planets -> spacecraft -> UI
   drawStars();
 
   // Only draw orbits in MAP view
@@ -160,6 +170,9 @@ void draw() {
 
   hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.sun, solarSystem.ships);
   viewToggleButton.draw();
+
+  // Draw debug panel
+  debugPanel.draw(physicsSystem, camera, uiScale);
 }
 
 void drawStars() {
@@ -359,10 +372,10 @@ void handleDoubleClick() {
   }
 
   // Check for bodies
-  for (CelestialBody p : solarSystem.planets) {
-    double[] sp = camera.worldToScreen(p.px, p.py);
+  for (CelestialBody planet : solarSystem.planets) {
+    double[] sp = camera.worldToScreen(planet.px, planet.py);
     double d = dist((float)sp[0], (float)sp[1], mouseX, mouseY);
-    if (d < minDist) { minDist = d; closestBody = p; closestShip = null; }
+    if (d < minDist) { minDist = d; closestBody = planet; closestShip = null; }
   }
 
   double[] sunSp = camera.worldToScreen(0, 0);
@@ -434,5 +447,71 @@ void keyPressed() {
   }
   if (key == 'm' || key == 'M') {
     hud.taskMenu.toggle();
+  }
+  if (key == 'd' || key == 'D') {
+    debugPanel.toggle();
+  }
+
+  // === 测试控制：引擎油门 ===
+  if (key == '1') {
+    setThrottle(0.0f); // 关闭引擎
+  }
+  if (key == '2') {
+    setThrottle(0.2f); // 20%
+  }
+  if (key == '3') {
+    setThrottle(0.5f); // 50%
+  }
+  if (key == '4') {
+    setThrottle(1.0f); // 100%
+  }
+
+  // === 测试控制：朝向 ===
+  if (key == 'w' || key == 'W') {
+    pointInDirection(OrbitDirection.PROGRADE); // 沿速度方向
+  }
+  if (key == 's' || key == 'S') {
+    pointInDirection(OrbitDirection.RETROGRADE); // 反速度方向
+  }
+  if (key == 'a' || key == 'A') {
+    pointInDirection(OrbitDirection.RADIAL_OUT); // 径向向外
+  }
+  if (key == 'z' || key == 'Z') {
+    pointInDirection(OrbitDirection.RADIAL_IN); // 径向向内
+  }
+}
+
+// === 辅助函数：设置油门 ===
+void setThrottle(float throttle) {
+  if (solarSystem.ships.size() > 0) {
+    Spacecraft ship = solarSystem.ships.get(0);
+    ship.setEngineThrottle(throttle);
+  }
+}
+
+// === 辅助函数：朝向控制 ===
+enum OrbitDirection { PROGRADE, RETROGRADE, RADIAL_OUT, RADIAL_IN }
+
+void pointInDirection(OrbitDirection dir) {
+  if (solarSystem.ships.size() > 0) {
+    Spacecraft ship = solarSystem.ships.get(0);
+    Vector2 targetDir = new Vector2(0, 0);
+
+    switch (dir) {
+      case PROGRADE:
+        targetDir = ship.getPrograde();
+        break;
+      case RETROGRADE:
+        targetDir = ship.getRetrograde();
+        break;
+      case RADIAL_OUT:
+        targetDir = ship.getRadialOut();
+        break;
+      case RADIAL_IN:
+        targetDir = ship.getRadialIn();
+        break;
+    }
+
+    ship.setAutoTargetDirection(targetDir);
   }
 }

@@ -84,6 +84,16 @@ static class Vector2 {
     return new Vector2(x, y);
   }
 
+  void set(double x, double y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  void set(Vector2 v) {
+    this.x = v.x;
+    this.y = v.y;
+  }
+
   String toString() {
     return String.format("(%.2f, %.2f)", x, y);
   }

@@ -6,7 +6,7 @@ static final String MISSION_PRESET_LUNAR_TRANSFER = "lunar_transfer";
 
 private List<MissionPreset> missionPresets;
 
-void initMissionPresets(SolarSystem system) {
+void initMissionPresets(CelestialSystem system) {
   missionPresets = new ArrayList<MissionPreset>();
 
   CelestialBody earth = system.getEarth();
@@ -71,12 +71,12 @@ void initMissionPresets(SolarSystem system) {
   }
 }
 
-List<MissionPreset> getAllMissionPresets(SolarSystem system) {
+List<MissionPreset> getAllMissionPresets(CelestialSystem system) {
   if (missionPresets == null) initMissionPresets(system);
   return missionPresets;
 }
 
-MissionPreset getMissionPreset(String id, SolarSystem system) {
+MissionPreset getMissionPreset(String id, CelestialSystem system) {
   if (missionPresets == null) initMissionPresets(system);
   for (MissionPreset p : missionPresets) {
     if (p.id.equals(id)) return p;

@@ -38,7 +38,7 @@ class CelestialBodyRenderer {
         }
       } else {
         float ny = dy / (float)r;
-        float shade = 0.7f + (1 - abs(ny)) * 0.35f;
+        float shade = 0.7f + (1 - abs(ny)) * 0.4f;
         fill((int)(red(body.col) * shade), (int)(green(body.col) * shade), (int)(blue(body.col) * shade));
         rect(sx, py, ex - sx, 1);
       }
