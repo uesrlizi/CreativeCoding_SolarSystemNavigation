@@ -8,6 +8,9 @@ import java.util.List;
 boolean showOrbits = true;
 boolean showLabels = true;
 boolean showSOI = false;
+boolean showTrajectory = true;
+boolean showApoapsis = true;
+boolean showPeriapsis = true;
 
 // ========== STARFIELD ==========
 int[] starSeed;
@@ -27,6 +30,7 @@ float uiScale;
 
 // ========== SPACECRAFT & RENDERER ==========
 SpacecraftRenderer spacecraftRenderer;
+TrajectoryPredictor trajectoryPredictor;
 
 // ========== DOUBLE-CLICK / FOCUS ==========
 long lastClickTime = 0;
@@ -59,8 +63,9 @@ void setup() {
   soiSystem = new SOISystem(solarSystem);
   solarSystem.initialize();
 
-  // Initialize spacecraft renderer
+  // Initialize spacecraft renderer and trajectory predictor
   spacecraftRenderer = new SpacecraftRenderer();
+  trajectoryPredictor = new TrajectoryPredictor();
 
   // Initialize spacecraft presets
   if (spacecraftPresets == null) initSpacecraftPresets();
@@ -143,6 +148,14 @@ void draw() {
   // Render spacecraft
   for (Spacecraft ship : solarSystem.ships) {
     spacecraftRenderer.draw(ship, camera);
+  }
+
+  // Render trajectories in MAP view
+  if (camera.getMode() == ViewMode.MAP_VIEW) {
+    for (Spacecraft ship : solarSystem.ships) {
+      Trajectory trajectory = trajectoryPredictor.predict(ship, timeManager.simTime);
+      spacecraftRenderer.drawTrajectory(ship, trajectory, camera);
+    }
   }
 
   hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.sun, solarSystem.ships);
@@ -244,10 +257,9 @@ void drawOrbitPath(double centerX, double centerY, double a, double e, double i,
 
 void drawEarthRelOrbit(Spacecraft ship) {
   CelestialBody earth = ship.referenceBody;
-  double radius = ship.orbit.a;
-  if (radius < EARTH_RADIUS_KM * 2) {
-    radius = LEO_RADIUS_KM; // Safe LEO default
-  }
+  Orbit orbit = ship.orbit;
+  if (orbit == null) return;
+
   double centerX = earth.px;
   double centerY = earth.py;
 
@@ -257,9 +269,10 @@ void drawEarthRelOrbit(Spacecraft ship) {
   beginShape();
   int steps = 200;
   for (int j = 0; j <= steps; j++) {
-    double angle = 2.0 * PI * j / steps;
-    double worldX = centerX + radius * Math.cos(angle);
-    double worldY = centerY + radius * Math.sin(angle);
+    double nu = 2.0 * PI * j / steps;
+    double[] pos = orbitalToCartesian2D(orbit.a, orbit.e, orbit.w, nu);
+    double worldX = centerX + pos[0];
+    double worldY = centerY + pos[1];
     double[] sp = camera.worldToScreen(worldX, worldY);
     vertex((float)sp[0], (float)sp[1]);
   }
@@ -414,5 +427,12 @@ void keyPressed() {
     } else {
       camera.setViewMode(ViewMode.MAP_VIEW);
     }
+  }
+  if (key == 't' || key == 'T') {
+    showTrajectory = !showTrajectory;
+    if (hud.trajButton != null) hud.trajButton.setToggled(showTrajectory);
+  }
+  if (key == 'm' || key == 'M') {
+    hud.taskMenu.toggle();
   }
 }

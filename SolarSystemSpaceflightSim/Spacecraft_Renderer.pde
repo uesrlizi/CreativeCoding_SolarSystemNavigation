@@ -348,4 +348,70 @@ class SpacecraftRenderer {
     fill(255, 255, 240, 180);
     ellipse(bl * 0.38f, 0, bl * 0.008f, bl * 0.008f);
   }
+
+  void drawTrajectory(Spacecraft ship, Trajectory trajectory, CameraController cam) {
+    if (trajectory == null || trajectory.segments.size() == 0) return;
+    if (ship.referenceBody == null) return;
+
+    float scale = uiScale;
+    pushStyle();
+
+    CelestialBody body = ship.referenceBody;
+
+    // 1. 画轨道段（椭圆）
+    if (showTrajectory) {
+      noFill();
+      stroke(red(ship.col), green(ship.col), blue(ship.col), 100);
+      strokeWeight(1.2f * scale);
+
+      for (OrbitSegment seg : trajectory.segments) {
+        if (seg.mode == PhysicsMode.ON_RAILS && seg.orbit != null) {
+          // 直接画椭圆
+          beginShape();
+          int steps = 200;
+          for (int j = 0; j <= steps; j++) {
+            double nu = 2.0 * PI * j / steps;
+            double[] pos = orbitalToCartesian2D(seg.orbit.a, seg.orbit.e, seg.orbit.w, nu);
+            double worldX = body.px + pos[0];
+            double worldY = body.py + pos[1];
+            double[] sp = cam.worldToScreen(worldX, worldY);
+            vertex((float)sp[0], (float)sp[1]);
+          }
+          endShape(CLOSE);
+        }
+      }
+    }
+
+    // 2. 画事件（AP/PE）
+    if (showApoapsis || showPeriapsis) {
+      float markerSize = 6 * scale;
+
+      for (TrajectoryEvent event : trajectory.events) {
+        if ((event.type.equals("apoapsis") && showApoapsis) ||
+            (event.type.equals("periapsis") && showPeriapsis)) {
+          double worldX = body.px + event.position.x;
+          double worldY = body.py + event.position.y;
+          double[] sp = cam.worldToScreen(worldX, worldY);
+
+          if (event.type.equals("apoapsis")) {
+            fill(255, 150, 100, 200);
+          } else {
+            fill(100, 200, 255, 200);
+          }
+          noStroke();
+          ellipse((float)sp[0], (float)sp[1], markerSize, markerSize);
+
+          if (showLabels) {
+            fill(255, 230);
+            textSize(11 * scale);
+            textAlign(LEFT, CENTER);
+            String label = event.type.equals("apoapsis") ? "AP" : "PE";
+            text(label, (float)sp[0] + markerSize + 3, (float)sp[1]);
+          }
+        }
+      }
+    }
+
+    popStyle();
+  }
 }

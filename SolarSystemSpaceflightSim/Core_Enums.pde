@@ -39,3 +39,11 @@ enum MissionState {
   COMPLETED,
   FAILED
 }
+
+enum MissionGoalType {
+  REACH_ORBIT,        // 进入指定轨道
+  TRANSFER_TO_BODY,   // 转移到另一个天体的SOI
+  ORBIT_INSERTION,    // 在目标天体插入轨道
+  LAND,               // 着陆
+  CRASH               // 撞毁（娱乐任务）
+}
