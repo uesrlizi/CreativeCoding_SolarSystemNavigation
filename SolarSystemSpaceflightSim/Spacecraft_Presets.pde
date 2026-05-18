@@ -1,6 +1,6 @@
 // ========== SPACECRAFT PRESETS ==========
 
-static class SpacecraftPreset {
+class SpacecraftPreset {
   String id;
   String name;
   String description;
@@ -26,60 +26,66 @@ static class SpacecraftPreset {
   }
 
   Spacecraft createSpacecraft() {
-    return new Spacecraft(name, shipColor);
+    Spacecraft craft = new Spacecraft(name, shipColor);
+    craft.presetId = this.id;
+    craft.dryMass = this.dryMass;
+    craft.mainEngine = new SimpleEngine(this.engineThrust, 0.5);  // 引擎干质量0.5吨
+    return craft;
   }
 }
 
-static class SpacecraftPresets {
-  static final String PRESET_LEO_SATELLITE = "leo_satellite";
-  static final String PRESET_LUNAR_TRANSFER = "lunar_transfer";
+// ========== PRESET DATABASE ==========
 
-  private static List<SpacecraftPreset> presets;
+static final String PRESET_LEO_SATELLITE = "leo_satellite";
+static final String PRESET_LUNAR_TRANSFER = "lunar_transfer";
 
-  static {
-    presets = new ArrayList<SpacecraftPreset>();
+private List<SpacecraftPreset> spacecraftPresets;
 
-    // LEO 卫星预设
-    presets.add(new SpacecraftPreset(
-      PRESET_LEO_SATELLITE,
-      "LEO Probe",
-      "A simple satellite for low Earth orbit operations",
-      2.0,          // 2吨干质量
-      5.0,          // 5kN推力
-      0.5,          // 阻力系数
-      4.0,          // 4m²横截面积
-      0xFF00FF96    // 不调用 color() 函数，直接写 AARRGGBB: 0xFF(alpha) + 00(red) + FF(green) + 96(blue)
-    ));
+void initSpacecraftPresets() {
+  spacecraftPresets = new ArrayList<SpacecraftPreset>();
 
-    // 月球转移飞行器预设
-    presets.add(new SpacecraftPreset(
-      PRESET_LUNAR_TRANSFER,
-      "Lunar Transfer Vehicle",
-      "A spacecraft capable of transferring from Earth to Moon",
-      8.0,          // 8吨干质量
-      25.0,         // 25kN推力
-      0.6,          // 阻力系数
-      10.0,         // 10m²横截面积
-      0xFFFFB432    // 不调用 color() 函数，直接写 AARRGGBB
-    ));
+  // LEO 卫星预设
+  spacecraftPresets.add(new SpacecraftPreset(
+    PRESET_LEO_SATELLITE,
+    "LEO Probe",
+    "A simple satellite for low Earth orbit operations",
+    2.0,          // 2吨干质量
+    5.0,          // 5kN推力
+    0.5,          // 阻力系数
+    4.0,          // 4m²横截面积
+    0xFF00FF96    // 不调用 color() 函数，直接写 AARRGGBB
+  ));
+
+  // 月球转移飞行器预设
+  spacecraftPresets.add(new SpacecraftPreset(
+    PRESET_LUNAR_TRANSFER,
+    "Lunar Transfer Vehicle",
+    "A spacecraft capable of transferring from Earth to Moon",
+    8.0,          // 8吨干质量
+    25.0,         // 25kN推力
+    0.6,          // 阻力系数
+    10.0,         // 10m²横截面积
+    0xFFFFB432    // 不调用 color() 函数，直接写 AARRGGBB
+  ));
+}
+
+List<SpacecraftPreset> getAllSpacecraftPresets() {
+  if (spacecraftPresets == null) initSpacecraftPresets();
+  return spacecraftPresets;
+}
+
+SpacecraftPreset getSpacecraftPreset(String id) {
+  if (spacecraftPresets == null) initSpacecraftPresets();
+  for (SpacecraftPreset p : spacecraftPresets) {
+    if (p.id.equals(id)) return p;
   }
+  return null;
+}
 
-  static List<SpacecraftPreset> getAllPresets() {
-    return presets;
+Spacecraft createSpacecraftFromPreset(String presetId) {
+  SpacecraftPreset preset = getSpacecraftPreset(presetId);
+  if (preset != null) {
+    return preset.createSpacecraft();
   }
-
-  static SpacecraftPreset getPreset(String id) {
-    for (SpacecraftPreset p : presets) {
-      if (p.id.equals(id)) return p;
-    }
-    return null;
-  }
-
-  static Spacecraft createSpacecraft(String presetId) {
-    SpacecraftPreset preset = getPreset(presetId);
-    if (preset != null) {
-      return preset.createSpacecraft();
-    }
-    return null;
-  }
+  return null;
 }

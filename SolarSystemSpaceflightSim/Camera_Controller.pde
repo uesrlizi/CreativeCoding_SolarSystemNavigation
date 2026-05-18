@@ -62,8 +62,8 @@ class CameraController {
         tx = focusBody.px;
         ty = focusBody.py;
       } else if (focusShip != null) {
-        tx = focusShip.px;
-        ty = focusShip.py;
+        tx = focusShip.worldX;
+        ty = focusShip.worldY;
       }
       camX = tx + offsetX;
       camY = ty + offsetY;
@@ -73,13 +73,13 @@ class CameraController {
 
     if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
       scale += (targetScale - scale) * scaleT;
-      camX = followTarget.px;
-      camY = followTarget.py;
+      camX = followTarget.worldX;
+      camY = followTarget.worldY;
       shipScale = scale;
       shipTargetScale = targetScale;
-      if (followTarget.earthRelative && followTarget.earthRef != null) {
-        double rx = followTarget.earthRelPos[0];
-        double ry = followTarget.earthRelPos[1];
+      if (followTarget.referenceBody != null) {
+        double rx = followTarget.stateVector.position.x;
+        double ry = followTarget.stateVector.position.y;
         shipViewAngle = Math.atan2(ry, rx);
       }
     }
@@ -108,8 +108,8 @@ class CameraController {
       scale = shipScale;
       targetScale = shipTargetScale;
       if (followTarget != null) {
-        camX = followTarget.px;
-        camY = followTarget.py;
+        camX = followTarget.worldX;
+        camY = followTarget.worldY;
       }
       if (shipTargetScale <= 0.0) {
         shipTargetScale = 0.22 * height / Spacecraft.SHIP_LENGTH_KM;
@@ -121,8 +121,8 @@ class CameraController {
   void followShip(Spacecraft ship) {
     followTarget = ship;
     if (ship != null) {
-      camX = ship.px;
-      camY = ship.py;
+      camX = ship.worldX;
+      camY = ship.worldY;
     }
   }
 
@@ -145,7 +145,7 @@ class CameraController {
     targetOffsetY = offsetY;
     double tx = 0, ty = 0;
     if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
-    else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
+    else if (focusShip != null) { tx = focusShip.worldX; ty = focusShip.worldY; }
     camX = tx + offsetX;
     camY = ty + offsetY;
   }
@@ -198,8 +198,8 @@ class CameraController {
   void focusOn(Spacecraft craft) {
     focusBody = null;
     focusShip = craft;
-    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : camX - craft.px;
-    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : camY - craft.py;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : camX - craft.worldX;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : camY - craft.worldY;
     targetOffsetX = offsetX;
     targetOffsetY = offsetY;
     setViewMode(ViewMode.MAP_VIEW);
@@ -221,28 +221,27 @@ class CameraController {
 
     if (focusShip != null) {
       hasSpecificTarget = true;
-      if (focusShip.earthRelative && focusShip.earthRef != null) {
+      if (focusShip.referenceBody != null) {
         // Earth-relative phase
-        double r = Math.sqrt(focusShip.earthRelPos[0] * focusShip.earthRelPos[0] +
-                             focusShip.earthRelPos[1] * focusShip.earthRelPos[1]);
+        double r = focusShip.stateVector.position.magnitude();
         double altitude = r - EARTH_RADIUS_KM;
         if (altitude < 50.0) {
           // On surface: zoom to planet scale
-          desiredScale = height / (2.0 * focusShip.earthRef.radius);
+          desiredScale = height / (2.0 * focusShip.referenceBody.radius);
         } else {
           // In flight: zoom to orbit semi-major axis scale
-          if (focusShip.a > 0.0 && focusShip.a < Double.MAX_VALUE / 2.0) {
-            desiredScale = height / (4.0 * focusShip.a);
+          if (focusShip.orbit != null && focusShip.orbit.a > 0.0 && focusShip.orbit.a < Double.MAX_VALUE / 2.0) {
+            desiredScale = height / (4.0 * focusShip.orbit.a);
           } else {
             desiredScale = height / (4.0 * r);
           }
         }
       } else {
         // Heliocentric phase: use solar orbit semi-major axis
-        if (focusShip.a > 0.0) {
-          desiredScale = height / (4.0 * focusShip.a);
+        if (focusShip.orbit != null && focusShip.orbit.a > 0.0) {
+          desiredScale = height / (4.0 * focusShip.orbit.a);
         } else {
-          double r = Math.sqrt(focusShip.px * focusShip.px + focusShip.py * focusShip.py);
+          double r = Math.sqrt(focusShip.worldX * focusShip.worldX + focusShip.worldY * focusShip.worldY);
           desiredScale = height / (4.0 * Math.max(r, AU_KM));
         }
       }
@@ -285,7 +284,7 @@ class CameraController {
     double dx = wx - camX;
     double dy = wy - camY;
 
-    if (mode == ViewMode.SHIP_VIEW && followTarget != null && followTarget.earthRelative) {
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null && followTarget.referenceBody != null) {
       double cosA = Math.cos(shipViewAngle);
       double sinA = Math.sin(shipViewAngle);
       double sx = (-sinA * dx + cosA * dy) * scale + width / 2.0;

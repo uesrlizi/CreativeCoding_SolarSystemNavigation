@@ -62,6 +62,9 @@ void setup() {
   // Initialize spacecraft renderer
   spacecraftRenderer = new SpacecraftRenderer();
 
+  // Initialize spacecraft presets
+  if (spacecraftPresets == null) initSpacecraftPresets();
+
   // Create initial spacecraft in LEO
   createInitialSpacecraft();
 
@@ -79,7 +82,7 @@ void createInitialSpacecraft() {
   CelestialBody earth = solarSystem.getEarth();
   if (earth != null) {
     // 使用预设创建航天器
-    Spacecraft ship = SpacecraftPresets.createSpacecraft(SpacecraftPresets.PRESET_LEO_SATELLITE);
+    Spacecraft ship = createSpacecraftFromPreset(PRESET_LEO_SATELLITE);
     if (ship != null) {
       // Initialize LEO orbit
       ship.initLEO(earth);
@@ -111,11 +114,12 @@ void draw() {
     if (simDt > 3600) simDt = 3600;
     ship.lastUpdateTime = timeManager.simTime;
 
-    // Update orbit
-    ship.updateOrbit(timeManager.simTime);
-
-    // Update display angle
-    ship.updateDisplayAngleSmooth(timeManager.simTime, simDt);
+    // Update
+    if (ship.physicsMode == PhysicsMode.ON_RAILS) {
+      ship.updateOnRails(timeManager.simTime);
+    } else {
+      ship.updateOffRails(simDt);
+    }
   }
 
   camera.update(deltaTime);
@@ -213,7 +217,7 @@ void drawOrbits() {
   }
   // Draw spacecraft orbits
   for (Spacecraft ship : solarSystem.ships) {
-    if (ship.earthRelative && ship.earthRef != null && ship.a > 0) {
+    if (ship.referenceBody != null && ship.orbit != null) {
       drawEarthRelOrbit(ship);
     }
   }
@@ -239,8 +243,8 @@ void drawOrbitPath(double centerX, double centerY, double a, double e, double i,
 }
 
 void drawEarthRelOrbit(Spacecraft ship) {
-  CelestialBody earth = ship.earthRef;
-  double radius = ship.a;
+  CelestialBody earth = ship.referenceBody;
+  double radius = ship.orbit.a;
   if (radius < EARTH_RADIUS_KM * 2) {
     radius = LEO_RADIUS_KM; // Safe LEO default
   }
@@ -336,7 +340,7 @@ void handleDoubleClick() {
 
   // Check for spacecraft first
   for (Spacecraft ship : solarSystem.ships) {
-    double[] sp = camera.worldToScreen(ship.px, ship.py);
+    double[] sp = camera.worldToScreen(ship.worldX, ship.worldY);
     double d = dist((float)sp[0], (float)sp[1], mouseX, mouseY);
     if (d < minDist) { minDist = d; closestBody = null; closestShip = ship; }
   }

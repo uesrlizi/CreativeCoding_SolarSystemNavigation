@@ -1,131 +1,152 @@
-// ========== SPACECRAFT VEHICLE ==========
-// Simplified for Stage 2: Single LEO probe
-
-static class Spacecraft {
+// ========== SPACECRAFT ==========
+class Spacecraft {
+  // === 基础信息 ===
   String name;
+  int id;
+  String presetId;
   color col;
 
-  // Orbit parameters
-  double a, e, i, omega, w, M0, period;
-  double currentNu;
+  // === 物理状态 ===
+  PhysicsMode physicsMode;
+  SpacecraftState state;
+  Orbit orbit;                    // On-rails用
+  StateVector2D stateVector;      // Off-rails用
 
-  // Reference body
-  CelestialBody currentCentralBody;
+  // === 参考系 ===
+  CelestialBody referenceBody;
 
-  // Position and velocity (relative to central body)
-  double[] pos;
-  double[] vel;
-
-  // Compatibility aliases
-  double[] earthRelPos;
-  double[] earthRelVel;
-  CelestialBody earthRef;
-  boolean earthRelative;
-
-  // Display and rotation
-  double displayAngle;
+  // === 姿态 ===
+  Rotation2D attitude;
   double angularVelocity;
-  double angularAcceleration;
 
-  // World position (cached)
-  double px, py, pz;
+  // === 引擎 ===
+  SimpleEngine mainEngine;
+  double dryMass;  // 干质量（吨）
 
-  // Last update time
+  // === 自动控制 ===
+  AutoControl autoControl;
+
+  // === 缓存的世界位置 ===
+  double worldX, worldY;
+
+  // === 上次更新时间 ===
   double lastUpdateTime;
 
-  // Constants (for compatibility with renderer)
+  // === 常量 ===
   static final double SHIP_LENGTH_KM = 0.08;
   static final double MAX_ANGULAR_VELOCITY = 3.0;
   static final double MAX_ANGULAR_ACCEL = 8.0;
 
+  // === 构造函数 ===
   Spacecraft(String name, color col) {
     this.name = name;
     this.col = col;
+    this.id = -1;
+    this.presetId = null;
 
-    // Initialize arrays
-    this.pos = new double[3];
-    this.vel = new double[3];
-    this.earthRelPos = this.pos;
-    this.earthRelVel = this.vel;
+    this.physicsMode = PhysicsMode.ON_RAILS;
+    this.state = SpacecraftState.ACTIVE;
+    this.orbit = null;
+    this.stateVector = new StateVector2D();
 
-    // Default values
-    this.a = 0;
-    this.e = 0;
-    this.i = 0;
-    this.omega = 0;
-    this.w = 0;
-    this.M0 = 0;
-    this.period = 1;
-    this.currentNu = 0;
+    this.referenceBody = null;
 
-    this.px = 0;
-    this.py = 0;
-    this.pz = 0;
-
-    this.displayAngle = 0;
+    this.attitude = new Rotation2D(0);
     this.angularVelocity = 0;
-    this.angularAcceleration = 0;
+
+    this.mainEngine = null;
+    this.dryMass = 2.0;  // 默认2吨
+
+    this.autoControl = new AutoControl();
+
+    this.worldX = 0;
+    this.worldY = 0;
     this.lastUpdateTime = 0;
   }
 
-  // Initialize LEO orbit
+  // === 初始化LEO轨道 ===
   void initLEO(CelestialBody earth) {
-    this.currentCentralBody = earth;
-    this.earthRef = earth;
-    this.earthRelative = true;
+    this.referenceBody = earth;
 
-    // LEO orbit parameters (420 km altitude)
-    this.a = LEO_RADIUS_KM;
-    this.e = 0.001;  // Near-circular
-    this.i = 0.0;
-    this.omega = 0.0;
-    this.w = 0.0;
-    this.M0 = 0.0;
+    double a = LEO_RADIUS_KM;
+    double e = 0.001;
+    double w = 0.0;
+    double M0 = 0.0;
+    double period = 2 * PI * Math.sqrt(a * a * a / GM_EARTH);
 
-    // Calculate orbital period
-    this.period = 2 * PI * Math.sqrt(this.a * this.a * this.a / GM_EARTH);
+    this.orbit = new Orbit(a, e, w, M0, period, earth);
 
-    // Initial position
-    updateOrbit(0);
+    // 初始化stateVector
+    updateOnRails(0);
   }
 
-  // Update position from orbit
-  void updateOrbit(double simTime) {
-    if (this.a > 0 && this.currentCentralBody != null) {
-      // Calculate true anomaly
-      double n = 2.0 * PI / this.period;
-      double M = (this.M0 + n * simTime) % (2.0 * PI);
-      double E = solveKepler(M, this.e);
-      double nu = trueAnomaly(E, this.e);
-      this.currentNu = nu;
+  // === On-rails更新 ===
+  void updateOnRails(double simTime) {
+    if (this.orbit != null && this.referenceBody != null) {
+      Vector2 p = this.orbit.getPositionAtTime(simTime);
+      Vector2 v = this.orbit.getVelocityAtTime(simTime);
 
-      // Calculate relative position
-      double[] relPos = orbitalToCartesian(this.a, this.e, this.i, this.omega, this.w, nu);
-      this.pos[0] = relPos[0];
-      this.pos[1] = relPos[1];
-      this.pos[2] = relPos[2];
+      this.stateVector.position = p;
+      this.stateVector.velocity = v;
 
-      // Calculate relative velocity
-      double[] relVel = orbitalVelocityToCartesian(this.a, this.e, this.i, this.omega, this.w, nu, GM_EARTH);
-      this.vel[0] = relVel[0];
-      this.vel[1] = relVel[1];
-      this.vel[2] = relVel[2];
+      // 沿速度方向
+      this.attitude = Rotation2D_fromDirection(v);
 
-      // Calculate world position
-      this.px = this.currentCentralBody.px + this.pos[0];
-      this.py = this.currentCentralBody.py + this.pos[1];
-      this.pz = this.currentCentralBody.pz + this.pos[2];
-
-      // Update display angle to point along velocity vector
-      this.displayAngle = Math.atan2(this.vel[1], this.vel[0]);
+      // 计算世界位置
+      this.worldX = this.referenceBody.px + p.x;
+      this.worldY = this.referenceBody.py + p.y;
     }
   }
 
-  // Update display angle (smooth)
-  void updateDisplayAngleSmooth(double simTime, double dt) {
-    // For now, just point along velocity
-    if (this.currentCentralBody != null) {
-      this.displayAngle = Math.atan2(this.vel[1], this.vel[0]);
+  // === Off-rails更新（阶段4占位）===
+  void updateOffRails(double dt) {
+    // 阶段4实现：数值积分物理模拟
+    // 包括：引力计算、推力应用、碰撞检测
+    // 占位，暂不实现
+  }
+
+  // === 质量获取 ===
+  double getCurrentMass() {
+    double mass = this.dryMass;
+    if (this.mainEngine != null) {
+      mass += this.mainEngine.mass;
     }
+    return mass;
+  }
+
+  // === 模式切换（占位）===
+  void enterOnRails() {
+    this.physicsMode = PhysicsMode.ON_RAILS;
+  }
+
+  void enterOffRails() {
+    this.physicsMode = PhysicsMode.OFF_RAILS;
+  }
+
+  // === 轨道坐标系方向 ===
+  Vector2 getPrograde() {
+    return this.stateVector.velocity.normalized();
+  }
+
+  Vector2 getRetrograde() {
+    return getPrograde().mul(-1);
+  }
+
+  Vector2 getRadialOut() {
+    return this.stateVector.position.normalized();
+  }
+
+  Vector2 getRadialIn() {
+    return getRadialOut().mul(-1);
+  }
+
+  // === 自动控制 ===
+  void setAutoTargetDirection(Vector2 direction) {
+    this.autoControl.targetDirection = direction.clone();
+    this.autoControl.hasTargetDirection = true;
+  }
+
+  void setEngineThrottle(float throttle) {
+    this.autoControl.targetThrottle = throttle;
   }
 }

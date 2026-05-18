@@ -105,32 +105,32 @@ class HUD {
     float lineY = panelY + 55 * uiScale;
     float lineSpacing = 20 * uiScale;
 
-    if (craft.currentCentralBody != null) {
-      text("Orbiting: " + craft.currentCentralBody.name, panelX + 15 * uiScale, lineY);
+    if (craft.referenceBody != null) {
+      text("Orbiting: " + craft.referenceBody.name, panelX + 15 * uiScale, lineY);
       lineY += lineSpacing;
     }
 
-    if (craft.a > 0) {
+    if (craft.orbit != null) {
       // Apoapsis and Periapsis
-      double apoapsis = craft.a * (1 + craft.e) - EARTH_RADIUS_KM;
-      double periapsis = craft.a * (1 - craft.e) - EARTH_RADIUS_KM;
+      double apoapsis = craft.orbit.getApoapsisAltitude();
+      double periapsis = craft.orbit.getPeriapsisAltitude();
       text(String.format("Apoapsis: %,d km", (int)apoapsis), panelX + 15 * uiScale, lineY);
       lineY += lineSpacing;
       text(String.format("Periapsis: %,d km", (int)periapsis), panelX + 15 * uiScale, lineY);
       lineY += lineSpacing;
       // Period
-      double periodHours = craft.period / 3600.0;
+      double periodHours = craft.orbit.period / 3600.0;
       text(String.format("Orbit Period: %.1f h", periodHours), panelX + 15 * uiScale, lineY);
       lineY += lineSpacing;
     }
 
     // Velocity
-    double velMag = Math.sqrt(craft.vel[0]*craft.vel[0] + craft.vel[1]*craft.vel[1] + craft.vel[2]*craft.vel[2]);
+    double velMag = craft.stateVector.velocity.magnitude();
     text(String.format("Speed: %.1f km/s", velMag), panelX + 15 * uiScale, lineY);
     lineY += lineSpacing;
 
     // Physics mode
-    text("Mode: On-rails", panelX + 15 * uiScale, lineY);
+    text("Mode: " + craft.physicsMode, panelX + 15 * uiScale, lineY);
   }
 
   boolean handleMousePressed(float mx, float my, CameraController cam,

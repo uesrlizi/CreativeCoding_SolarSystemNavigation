@@ -3,7 +3,7 @@
 class SpacecraftRenderer {
 
   void draw(Spacecraft ship, CameraController cam) {
-    double[] sp = cam.worldToScreen(ship.px, ship.py);
+    double[] sp = cam.worldToScreen(ship.worldX, ship.worldY);
 
     if (Double.isNaN(sp[0]) || Double.isNaN(sp[1]) || Double.isInfinite(cam.scale)) return;
 
@@ -15,8 +15,8 @@ class SpacecraftRenderer {
     pushMatrix();
     translate((float)sp[0], (float)sp[1]);
 
-    float worldAngle = (float)ship.displayAngle;
-    if (isShipView && ship.earthRelative) {
+    float worldAngle = (float)ship.attitude.angle;
+    if (isShipView && ship.referenceBody != null) {
       worldAngle = worldAngle - (float)cam.shipViewAngle - HALF_PI;
     }
     if (Float.isNaN(worldAngle) || Float.isInfinite(worldAngle)) {
