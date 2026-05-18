@@ -148,11 +148,6 @@ class PhysicsSystem {
       ship.worldVelX = ship.stateVector.velocity.x;
       ship.worldVelY = ship.stateVector.velocity.y;
     }
-
-    // 沿速度方向更新姿态
-    if (ship.stateVector.velocity.magnitude() > 0.001) {
-      ship.attitude = Rotation2D_fromDirection(ship.stateVector.velocity);
-    }
   }
 
   // ============================================================
@@ -168,22 +163,41 @@ class PhysicsSystem {
     double targetAngle = targetDir.angle();
     double currentAngle = currentDir.angle();
 
-    double angleDiff = targetAngle - currentAngle;
-    while (angleDiff > PI) angleDiff -= TWO_PI;
-    while (angleDiff < -PI) angleDiff += TWO_PI;
+    // 使用子步长进行平滑更新
+    double remainingDt = simDt;
+    double maxSubStep = 1.0 / 60.0;
 
-    // 简单的比例控制
-    double desiredAngularVel = angleDiff * 4.0;
-    desiredAngularVel = constrainDouble(desiredAngularVel, -Spacecraft.MAX_ANGULAR_VELOCITY, Spacecraft.MAX_ANGULAR_VELOCITY);
+    while (remainingDt > 0) {
+      double dt = Math.min(remainingDt, maxSubStep);
+      updateAttitudeStep(ship, targetAngle, dt);
+      remainingDt -= dt;
+    }
 
-    ship.angularVelocity = desiredAngularVel;
-    ship.attitude.angle += ship.angularVelocity * simDt;
-    ship.attitude.normalize();
-
-    // 如果角度差很小，认为已对准
-    if (Math.abs(angleDiff) < 0.01) {
+    // 检查是否已对准
+    double finalAngleDiff = angleDifference(targetAngle, ship.attitude.angle);
+    if (Math.abs(finalAngleDiff) < 0.01 && Math.abs(ship.angularVelocity) < 0.01) {
       ship.autoControl.hasTargetDirection = false;
     }
+  }
+
+  void updateAttitudeStep(Spacecraft ship, double targetAngle, double dt) {
+    double currentAngle = ship.attitude.angle;
+    double angleDiff = angleDifference(targetAngle, currentAngle);
+
+    // PD控制
+    double desiredAccel = angleDiff * Spacecraft.ANGLE_KP - ship.angularVelocity * Spacecraft.ANGLE_KD;
+    ship.angularAcceleration = constrainDouble(desiredAccel, -Spacecraft.MAX_ANGULAR_ACCEL, Spacecraft.MAX_ANGULAR_ACCEL);
+
+    ship.angularVelocity += ship.angularAcceleration * dt;
+    ship.angularVelocity = constrainDouble(ship.angularVelocity, -Spacecraft.MAX_ANGULAR_VELOCITY, Spacecraft.MAX_ANGULAR_VELOCITY);
+
+    ship.attitude.angle += ship.angularVelocity * dt;
+    ship.attitude.normalize();
+  }
+
+  double angleDifference(double target, double current) {
+    double diff = ((target - current + 3.0 * PI) % (2.0 * PI)) - PI;
+    return diff;
   }
 
   // ============================================================

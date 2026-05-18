@@ -66,6 +66,7 @@ class SpacecraftRenderer {
 
     noStroke();
 
+    if (ship.autoControl.targetThrottle > 0.01f) drawExhaustPlumes(ship, bl);
     drawEngineNozzles(bl);
     drawEngineSection(bl);
     drawStage1Body(ship, bl);
@@ -74,6 +75,7 @@ class SpacecraftRenderer {
     drawStage2Body(ship, bl);
     drawFairing(ship, bl);
     drawBodyPanelLines(bl);
+    drawRCSThrusters(ship, bl);
     drawNavLights(ship, bl);
   }
 
@@ -347,6 +349,170 @@ class SpacecraftRenderer {
 
     fill(255, 255, 240, 180);
     ellipse(bl * 0.38f, 0, bl * 0.008f, bl * 0.008f);
+  }
+
+  // ========== 引擎火焰 ==========
+  void drawExhaustPlumes(Spacecraft ship, float bl) {
+    float[] offsetsY = {0, bl * 0.026f, -bl * 0.026f, bl * 0.044f, -bl * 0.044f};
+    float oscPhase = millis() / 1000.0f * 28.0f;
+
+    for (int e = 0; e < 5; e++) {
+      float oy = offsetsY[e];
+      float baseX = -bl * 0.45f;
+      float osc = (float)Math.sin(oscPhase + e * 1.3f) * bl * 0.06f;
+      float plumeR = (e == 0) ? bl * 0.028f : bl * 0.018f;
+
+      noStroke();
+
+      // Outer plume
+      float outLen = bl * 0.55f + osc;
+      fill(255, 100, 20, 60);
+      beginShape();
+      vertex(baseX, oy - plumeR * 0.6f);
+      vertex(baseX, oy + plumeR * 0.6f);
+      vertex(baseX - outLen * 0.7f, oy + plumeR * 0.9f);
+      vertex(baseX - outLen, oy + plumeR * 0.3f);
+      vertex(baseX - outLen, oy - plumeR * 0.3f);
+      vertex(baseX - outLen * 0.7f, oy - plumeR * 0.9f);
+      endShape(CLOSE);
+
+      // Mid plume
+      float midLen = bl * 0.38f + osc * 0.7f;
+      fill(255, 170, 25, 120);
+      beginShape();
+      vertex(baseX, oy - plumeR * 0.45f);
+      vertex(baseX, oy + plumeR * 0.45f);
+      vertex(baseX - midLen * 0.6f, oy + plumeR * 0.65f);
+      vertex(baseX - midLen, oy + plumeR * 0.2f);
+      vertex(baseX - midLen, oy - plumeR * 0.2f);
+      vertex(baseX - midLen * 0.6f, oy - plumeR * 0.65f);
+      endShape(CLOSE);
+
+      // Inner bright core
+      float inLen = bl * 0.22f + osc * 0.4f;
+      fill(255, 240, 160, 200);
+      beginShape();
+      vertex(baseX, oy - plumeR * 0.25f);
+      vertex(baseX, oy + plumeR * 0.25f);
+      vertex(baseX - inLen * 0.5f, oy + plumeR * 0.35f);
+      vertex(baseX - inLen, oy + plumeR * 0.1f);
+      vertex(baseX - inLen, oy - plumeR * 0.1f);
+      vertex(baseX - inLen * 0.5f, oy - plumeR * 0.35f);
+      endShape(CLOSE);
+
+      // Mach diamonds
+      if (bl > 8) {
+        fill(255, 220, 160, 100);
+        for (int m = 0; m < 3; m++) {
+          float mx = baseX - bl * 0.08f - m * bl * 0.1f + osc * 0.2f * (m + 1);
+          float mw = plumeR * 0.8f - m * plumeR * 0.15f;
+          float mh = plumeR * 0.35f - m * plumeR * 0.06f;
+          ellipse(mx, oy, mw, mh);
+        }
+      }
+    }
+
+    // Combined glow
+    fill(255, 180, 60, 25);
+    ellipse(-bl * 0.5f, 0, bl * 0.3f, bl * 0.12f);
+  }
+
+  // ========== RCS推进器 ==========
+  void drawRCSThrusters(Spacecraft ship, float bl) {
+    // RCS nozzle positions
+    float fwdX = bl * 0.42f;
+    float fwdR = bl * 0.052f;
+    float aftX = -bl * 0.2f;
+    float aftR = bl * 0.069f;
+
+    // Nozzle housings (always visible)
+    noStroke();
+    fill(90, 88, 92);
+    float hw = bl * 0.01f;
+    float hh = bl * 0.005f;
+    rect(fwdX - hw * 0.5f, -fwdR - hh * 0.5f, hw, hh, 1);
+    rect(fwdX - hw * 0.5f, fwdR - hh * 0.5f, hw, hh, 1);
+    rect(aftX - hw * 0.5f, -aftR - hh * 0.5f, hw, hh, 1);
+    rect(aftX - hw * 0.5f, aftR - hh * 0.5f, hw, hh, 1);
+
+    // Thruster nozzle dots
+    fill(30, 28, 32);
+    float nd = bl * 0.004f;
+    ellipse(fwdX, -fwdR, nd, nd);
+    ellipse(fwdX, fwdR, nd, nd);
+    ellipse(aftX, -aftR, nd, nd);
+    ellipse(aftX, aftR, nd, nd);
+
+    // Plumes (only when turning)
+    double accel = ship.angularAcceleration;
+    double vel = Math.abs(ship.angularVelocity);
+    double activity = Math.abs(accel) / Spacecraft.MAX_ANGULAR_ACCEL + vel / Spacecraft.MAX_ANGULAR_VELOCITY;
+    if (activity < 0.0005) return;
+
+    float thrustLevel = (float)Math.min(1.0, activity);
+    float time = millis() / 1000.0f;
+
+    // Pulsed jet logic
+    float pulseFreq = 2.0f + thrustLevel * 15.0f;
+    float pulseDuty = 0.15f + thrustLevel * 0.75f;
+
+    float cycle = time * pulseFreq;
+    float cycleFraction = cycle - (float)Math.floor(cycle);
+    boolean isFiring = cycleFraction < pulseDuty;
+
+    if (!isFiring) return;
+    float oscPhase = time * 35.0f;
+
+    // Firing pair depends on acceleration direction
+    if (accel > 0) {
+      // CW: forward-top + aft-bottom
+      drawRCSPlume(bl, fwdX, -fwdR, -1, 1.0f, oscPhase);
+      drawRCSPlume(bl, aftX, aftR, 1, 1.0f, oscPhase + 0.9f);
+    } else {
+      // CCW: forward-bottom + aft-top
+      drawRCSPlume(bl, fwdX, fwdR, 1, 1.0f, oscPhase);
+      drawRCSPlume(bl, aftX, -aftR, -1, 1.0f, oscPhase + 0.9f);
+    }
+  }
+
+  void drawRCSPlume(float bl, float originX, float originY, int dirSign, float level, float phase) {
+    noStroke();
+    float plumeLen = bl * 0.05f;
+    float plumeW = bl * 0.008f;
+    float osc = (float)Math.sin(phase) * plumeLen * 0.2f;
+
+    // Outer fringe
+    fill(180, 210, 255, 50);
+    beginShape();
+    vertex(originX, originY);
+    vertex(originX + plumeW * 0.3f, originY + dirSign * plumeW * 0.5f);
+    vertex(originX + plumeW * 0.1f, originY + dirSign * (plumeLen + osc));
+    vertex(originX - plumeW * 0.1f, originY + dirSign * (plumeLen + osc));
+    vertex(originX - plumeW * 0.3f, originY + dirSign * plumeW * 0.5f);
+    endShape(CLOSE);
+
+    // Mid plume
+    fill(200, 225, 255, 100);
+    beginShape();
+    vertex(originX, originY);
+    vertex(originX + plumeW * 0.15f, originY + dirSign * plumeW * 0.3f);
+    vertex(originX + plumeW * 0.05f, originY + dirSign * (plumeLen * 0.7f + osc));
+    vertex(originX - plumeW * 0.05f, originY + dirSign * (plumeLen * 0.7f + osc));
+    vertex(originX - plumeW * 0.15f, originY + dirSign * plumeW * 0.3f);
+    endShape(CLOSE);
+
+    // Inner bright core
+    fill(230, 240, 255, 160);
+    beginShape();
+    vertex(originX, originY);
+    vertex(originX + plumeW * 0.06f, originY + dirSign * plumeW * 0.1f);
+    vertex(originX, originY + dirSign * (plumeLen * 0.45f + osc * 0.6f));
+    vertex(originX - plumeW * 0.06f, originY + dirSign * plumeW * 0.1f);
+    endShape(CLOSE);
+
+    // Bright spot at nozzle exit
+    fill(255, 255, 255, 200);
+    ellipse(originX, originY, plumeW * 0.8f, plumeW * 0.5f);
   }
 
   void drawTrajectory(Spacecraft ship, Trajectory trajectory, CameraController cam) {

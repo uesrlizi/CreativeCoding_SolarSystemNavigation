@@ -184,19 +184,35 @@ class TrajectoryPredictor {
     currentNu = normalizeAngle(currentNu);
     targetNu = normalizeAngle(targetNu);
 
-    // 计算需要增加的角度
-    double deltaNu = targetNu - currentNu;
-    if (deltaNu < 0) deltaNu += TWO_PI;
+    // 计算当前和目标的偏近点角
+    double currentE = 2 * Math.atan2(
+      Math.sqrt(1 - orbit.e) * Math.sin(currentNu / 2),
+      Math.sqrt(1 + orbit.e) * Math.cos(currentNu / 2)
+    );
+    if (currentE < 0) currentE += TWO_PI;
 
-    // 简化估计：用平均角速度（开普勒方程的精确解比较复杂，阶段5再完善）
+    double targetE = 2 * Math.atan2(
+      Math.sqrt(1 - orbit.e) * Math.sin(targetNu / 2),
+      Math.sqrt(1 + orbit.e) * Math.cos(targetNu / 2)
+    );
+    if (targetE < 0) targetE += TWO_PI;
+
+    // 计算平近点角
+    double currentM = currentE - orbit.e * Math.sin(currentE);
+    double targetM = targetE - orbit.e * Math.sin(targetE);
+
+    // 计算需要增加的平近点角
+    double deltaM = targetM - currentM;
+    if (deltaM < 0) deltaM += TWO_PI;
+
+    // 计算时间差
     double meanMotion = TWO_PI / orbit.period;
-    double estTime = deltaNu / meanMotion;
+    double time = deltaM / meanMotion;
 
     // 限制在0~2个周期内
-    double result = estTime;
-    if (result < 0) result = 0;
-    if (result > orbit.period * 2) result = orbit.period * 2;
-    return result;
+    if (time < 0) time = 0;
+    if (time > orbit.period * 2) time = orbit.period * 2;
+    return time;
   }
 
   private double normalizeAngle(double angle) {

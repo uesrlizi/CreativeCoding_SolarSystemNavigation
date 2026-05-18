@@ -47,20 +47,27 @@ class Orbit {
   }
 
   double getTrueAnomalyAtTime(double t) {
+    double dt = t - epoch;
     double n = 2.0 * PI / period;
-    double M = (M0 + n * t) % (2.0 * PI);
+    double M = (M0 + n * dt) % (2.0 * PI);
+    if (M < 0) M += 2.0 * PI;
     double E = solveKepler(M, e);
     return trueAnomaly(E, e);
   }
 
   double getMeanAnomalyAtTime(double t) {
+    double dt = t - epoch;
     double n = 2.0 * PI / period;
-    return (M0 + n * t) % (2.0 * PI);
+    double M = (M0 + n * dt) % (2.0 * PI);
+    if (M < 0) M += 2.0 * PI;
+    return M;
   }
 
   double getEccentricAnomalyAtTime(double t) {
+    double dt = t - epoch;
     double n = 2.0 * PI / period;
-    double M = (M0 + n * t) % (2.0 * PI);
+    double M = (M0 + n * dt) % (2.0 * PI);
+    if (M < 0) M += 2.0 * PI;
     return solveKepler(M, e);
   }
 

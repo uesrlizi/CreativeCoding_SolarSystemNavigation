@@ -52,7 +52,7 @@ void initSpacecraftPresets() {
     "LEO Probe",
     "A simple satellite for low Earth orbit operations",
     2.0,          // 2吨干质量
-    5.0,          // 5kN推力
+    62.5,         // 62.5kN推力 → 25 m/s² with 2.5 tons
     0.5,          // 阻力系数
     4.0,          // 4m²横截面积
     0xFF00FF96    // 不调用 color() 函数，直接写 AARRGGBB
@@ -64,7 +64,7 @@ void initSpacecraftPresets() {
     "Lunar Transfer Vehicle",
     "A spacecraft capable of transferring from Earth to Moon",
     8.0,          // 8吨干质量
-    25.0,         // 25kN推力
+    212.5,        // 212.5kN推力 → 25 m/s² with 8.5 tons
     0.6,          // 阻力系数
     10.0,         // 10m²横截面积
     0xFFFFB432    // 不调用 color() 函数，直接写 AARRGGBB

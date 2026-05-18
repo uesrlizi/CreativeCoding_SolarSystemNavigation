@@ -18,6 +18,10 @@ class Spacecraft {
   // === 姿态 ===
   Rotation2D attitude;
   double angularVelocity;
+  double angularAcceleration;
+  // PD控制参数（仅用于显示平滑）
+  static final double ANGLE_KP = 10.0;
+  static final double ANGLE_KD = 6.0;
 
   // === 引擎 ===
   SimpleEngine mainEngine;
@@ -56,6 +60,7 @@ class Spacecraft {
 
     this.attitude = new Rotation2D(0);
     this.angularVelocity = 0;
+    this.angularAcceleration = 0;
 
     this.mainEngine = null;
     this.dryMass = 2.0;  // 默认2吨
@@ -95,9 +100,6 @@ class Spacecraft {
 
       this.stateVector.position = p;
       this.stateVector.velocity = v;
-
-      // 沿速度方向
-      this.attitude = Rotation2D_fromDirection(v);
 
       // 计算世界位置
       this.worldX = this.referenceBody.px + p.x;
