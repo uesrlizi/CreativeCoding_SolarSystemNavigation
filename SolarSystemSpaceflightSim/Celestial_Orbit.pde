@@ -82,8 +82,68 @@ class Orbit {
   }
 }
 
-// Helper functions (not private, not static)
-double[] orbitalToCartesian2D(double a, double e, double w, double nu) {
+// ========== Orbit Factory from State Vector ==========
+
+Orbit Orbit_fromStateVector(Vector2 pos, Vector2 vel, CelestialBody body, double t) {
+  double GM = (body != null && body.GM > 0) ? body.GM : GM_SUN;
+
+  // Calculate specific mechanical energy
+  double r = pos.magnitude();
+  double v = vel.magnitude();
+  double vSq = v * v;
+  double eps = vSq / 2 - GM / r;
+
+  // Semi-major axis
+  double a = -GM / (2 * eps);
+
+  // Specific angular momentum
+  double h = pos.x * vel.y - pos.y * vel.x;
+  double hSq = h * h;
+
+  // Eccentricity
+  double eVecX = (vSq - GM / r) * pos.x - (pos.dot(vel)) * vel.x;
+  double eVecY = (vSq - GM / r) * pos.y - (pos.dot(vel)) * vel.y;
+  double e = Math.sqrt(eVecX * eVecX + eVecY * eVecY) / GM;
+
+  // True anomaly
+  double nu;
+  if (e < 1e-8) {
+    // Circular orbit
+    nu = pos.angle();
+  } else {
+    // Elliptical orbit
+    double cosNu = (hSq / (GM * r) - 1) / e;
+    double sinNu = (h * pos.dot(vel)) / (GM * e * r);
+    cosNu = constrainDouble(cosNu, -1, 1);
+    sinNu = constrainDouble(sinNu, -1, 1);
+    nu = Math.atan2(sinNu, cosNu);
+  }
+
+  // Argument of periapsis (w)
+  double w;
+  if (e < 1e-8) {
+    w = 0;
+  } else {
+    double wAngle = Math.atan2(eVecY, eVecX);
+    w = wAngle; // In 2D, periapsis direction is just e vector direction
+  }
+
+  // Eccentric anomaly
+  double E = 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2));
+
+  // Mean anomaly at t=0
+  double M0 = E - e * Math.sin(E);
+
+  // Period
+  double period = 2 * PI * Math.sqrt(a * a * a / GM);
+
+  // Create orbit
+  Orbit orbit = new Orbit(a, e, w, M0, period, body);
+  return orbit;
+}
+
+// Helper functions (not private, static)
+static double[] orbitalToCartesian2D(double a, double e, double w, double nu) {
   double r = a * (1 - e * e) / (1 + e * Math.cos(nu));
   double theta = w + nu;
   return new double[]{
@@ -92,7 +152,7 @@ double[] orbitalToCartesian2D(double a, double e, double w, double nu) {
   };
 }
 
-double[] orbitalVelocityToCartesian2D(double a, double e, double w, double nu, double GM) {
+static double[] orbitalVelocityToCartesian2D(double a, double e, double w, double nu, double GM) {
   double p = a * (1 - e * e);
   double r = a * (1 - e * e) / (1 + e * Math.cos(nu));
   double h = Math.sqrt(GM * p);

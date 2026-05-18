@@ -8,6 +8,11 @@ class CameraController {
   double offsetX, offsetY;
   double targetOffsetX, targetOffsetY;
   CelestialBody focusBody;
+  Spacecraft focusShip;
+
+  double shipScale, shipTargetScale;
+  double shipViewAngle;
+  Spacecraft followTarget;
 
   ViewMode mode;
   boolean dragging;
@@ -20,9 +25,13 @@ class CameraController {
     targetScale = 1.0;
     mapScale = 1.0;
     mapTargetScale = 1.0;
+    shipScale = 1.0;
+    shipTargetScale = 0.0;
     dragging = false;
     mode = ViewMode.MAP_VIEW;
     focusBody = null;
+    focusShip = null;
+    followTarget = null;
     offsetX = 0;
     offsetY = 0;
     targetOffsetX = 0;
@@ -43,16 +52,36 @@ class CameraController {
     float offsetSpeed = 10.0f;
     double scaleT = 1.0 - Math.exp(-scaleSpeed * dt);
     double offsetT = 1.0 - Math.exp(-offsetSpeed * dt);
+
     if (mode == ViewMode.MAP_VIEW) {
       scale += (targetScale - scale) * scaleT;
       offsetX += (targetOffsetX - offsetX) * offsetT;
       offsetY += (targetOffsetY - offsetY) * offsetT;
       double tx = 0, ty = 0;
-      if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
+      if (focusShip != null) {
+        tx = focusShip.px;
+        ty = focusShip.py;
+      } else if (focusBody != null) {
+        tx = focusBody.px;
+        ty = focusBody.py;
+      }
       camX = tx + offsetX;
       camY = ty + offsetY;
       mapScale = scale;
       mapTargetScale = targetScale;
+    }
+
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null) {
+      scale += (targetScale - scale) * scaleT;
+      camX = followTarget.px;
+      camY = followTarget.py;
+      shipScale = scale;
+      shipTargetScale = targetScale;
+      if (followTarget.earthRelative && followTarget.earthRef != null) {
+        double rx = followTarget.earthRelPos[0];
+        double ry = followTarget.earthRelPos[1];
+        shipViewAngle = Math.atan2(ry, rx);
+      }
     }
   }
 
@@ -61,7 +90,40 @@ class CameraController {
   }
 
   void setViewMode(ViewMode m) {
+    if (m == mode) return;
+
+    if (mode == ViewMode.MAP_VIEW) {
+      mapScale = scale;
+      mapTargetScale = targetScale;
+    } else if (mode == ViewMode.SHIP_VIEW) {
+      shipScale = scale;
+      shipTargetScale = targetScale;
+    }
+
     mode = m;
+    if (m == ViewMode.MAP_VIEW) {
+      scale = mapScale;
+      targetScale = mapTargetScale;
+    } else if (m == ViewMode.SHIP_VIEW) {
+      scale = shipScale;
+      targetScale = shipTargetScale;
+      if (followTarget != null) {
+        camX = followTarget.px;
+        camY = followTarget.py;
+      }
+      if (shipTargetScale <= 0.0) {
+        shipTargetScale = 0.22 * height / Spacecraft.SHIP_LENGTH_KM;
+        targetScale = shipTargetScale;
+      }
+    }
+  }
+
+  void followShip(Spacecraft ship) {
+    followTarget = ship;
+    if (ship != null) {
+      camX = ship.px;
+      camY = ship.py;
+    }
   }
 
   void handleMousePressed() {
@@ -83,6 +145,7 @@ class CameraController {
     targetOffsetY = offsetY;
     double tx = 0, ty = 0;
     if (focusBody != null) { tx = focusBody.px; ty = focusBody.py; }
+    else if (focusShip != null) { tx = focusShip.px; ty = focusShip.py; }
     camX = tx + offsetX;
     camY = ty + offsetY;
   }
@@ -100,6 +163,7 @@ class CameraController {
 
   void reset() {
     focusBody = null;
+    focusShip = null;
     offsetX = 0;
     offsetY = 0;
     targetOffsetX = 0;
@@ -110,8 +174,9 @@ class CameraController {
 
   void focusOn(CelestialBody body) {
     focusBody = body;
-    offsetX = 0;
-    offsetY = 0;
+    focusShip = null;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetX;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetY;
     targetOffsetX = offsetX;
     targetOffsetY = offsetY;
     setViewMode(ViewMode.MAP_VIEW);
@@ -119,6 +184,7 @@ class CameraController {
 
   void focusOn(double x, double y, double targetScale) {
     focusBody = null;
+    focusShip = null;
     offsetX = 0;
     offsetY = 0;
     targetOffsetX = 0;
@@ -129,7 +195,19 @@ class CameraController {
     setViewMode(ViewMode.MAP_VIEW);
   }
 
+  void focusOn(Spacecraft craft) {
+    focusBody = null;
+    focusShip = craft;
+    offsetX = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetX;
+    offsetY = (mode == ViewMode.SHIP_VIEW) ? 0 : offsetY;
+    targetOffsetX = offsetX;
+    targetOffsetY = offsetY;
+    setViewMode(ViewMode.MAP_VIEW);
+  }
+
   String getFocusName() {
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null) return "Spacecraft";
+    if (focusShip != null) return "Spacecraft";
     if (focusBody != null) return focusBody.name;
     return null;
   }
@@ -140,7 +218,15 @@ class CameraController {
     double desiredScale = targetScale;
     boolean hasSpecificTarget = false;
 
-    if (focusBody != null) {
+    if (focusShip != null) {
+      hasSpecificTarget = true;
+      if (focusShip.earthRelative && focusShip.earthRef != null) {
+        CelestialBody ref = focusShip.earthRef;
+        desiredScale = height / (8.0 * ref.radius);
+      } else {
+        desiredScale = (width * 0.15) / AU_KM;
+      }
+    } else if (focusBody != null) {
       hasSpecificTarget = true;
       if (focusBody.a != 0) {
         desiredScale = height / (4.0 * focusBody.radius);
@@ -173,17 +259,20 @@ class CameraController {
   double[] worldToScreen(double wx, double wy) {
     double dx = wx - camX;
     double dy = wy - camY;
+
+    if (mode == ViewMode.SHIP_VIEW && followTarget != null && followTarget.earthRelative) {
+      double cosA = Math.cos(shipViewAngle);
+      double sinA = Math.sin(shipViewAngle);
+      double sx = (-sinA * dx + cosA * dy) * scale + width / 2.0;
+      double sy = -(cosA * dx + sinA * dy) * scale + height / 2.0;
+      return new double[]{sx, sy};
+    }
+
     double sx = dx * scale + width / 2.0;
     double sy = dy * scale + height / 2.0;
     double[] result = new double[2];
     result[0] = sx;
     result[1] = sy;
     return result;
-  }
-
-  double constrainDouble(double value, double min, double max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
   }
 }

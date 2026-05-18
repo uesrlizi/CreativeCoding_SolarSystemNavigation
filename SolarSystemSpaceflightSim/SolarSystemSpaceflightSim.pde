@@ -1,5 +1,5 @@
 // Solar System Spaceflight Simulation - Refactored Version
-// Isolated development environment for refactoring existing code
+// Stage 2: Single Spacecraft in LEO
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,8 +22,11 @@ CameraController camera;
 TimeManager timeManager;
 HUD hud;
 SOISystem soiSystem;
-GameStateManager gameStateManager;
+ViewToggleButton viewToggleButton;
 float uiScale;
+
+// ========== SPACECRAFT & RENDERER ==========
+SpacecraftRenderer spacecraftRenderer;
 
 // ========== DOUBLE-CLICK / FOCUS ==========
 long lastClickTime = 0;
@@ -51,13 +54,40 @@ void setup() {
   timeManager = new TimeManager();
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
-  gameStateManager = new GameStateManager();
 
   solarSystem = new SolarSystem();
   soiSystem = new SOISystem(solarSystem);
   solarSystem.initialize();
 
+  // Initialize spacecraft renderer
+  spacecraftRenderer = new SpacecraftRenderer();
+
+  // Create initial spacecraft in LEO
+  createInitialSpacecraft();
+
+  // Focus camera on spacecraft and set as follow target
+  if (solarSystem.ships.size() > 0) {
+    camera.focusOn(solarSystem.ships.get(0));
+    camera.followShip(solarSystem.ships.get(0));
+  }
+
   hud = new HUD();
+  viewToggleButton = new ViewToggleButton();
+}
+
+void createInitialSpacecraft() {
+  CelestialBody earth = solarSystem.getEarth();
+  if (earth != null) {
+    // 使用预设创建航天器
+    Spacecraft ship = SpacecraftPresets.createSpacecraft(SpacecraftPresets.PRESET_LEO_SATELLITE);
+    if (ship != null) {
+      // Initialize LEO orbit
+      ship.initLEO(earth);
+
+      // Add to solar system
+      solarSystem.ships.add(ship);
+    }
+  }
 }
 
 void draw() {
@@ -73,18 +103,46 @@ void draw() {
   timeManager.update(deltaTime);
   solarSystem.update(timeManager.simTime);
   solarSystem.updateRenderer(deltaTime);
+
+  // Update spacecraft positions
+  for (Spacecraft ship : solarSystem.ships) {
+    double simDt = timeManager.simTime - ship.lastUpdateTime;
+    if (simDt <= 0) simDt = 1.0f / 60.0f;
+    if (simDt > 3600) simDt = 3600;
+    ship.lastUpdateTime = timeManager.simTime;
+
+    // Update orbit
+    ship.updateOrbit(timeManager.simTime);
+
+    // Update display angle
+    ship.updateDisplayAngleSmooth(timeManager.simTime, simDt);
+  }
+
   camera.update(deltaTime);
   hud.update();
+  viewToggleButton.update();
 
-  // Render
+  // Render order: background -> orbits -> SOI -> sun -> planets -> spacecraft -> HUD
   drawStars();
-  drawOrbits();
-  if (showSOI) {
-    drawSOIBoundaries();
+
+  // Only draw orbits in MAP view
+  if (camera.getMode() == ViewMode.MAP_VIEW) {
+    drawOrbits();
+    if (showSOI) {
+      drawSOIBoundaries();
+    }
   }
+
   solarSystem.drawSun(camera);
   solarSystem.drawPlanets(camera);
-  hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.sun);
+
+  // Render spacecraft
+  for (Spacecraft ship : solarSystem.ships) {
+    spacecraftRenderer.draw(ship, camera);
+  }
+
+  hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.sun, solarSystem.ships);
+  viewToggleButton.draw();
 }
 
 void drawStars() {
@@ -153,6 +211,12 @@ void drawOrbits() {
     if (moon.a == 0 || moon.parentBody == null) continue;
     drawOrbitPath(moon.parentBody.px, moon.parentBody.py, moon.a, moon.e, moon.i, moon.omega, moon.w, color(60, 60, 80, 80));
   }
+  // Draw spacecraft orbits
+  for (Spacecraft ship : solarSystem.ships) {
+    if (ship.earthRelative && ship.earthRef != null && ship.a > 0) {
+      drawEarthRelOrbit(ship);
+    }
+  }
 }
 
 void drawOrbitPath(double a, double e, double i, double omega, double w, color c) {
@@ -169,6 +233,30 @@ void drawOrbitPath(double centerX, double centerY, double a, double e, double i,
     double nu = 2.0 * PI * j / steps;
     double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
     double[] sp = camera.worldToScreen(centerX + pos[0], centerY + pos[1]);
+    vertex((float)sp[0], (float)sp[1]);
+  }
+  endShape(CLOSE);
+}
+
+void drawEarthRelOrbit(Spacecraft ship) {
+  CelestialBody earth = ship.earthRef;
+  double radius = ship.a;
+  if (radius < EARTH_RADIUS_KM * 2) {
+    radius = LEO_RADIUS_KM; // Safe LEO default
+  }
+  double centerX = earth.px;
+  double centerY = earth.py;
+
+  noFill();
+  stroke(red(ship.col), green(ship.col), blue(ship.col));
+  strokeWeight(0.8f);
+  beginShape();
+  int steps = 200;
+  for (int j = 0; j <= steps; j++) {
+    double angle = 2.0 * PI * j / steps;
+    double worldX = centerX + radius * Math.cos(angle);
+    double worldY = centerY + radius * Math.sin(angle);
+    double[] sp = camera.worldToScreen(worldX, worldY);
     vertex((float)sp[0], (float)sp[1]);
   }
   endShape(CLOSE);
@@ -218,7 +306,11 @@ void drawSingleSOI(CelestialBody body) {
 }
 
 void mousePressed() {
-  if (hud.handleMousePressed(mouseX, mouseY, camera, solarSystem.sun, solarSystem.planets)) {
+  if (viewToggleButton.handleClick(camera, solarSystem.ships)) {
+    return;
+  }
+
+  if (hud.handleMousePressed(mouseX, mouseY, camera, solarSystem.sun, solarSystem.planets, solarSystem.ships)) {
     return;
   }
 
@@ -239,25 +331,36 @@ void handleDoubleClick() {
   if (camera.getMode() != ViewMode.MAP_VIEW) return;
 
   CelestialBody closestBody = null;
+  Spacecraft closestShip = null;
   double minDist = FOCUS_HIT_RADIUS;
 
+  // Check for spacecraft first
+  for (Spacecraft ship : solarSystem.ships) {
+    double[] sp = camera.worldToScreen(ship.px, ship.py);
+    double d = dist((float)sp[0], (float)sp[1], mouseX, mouseY);
+    if (d < minDist) { minDist = d; closestBody = null; closestShip = ship; }
+  }
+
+  // Check for bodies
   for (CelestialBody p : solarSystem.planets) {
     double[] sp = camera.worldToScreen(p.px, p.py);
     double d = dist((float)sp[0], (float)sp[1], mouseX, mouseY);
-    if (d < minDist) { minDist = d; closestBody = p; }
+    if (d < minDist) { minDist = d; closestBody = p; closestShip = null; }
   }
 
   double[] sunSp = camera.worldToScreen(0, 0);
   double sunD = dist((float)sunSp[0], (float)sunSp[1], mouseX, mouseY);
-  if (sunD < minDist) { minDist = sunD; closestBody = solarSystem.sun; }
+  if (sunD < minDist) { minDist = sunD; closestBody = solarSystem.sun; closestShip = null; }
 
   for (CelestialBody moon : solarSystem.moons) {
     double[] sp = camera.worldToScreen(moon.px, moon.py);
     double d = dist((float)sp[0], (float)sp[1], mouseX, mouseY);
-    if (d < minDist) { minDist = d; closestBody = moon; }
+    if (d < minDist) { minDist = d; closestBody = moon; closestShip = null; }
   }
 
-  if (closestBody != null) {
+  if (closestShip != null) {
+    camera.focusOn(closestShip);
+  } else if (closestBody != null) {
     camera.focusOn(closestBody);
   } else {
     camera.focusOn(solarSystem.sun);
@@ -297,5 +400,15 @@ void keyPressed() {
   }
   if (key == 'f' || key == 'F') {
     camera.snapFocus();
+  }
+  if (key == 'v' || key == 'V') {
+    if (camera.getMode() == ViewMode.MAP_VIEW) {
+      if (camera.followTarget == null && solarSystem.ships.size() > 0) {
+        camera.followShip(solarSystem.ships.get(0));
+      }
+      camera.setViewMode(ViewMode.SHIP_VIEW);
+    } else {
+      camera.setViewMode(ViewMode.MAP_VIEW);
+    }
   }
 }

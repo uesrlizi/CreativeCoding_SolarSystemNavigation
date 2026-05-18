@@ -1,6 +1,6 @@
 // ========== ORBITAL MATH ==========
 
-double solveKepler(double M, double e) {
+static double solveKepler(double M, double e) {
   double E = M;
   for (int i = 0; i < 50; i++) {
     double dE = (E - e * Math.sin(E) - M) / (1.0 - e * Math.cos(E));
@@ -10,11 +10,11 @@ double solveKepler(double M, double e) {
   return E;
 }
 
-double trueAnomaly(double E, double e) {
+static double trueAnomaly(double E, double e) {
   return 2.0 * Math.atan2(Math.sqrt(1.0 + e) * Math.sin(E / 2.0), Math.sqrt(1.0 - e) * Math.cos(E / 2.0));
 }
 
-double[] orbitalToCartesian(double a, double e, double i_deg, double omega_deg, double w_deg, double nu) {
+static double[] orbitalToCartesian(double a, double e, double i_deg, double omega_deg, double w_deg, double nu) {
   double r = a * (1.0 - e * e) / (1.0 + e * Math.cos(nu));
   double xOrb = r * Math.cos(nu);
   double yOrb = r * Math.sin(nu);
@@ -36,7 +36,7 @@ double[] orbitalToCartesian(double a, double e, double i_deg, double omega_deg, 
   return result;
 }
 
-double[] orbitalVelocityToCartesian(double a, double e, double i_deg, double omega_deg, double w_deg, double nu, double GM) {
+static double[] orbitalVelocityToCartesian(double a, double e, double i_deg, double omega_deg, double w_deg, double nu, double GM) {
   double p = a * (1.0 - e * e);
   double factor = Math.sqrt(GM / p);
   double vx_pf = -factor * Math.sin(nu);
@@ -59,7 +59,7 @@ double[] orbitalVelocityToCartesian(double a, double e, double i_deg, double ome
   return result;
 }
 
-double getTrueAnomalyAtTime(CelestialBody body, double t) {
+static double getTrueAnomalyAtTime(CelestialBody body, double t) {
   double n = 2.0 * PI / body.period;
   double M = (body.M0 + n * t) % (2.0 * PI);
   if (M < 0) M += 2.0 * PI;
@@ -67,7 +67,7 @@ double getTrueAnomalyAtTime(CelestialBody body, double t) {
   return trueAnomaly(E, body.e);
 }
 
-double[] getPositionAtTime(CelestialBody body, double t) {
+static double[] getPositionAtTime(CelestialBody body, double t) {
   double n = 2.0 * PI / body.period;
   double M = (body.M0 + n * t) % (2.0 * PI);
   if (M < 0) M += 2.0 * PI;
@@ -76,7 +76,7 @@ double[] getPositionAtTime(CelestialBody body, double t) {
   return orbitalToCartesian(body.a, body.e, body.i, body.omega, body.w, nu);
 }
 
-double[] getVelocityAtTime(CelestialBody body, double t) {
+static double[] getVelocityAtTime(CelestialBody body, double t) {
   double n = 2.0 * PI / body.period;
   double M = (body.M0 + n * t) % (2.0 * PI);
   if (M < 0) M += 2.0 * PI;

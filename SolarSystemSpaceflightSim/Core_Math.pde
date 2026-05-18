@@ -1,6 +1,6 @@
 // ========== 2D MATH UTILITIES ==========
 
-class Vector2 {
+static class Vector2 {
   double x, y;
 
   Vector2() {
@@ -89,7 +89,7 @@ class Vector2 {
   }
 }
 
-class Rotation2D {
+static class Rotation2D {
   double angle;
 
   Rotation2D() {
@@ -145,22 +145,22 @@ class Rotation2D {
 }
 
 // ========== Factory functions ==========
-Vector2 Vector2_zero() { return new Vector2(0, 0); }
-Vector2 Vector2_one() { return new Vector2(1, 1); }
-Vector2 Vector2_right() { return new Vector2(1, 0); }
-Vector2 Vector2_up() { return new Vector2(0, 1); }
-Vector2 Vector2_left() { return new Vector2(-1, 0); }
-Vector2 Vector2_down() { return new Vector2(0, -1); }
+static Vector2 Vector2_zero() { return new Vector2(0, 0); }
+static Vector2 Vector2_one() { return new Vector2(1, 1); }
+static Vector2 Vector2_right() { return new Vector2(1, 0); }
+static Vector2 Vector2_up() { return new Vector2(0, 1); }
+static Vector2 Vector2_left() { return new Vector2(-1, 0); }
+static Vector2 Vector2_down() { return new Vector2(0, -1); }
 
-Rotation2D Rotation2D_fromAngle(double angle) {
+static Rotation2D Rotation2D_fromAngle(double angle) {
   return new Rotation2D(angle);
 }
 
-Rotation2D Rotation2D_fromDirection(Vector2 dir) {
+static Rotation2D Rotation2D_fromDirection(Vector2 dir) {
   return new Rotation2D(dir.angle());
 }
 
-Rotation2D Rotation2D_lerp(Rotation2D a, Rotation2D b, double t) {
+static Rotation2D Rotation2D_lerp(Rotation2D a, Rotation2D b, double t) {
   double diff = b.angle - a.angle;
   while (diff > Math.PI) diff -= TWO_PI;
   while (diff < -Math.PI) diff += TWO_PI;

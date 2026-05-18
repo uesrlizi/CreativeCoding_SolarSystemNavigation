@@ -4,8 +4,10 @@ class NavigationFocusPanel {
   float panelX, panelY, panelW, panelH;
   float rowH, headerH, footerH;
   CelestialBody selectedBody;
+  boolean selectedShip;
   long lastClickTime;
   CelestialBody lastClickBody;
+  boolean lastClickedShip;
   float panelMargin;
   static final int PANEL_DOUBLE_CLICK_MS = 300;
 
@@ -25,8 +27,10 @@ class NavigationFocusPanel {
     panelMargin = 10 * scale;
 
     selectedBody = null;
+    selectedShip = false;
     lastClickTime = 0;
     lastClickBody = null;
+    lastClickedShip = false;
     hoveredIndex = -1;
     hoveredFrames = 0;
     snapButtonHover = false;
@@ -36,7 +40,7 @@ class NavigationFocusPanel {
   void update() {
     float scale = uiScale;
     int bodyCount = 1 + 8;
-    panelH = headerH + (bodyCount + 1) * rowH + 8 * scale + footerH;
+    panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
 
     if (camera.getMode() != ViewMode.MAP_VIEW) {
       hoveredIndex = -1;
@@ -67,6 +71,11 @@ class NavigationFocusPanel {
         }
         rowY += rowH;
       }
+      rowY += rowH;
+
+      if (mouseY >= rowY && mouseY < rowY + rowH) {
+        idx = 9;
+      }
 
       if (idx == hoveredIndex) {
         hoveredFrames++;
@@ -76,7 +85,7 @@ class NavigationFocusPanel {
       }
     }
 
-    float footerY = panelY + headerH + (9) * rowH + 8 * scale;
+    float footerY = panelY + headerH + (9 + 1 + 1) * rowH + 8 * scale;
     float btnX = panelX + panelW - 70 * scale;
     float btnY = footerY + 2;
     float btnW = 56 * scale;
@@ -90,14 +99,14 @@ class NavigationFocusPanel {
     }
   }
 
-  void draw(CameraController cam, CelestialBody sun, List<CelestialBody> planets) {
+  void draw(CameraController cam, CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
     if (cam.getMode() != ViewMode.MAP_VIEW) return;
 
     float scale = uiScale;
     pushStyle();
 
     int bodyCount = 1 + 8;
-    panelH = headerH + (bodyCount + 1) * rowH + 8 * scale + footerH;
+    panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
 
     noStroke();
     fill(0, 0, 0, 150);
@@ -126,6 +135,15 @@ class NavigationFocusPanel {
       drawBodyRow(rowY, p, p == cam.focusBody, selectedBody == p, i + 1);
       rowY += rowH;
     }
+
+    stroke(100, 100, 120, 100);
+    strokeWeight(1);
+    line(panelX + panelMargin, rowY, panelX + panelW - panelMargin, rowY);
+    noStroke();
+    rowY += rowH;
+
+    drawSpacecraftRow(rowY, ships, cam.focusShip != null);
+    rowY += rowH;
 
     float footerY = rowY + 8 * scale;
     float btnX = panelX + panelW - 70 * scale;
@@ -201,12 +219,75 @@ class NavigationFocusPanel {
     }
   }
 
-  boolean handleClick(float mx, float my, CameraController cam,
-                     CelestialBody sun, List<CelestialBody> planets) {
+  void drawSpacecraftRow(float y, List<Spacecraft> ships, boolean isFocused) {
+    float scale = uiScale;
+    boolean isHoveredLine = (hoveredIndex == 9);
+
+    if (isFocused) {
+      fill(255, 220, 100, 40);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (selectedShip) {
+      fill(255, 255, 255, 25);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (isHoveredLine) {
+      fill(255, 255, 255, 12);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    }
+
+    if (ships.size() > 0) {
+      fill(ships.get(0).col);
+    } else {
+      fill(100, 255, 150);
+    }
+    float cx = panelX + 16 * scale;
+    float cy = y + rowH / 2;
+    float s = 4 * scale;
+    noStroke();
+    triangle(cx - s, cy - s, cx - s, cy + s, cx + s, cy);
+
+    if (isFocused) {
+      fill(255, 220, 100);
+    } else if (selectedShip) {
+      fill(240);
+    } else {
+      fill(200);
+    }
+    textSize(15 * scale);
+    textAlign(LEFT, CENTER);
+    text("Spacecraft", panelX + 32 * scale, y + rowH / 2);
+
+    if (selectedShip && !isFocused && ships.size() > 0) {
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = y + rowH / 2;
+      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
+                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
+      fill(btnHover ? color(80, 160, 220) : color(50, 120, 180));
+      noStroke();
+      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
+      fill(255);
+      textSize(12 * scale);
+      textAlign(CENTER, CENTER);
+      text("Focus", btnX + btnW / 2, btnCY);
+    } else if (isFocused) {
+      fill(255, 220, 100, 150);
+      noStroke();
+      float indicCx = panelX + panelW - 18 * scale;
+      float indicCy = y + rowH / 2;
+      ellipse(indicCx, indicCy, 9 * scale, 9 * scale);
+    }
+  }
+
+  boolean handleClick(float mx, float my, CameraController cam, CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
     if (cam.getMode() != ViewMode.MAP_VIEW) return false;
 
     if (mx < panelX || mx > panelX + panelW || my < panelY || my > panelY + panelH) {
       selectedBody = null;
+      selectedShip = false;
       return false;
     }
 
@@ -233,8 +314,25 @@ class NavigationFocusPanel {
             my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
           cam.focusOn(selectedBody);
           selectedBody = null;
+          selectedShip = false;
           return true;
         }
+      }
+    }
+
+    if (selectedShip && ships.size() > 0) {
+      float scale = uiScale;
+      float btnRowY = panelY + headerH + (9 + 1) * rowH;
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = btnRowY + rowH / 2;
+      if (mx >= btnX && mx <= btnX + btnW &&
+          my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
+        cam.focusOn(ships.get(0));
+        selectedShip = false;
+        selectedBody = null;
+        return true;
       }
     }
 
@@ -251,6 +349,26 @@ class NavigationFocusPanel {
       }
       rowY += rowH;
     }
+    rowY += rowH;
+
+    if (my >= rowY && my < rowY + rowH && ships.size() > 0) {
+      long now = millis();
+      if (lastClickedShip && selectedShip &&
+          now - lastClickTime < PANEL_DOUBLE_CLICK_MS) {
+        cam.focusOn(ships.get(0));
+        selectedShip = false;
+        selectedBody = null;
+        lastClickTime = 0;
+        lastClickedShip = false;
+      } else {
+        selectedShip = true;
+        selectedBody = null;
+        lastClickTime = now;
+        lastClickBody = null;
+        lastClickedShip = true;
+      }
+      return true;
+    }
 
     float scale = uiScale;
     float footerY = rowY + 8 * scale;
@@ -260,27 +378,33 @@ class NavigationFocusPanel {
     float btnH = 22 * scale;
     if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
       selectedBody = null;
+      selectedShip = false;
       cam.snapFocus();
       return true;
     }
 
     selectedBody = null;
+    selectedShip = false;
     return false;
   }
 
   boolean handleBodyClicked(float mx, float my, CelestialBody body, CameraController cam) {
     long now = millis();
-    if (body == lastClickBody &&
+    if (body == lastClickBody && !lastClickedShip &&
         now - lastClickTime < PANEL_DOUBLE_CLICK_MS) {
       selectedBody = null;
+      selectedShip = false;
       lastClickTime = 0;
       lastClickBody = null;
+      lastClickedShip = false;
       cam.focusOn(body);
       return true;
     } else {
       selectedBody = body;
+      selectedShip = false;
       lastClickTime = now;
       lastClickBody = body;
+      lastClickedShip = false;
       return true;
     }
   }
@@ -291,6 +415,8 @@ class NavigationFocusPanel {
         return "Focus on the Sun (double-click)";
       } else if (hoveredIndex <= 8) {
         return "Focus on planet (double-click)";
+      } else if (hoveredIndex == 9) {
+        return "Focus on Spacecraft (double-click)";
       }
     }
     if (snapButtonHoverFrames >= Button.TOOLTIP_DELAY) {
@@ -300,9 +426,8 @@ class NavigationFocusPanel {
   }
 
   String getFocusName(CameraController cam) {
-    if (cam.focusBody != null) {
-      return cam.focusBody.name;
-    }
+    if (cam.focusShip != null) return "Spacecraft";
+    if (cam.focusBody != null) return cam.focusBody.name;
     return null;
   }
 }
