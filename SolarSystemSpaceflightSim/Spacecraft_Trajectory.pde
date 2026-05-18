@@ -1,20 +1,5 @@
 // ========== TRAJECTORY PREDICTION ==========
 
-// 轨迹点（用于需要离散采样的情况，比如可视化精度要求）
-class TrajectoryPoint {
-  double time;
-  Vector2 position;
-  Vector2 velocity;
-  PhysicsMode sourceMode;
-
-  TrajectoryPoint(double t, Vector2 pos, Vector2 vel, PhysicsMode mode) {
-    this.time = t;
-    this.position = pos.clone();
-    this.velocity = vel.clone();
-    this.sourceMode = mode;
-  }
-}
-
 // 轨迹事件（AP/PE/SOI改变等）
 class TrajectoryEvent {
   double time;
@@ -56,58 +41,26 @@ class Trajectory {
   double endTime;
   CelestialBody primaryBody; // 主要参考天体
 
-  // 采样点缓存（用于绘制，按需计算）
-  private List<TrajectoryPoint> cachedPoints;
-  private double cachedPointStep;
-
   Trajectory() {
     this.segments = new ArrayList<OrbitSegment>();
     this.events = new ArrayList<TrajectoryEvent>();
     this.startTime = 0;
     this.endTime = 0;
     this.primaryBody = null;
-    this.cachedPoints = null;
-    this.cachedPointStep = 0;
-  }
-
-  // 获取采样点（用于绘制）
-  List<TrajectoryPoint> getSampledPoints(double step) {
-    if (cachedPoints != null && Math.abs(step - cachedPointStep) < 0.1) {
-      return cachedPoints;
-    }
-
-    cachedPoints = new ArrayList<TrajectoryPoint>();
-    cachedPointStep = step;
-
-    for (OrbitSegment seg : segments) {
-      if (seg.mode == PhysicsMode.ON_RAILS && seg.orbit != null) {
-        // 对On-rails段，用椭圆采样
-        for (double t = seg.startTime; t <= seg.endTime; t += step) {
-          Vector2 pos = seg.orbit.getPositionAtTime(t);
-          Vector2 vel = seg.orbit.getVelocityAtTime(t);
-          cachedPoints.add(new TrajectoryPoint(t, pos, vel, PhysicsMode.ON_RAILS));
-        }
-      }
-    }
-
-    return cachedPoints;
-  }
-
-  // 标记缓存失效
-  void invalidateCache() {
-    cachedPoints = null;
   }
 }
 
 class TrajectoryPredictor {
   static final double DEFAULT_DURATION = 86400 * 3; // 默认预测3天
-  static final double DEFAULT_SAMPLE_STEP = 60; // 默认采样步长60秒（仅用于绘制）
 
   private Trajectory cachedTrajectory;
   private double lastPredictSimTime;
   private Orbit lastOrbitSnapshot;
   private PhysicsMode lastMode;
   private boolean isDirty;
+
+  // 记录上一次的油门状态，用于检测变化
+  private float lastThrottle = -1;
 
   TrajectoryPredictor() {
     this.cachedTrajectory = null;
@@ -136,18 +89,26 @@ class TrajectoryPredictor {
     trajectory.endTime = simTime + duration;
     trajectory.primaryBody = ship.referenceBody;
 
-    if (ship.physicsMode == PhysicsMode.ON_RAILS && ship.orbit != null) {
-      predictOnRails(ship, simTime, duration, trajectory);
-    } else {
-      predictOffRailsPlaceholder(ship, simTime, duration, trajectory);
+    // 无论什么模式，都用当前状态向量计算轨道，显示椭圆
+    if (ship.referenceBody != null) {
+      Orbit currentOrbit = Orbit_fromStateVector(
+        ship.stateVector.position,
+        ship.stateVector.velocity,
+        ship.referenceBody,
+        simTime
+      );
+      if (currentOrbit != null) {
+        predictOnRailsWithOrbit(currentOrbit, ship.referenceBody, simTime, duration, trajectory);
+      }
     }
 
     this.cachedTrajectory = trajectory;
     this.lastPredictSimTime = simTime;
     this.lastMode = ship.physicsMode;
+    this.lastThrottle = ship.autoControl.targetThrottle;
     if (ship.orbit != null) {
       this.lastOrbitSnapshot = new Orbit(ship.orbit.a, ship.orbit.e, ship.orbit.w,
-                                         ship.orbit.M0, ship.orbit.period, ship.orbit.referenceBody);
+                                         ship.orbit.M0, ship.orbit.epoch, ship.orbit.period, ship.orbit.referenceBody);
     }
     this.isDirty = false;
 
@@ -158,6 +119,11 @@ class TrajectoryPredictor {
     if (this.isDirty) return true;
     if (this.cachedTrajectory == null) return true;
     if (ship.physicsMode != this.lastMode) return true;
+
+    // 对于Off-Rails模式，每帧都刷新
+    if (ship.physicsMode == PhysicsMode.OFF_RAILS) {
+      return true;
+    }
 
     if (ship.orbit != null && this.lastOrbitSnapshot != null) {
       if (Math.abs(ship.orbit.a - this.lastOrbitSnapshot.a) > 0.1) return true;
@@ -171,8 +137,12 @@ class TrajectoryPredictor {
 
   // On-rails预测：直接用轨道椭圆
   private void predictOnRails(Spacecraft ship, double simTime, double duration, Trajectory trajectory) {
-    Orbit orbit = ship.orbit;
-    CelestialBody body = ship.referenceBody;
+    predictOnRailsWithOrbit(ship.orbit, ship.referenceBody, simTime, duration, trajectory);
+  }
+
+  // 使用指定轨道进行预测
+  private void predictOnRailsWithOrbit(Orbit orbit, CelestialBody body, double simTime, double duration, Trajectory trajectory) {
+    if (orbit == null || body == null) return;
 
     // 添加轨道段（当前轨道持续整段预测时间）
     OrbitSegment seg = new OrbitSegment(orbit, simTime, simTime + duration, body);
@@ -233,10 +203,5 @@ class TrajectoryPredictor {
     while (angle < 0) angle += TWO_PI;
     while (angle >= TWO_PI) angle -= TWO_PI;
     return angle;
-  }
-
-  // Off-rails占位（阶段4实现）
-  private void predictOffRailsPlaceholder(Spacecraft ship, double simTime, double duration, Trajectory trajectory) {
-    // 占位：阶段4实现数值积分
   }
 }

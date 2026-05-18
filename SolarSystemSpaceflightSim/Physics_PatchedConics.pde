@@ -122,7 +122,7 @@ class PatchedConicsSystem {
 
     // 从状态向量计算轨道根数
     if (ship.orbit == null) {
-      ship.orbit = new Orbit(0, 0, 0, 0, 0, null);
+      ship.orbit = new Orbit(0, 0, 0, 0, 0.0, 0, null);
     }
     Orbit newOrbit = Orbit_fromStateVector(ship.stateVector.position, ship.stateVector.velocity, body, simTime);
     if (newOrbit != null) {

@@ -5,21 +5,29 @@ class Orbit {
   double e;
   double w;
   double M0;
+  double epoch; // 轨道的历元时刻（t=0 对应这个时刻）
   double period;
   CelestialBody referenceBody;
 
   Orbit(double a, double e, double w, double M0, double period, CelestialBody referenceBody) {
+    this(a, e, w, M0, 0, period, referenceBody);
+  }
+
+  Orbit(double a, double e, double w, double M0, double epoch, double period, CelestialBody referenceBody) {
     this.a = a;
     this.e = e;
     this.w = w;
     this.M0 = M0;
+    this.epoch = epoch;
     this.period = period;
     this.referenceBody = referenceBody;
   }
 
   Vector2 getPositionAtTime(double t) {
+    double dt = t - epoch;
     double n = 2.0 * PI / period;
-    double M = (M0 + n * t) % (2.0 * PI);
+    double M = (M0 + n * dt) % (2.0 * PI);
+    if (M < 0) M += 2.0 * PI;
     double E = solveKepler(M, e);
     double nu = trueAnomaly(E, e);
     double[] pos = orbitalToCartesian2D(a, e, w, nu);
@@ -27,8 +35,10 @@ class Orbit {
   }
 
   Vector2 getVelocityAtTime(double t) {
+    double dt = t - epoch;
     double n = 2.0 * PI / period;
-    double M = (M0 + n * t) % (2.0 * PI);
+    double M = (M0 + n * dt) % (2.0 * PI);
+    if (M < 0) M += 2.0 * PI;
     double E = solveKepler(M, e);
     double nu = trueAnomaly(E, e);
     double GM = (referenceBody != null && referenceBody.GM > 0) ? referenceBody.GM : GM_SUN;
@@ -131,14 +141,16 @@ Orbit Orbit_fromStateVector(Vector2 pos, Vector2 vel, CelestialBody body, double
   // Eccentric anomaly
   double E = 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2));
 
-  // Mean anomaly at t=0
+  // Mean anomaly at current time t (this will be M0 at epoch = t)
   double M0 = E - e * Math.sin(E);
+  while (M0 < 0) M0 += 2 * PI;
+  while (M0 >= 2 * PI) M0 -= 2 * PI;
 
   // Period
   double period = 2 * PI * Math.sqrt(a * a * a / GM);
 
-  // Create orbit
-  Orbit orbit = new Orbit(a, e, w, M0, period, body);
+  // Create orbit with epoch at current time t (so M0 corresponds to t)
+  Orbit orbit = new Orbit(a, e, w, M0, t, period, body);
   return orbit;
 }
 

@@ -54,7 +54,7 @@ class CelestialBody {
     this.w = w;
     this.M0 = Math.toRadians(M0);
     this.period = T_days * DAY_S;
-    this.orbit = new Orbit(this.a, this.e, this.w, this.M0, this.period, null);
+    this.orbit = new Orbit(this.a, this.e, this.w, this.M0, 0.0, this.period, null);
     this.radius = R_km;
     this.col = col;
     this.type = type;

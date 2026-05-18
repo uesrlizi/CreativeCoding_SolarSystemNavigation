@@ -277,6 +277,7 @@ class TaskMenu {
         preset.initialOrbit.e,
         preset.initialOrbit.w,
         preset.initialOrbit.M0,
+        timeManager.simTime, // epoch = now
         preset.initialOrbit.period,
         body
       );

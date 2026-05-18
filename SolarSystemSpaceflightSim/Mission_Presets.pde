@@ -32,7 +32,7 @@ void initMissionPresets(CelestialSystem system) {
     double w = 0.0;
     double M0 = 0.0;
     double period = 2 * PI * Math.sqrt(a * a * a / GM_EARTH);
-    leo.initialOrbit = new Orbit(a, e, w, M0, period, earth);
+    leo.initialOrbit = new Orbit(a, e, w, M0, 0.0, period, earth);
     leo.goal.type = MissionGoalType.REACH_ORBIT;
     leo.goal.targetBody = earth;
     missionPresets.add(leo);
@@ -47,7 +47,7 @@ void initMissionPresets(CelestialSystem system) {
     geo.initialBody = earth;
     double aGeo = EARTH_RADIUS_KM + 35786;
     double periodGeo = 2 * PI * Math.sqrt(aGeo * aGeo * aGeo / GM_EARTH);
-    geo.initialOrbit = new Orbit(aGeo, 0.001, 0.0, 0.0, periodGeo, earth);
+    geo.initialOrbit = new Orbit(aGeo, 0.001, 0.0, 0.0, 0.0, periodGeo, earth);
     geo.goal.type = MissionGoalType.REACH_ORBIT;
     geo.goal.targetBody = earth;
     missionPresets.add(geo);
@@ -63,7 +63,7 @@ void initMissionPresets(CelestialSystem system) {
       lunar.initialBody = earth;
       double aLunar = EARTH_RADIUS_KM + 400;
       double periodLunar = 2 * PI * Math.sqrt(aLunar * aLunar * aLunar / GM_EARTH);
-      lunar.initialOrbit = new Orbit(aLunar, 0.001, 0.0, 0.0, periodLunar, earth);
+      lunar.initialOrbit = new Orbit(aLunar, 0.001, 0.0, 0.0, 0.0, periodLunar, earth);
       lunar.goal.type = MissionGoalType.TRANSFER_TO_BODY;
       lunar.goal.targetBody = moon;
       missionPresets.add(lunar);

@@ -107,7 +107,7 @@ void createInitialSpacecraft() {
 }
 
 void draw() {
-  background(5, 5, 35);
+  background(5, 5, 15);
 
   // Calculate delta time
   int now = millis();

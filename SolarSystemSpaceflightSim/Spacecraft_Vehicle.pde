@@ -81,7 +81,7 @@ class Spacecraft {
     double M0 = 0.0;
     double period = 2 * PI * Math.sqrt(a * a * a / GM_EARTH);
 
-    this.orbit = new Orbit(a, e, w, M0, period, earth);
+    this.orbit = new Orbit(a, e, w, M0, 0.0, period, earth);
 
     // 初始化stateVector
     updateOnRails(0);
@@ -176,5 +176,13 @@ class Spacecraft {
 
   void setEngineThrottle(float throttle) {
     this.autoControl.targetThrottle = throttle;
+    // 如果开启推力且没有目标方向，自动指向速度方向
+    if (throttle > 0.01f && !this.autoControl.hasTargetDirection) {
+      Vector2 prograde = getPrograde();
+      if (prograde.magnitude() > 0.001) {
+        this.autoControl.targetDirection = prograde.clone();
+        this.autoControl.hasTargetDirection = true;
+      }
+    }
   }
 }
