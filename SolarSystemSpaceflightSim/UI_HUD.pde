@@ -4,6 +4,9 @@ class HUD {
   TimeControlPanel timePanel;
   NavigationFocusPanel navPanel;
   TaskMenu taskMenu;
+  MissionStatus missionStatus;
+  HeadingIndicator headingIndicator;
+  OrbitDisplay orbitDisplay;
   Tooltip tooltip;
   String activeTooltipText;
   float tooltipSourceX, tooltipSourceY, tooltipSourceW, tooltipSourceH;
@@ -17,6 +20,9 @@ class HUD {
     timePanel = new TimeControlPanel();
     navPanel = new NavigationFocusPanel();
     taskMenu = new TaskMenu();
+    missionStatus = new MissionStatus();
+    headingIndicator = new HeadingIndicator();
+    orbitDisplay = new OrbitDisplay();
     tooltip = new Tooltip();
     activeTooltipText = null;
 
@@ -49,6 +55,9 @@ class HUD {
     timePanel.update();
     navPanel.update();
     taskMenu.update();
+    missionStatus.update();
+    headingIndicator.update();
+    orbitDisplay.update();
 
     if (taskButton != null) {
       taskButton.update(mouseX, mouseY, mousePressed);
@@ -112,6 +121,7 @@ class HUD {
     timePanel.draw(timeManager);
     navPanel.draw(cam, sun, planets, ships);
     taskMenu.draw();
+    missionStatus.draw();
 
     if (cam.getMode() == ViewMode.MAP_VIEW) {
       taskButton.draw();
@@ -131,69 +141,14 @@ class HUD {
 
     // 显示聚焦的航天器信息
     if (cam.focusShip != null) {
-      drawSpacecraftInfo(cam.focusShip);
+      orbitDisplay.draw(cam.focusShip, simTime);
+      headingIndicator.draw(cam.focusShip);
     } else if (cam.mode == ViewMode.SHIP_VIEW && cam.followTarget != null) {
-      drawSpacecraftInfo(cam.followTarget);
+      orbitDisplay.draw(cam.followTarget, simTime);
+      headingIndicator.draw(cam.followTarget);
     }
 
     tooltip.draw();
-  }
-
-  void drawSpacecraftInfo(Spacecraft craft) {
-    float panelX = width - 600 * uiScale; // 往左挪，给任务菜单留空间
-    float panelY = 120 * uiScale;
-    float panelW = 280 * uiScale;
-    float panelH = 180 * uiScale;
-
-    // Panel background
-    noStroke();
-    fill(10, 15, 30, 200);
-    rect(panelX, panelY, panelW, panelH, 8 * uiScale);
-
-    // Title
-    fill(255, 200, 100);
-    textSize(18 * uiScale);
-    textAlign(LEFT, TOP);
-    text(craft.name, panelX + 15 * uiScale, panelY + 12 * uiScale);
-
-    // Divider
-    stroke(100, 120, 180, 100);
-    strokeWeight(1 * uiScale);
-    line(panelX + 15 * uiScale, panelY + 42 * uiScale, panelX + panelW - 15 * uiScale, panelY + 42 * uiScale);
-    noStroke();
-
-    // Info
-    fill(220, 230, 240);
-    textSize(13 * uiScale);
-    float lineY = panelY + 55 * uiScale;
-    float lineSpacing = 20 * uiScale;
-
-    if (craft.referenceBody != null) {
-      text("Orbiting: " + craft.referenceBody.name, panelX + 15 * uiScale, lineY);
-      lineY += lineSpacing;
-    }
-
-    if (craft.orbit != null) {
-      // Apoapsis and Periapsis
-      double apoapsis = craft.orbit.getApoapsisAltitude();
-      double periapsis = craft.orbit.getPeriapsisAltitude();
-      text(String.format("Apoapsis: %,d km", (int)apoapsis), panelX + 15 * uiScale, lineY);
-      lineY += lineSpacing;
-      text(String.format("Periapsis: %,d km", (int)periapsis), panelX + 15 * uiScale, lineY);
-      lineY += lineSpacing;
-      // Period
-      double periodHours = craft.orbit.period / 3600.0;
-      text(String.format("Orbit Period: %.1f h", periodHours), panelX + 15 * uiScale, lineY);
-      lineY += lineSpacing;
-    }
-
-    // Velocity
-    double velMag = craft.stateVector.velocity.magnitude();
-    text(String.format("Speed: %.1f km/s", velMag), panelX + 15 * uiScale, lineY);
-    lineY += lineSpacing;
-
-    // Physics mode
-    text("Mode: " + craft.physicsMode, panelX + 15 * uiScale, lineY);
   }
 
   boolean handleMousePressed(float mx, float my, CameraController cam,

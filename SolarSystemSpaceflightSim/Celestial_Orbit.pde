@@ -97,6 +97,27 @@ class Orbit {
     double GM = (referenceBody != null && referenceBody.GM > 0) ? referenceBody.GM : GM_SUN;
     return -GM / (2 * a);
   }
+
+  // 计算到下一个Periapsis的时间（秒）
+  double getTimeToPeriapsis(double t) {
+    double M = getMeanAnomalyAtTime(t);
+    // 到Periapsis的平近点角差：需要转到0°（或360°）
+    double dM = (2 * PI - M) % (2 * PI);
+    if (dM < 0) dM += 2 * PI;
+    double n = 2 * PI / period; // 平均角速度
+    return dM / n;
+  }
+
+  // 计算到下一个Apoapsis的时间（秒）
+  double getTimeToApoapsis(double t) {
+    double M = getMeanAnomalyAtTime(t);
+    // 到Apoapsis的平近点角差：需要转到180°
+    double targetM = PI;
+    double dM = (targetM - M + 2 * PI) % (2 * PI);
+    if (dM < 0) dM += 2 * PI;
+    double n = 2 * PI / period; // 平均角速度
+    return dM / n;
+  }
 }
 
 // ========== Orbit Factory from State Vector ==========
