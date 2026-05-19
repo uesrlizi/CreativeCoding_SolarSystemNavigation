@@ -24,7 +24,6 @@ CelestialSystem solarSystem;  // 原来的SolarSystem改名为CelestialSystem
 CameraController camera;
 TimeManager timeManager;
 HUD hud;
-SOISystem soiSystem;
 ViewToggleButton viewToggleButton;
 PhysicsSystem physicsSystem;  // 新增：物理系统
 DebugPanel debugPanel;         // 新增：调试面板
@@ -67,20 +66,20 @@ void setup() {
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
 
   solarSystem = new CelestialSystem();  // 使用新的类名
-  soiSystem = new SOISystem(solarSystem);
   solarSystem.initialize();
 
   // Initialize physics system
   physicsSystem = new PhysicsSystem(solarSystem);
 
+  // Initialize spacecraft renderer and trajectory predictor
+  spacecraftRenderer = new SpacecraftRenderer();
+  trajectoryPredictor = new TrajectoryPredictor();
+  trajectoryPredictor.setPatchedConics(physicsSystem.patchedConics);
+
   // Initialize mission systems (Stage 5)
   missionPlanner = new MissionPlanner();
   missionValidator = new MissionValidator();
   missionExecutor = new MissionExecutor();
-
-  // Initialize spacecraft renderer and trajectory predictor
-  spacecraftRenderer = new SpacecraftRenderer();
-  trajectoryPredictor = new TrajectoryPredictor();
 
   // Initialize debug panel
   debugPanel = new DebugPanel();
@@ -443,11 +442,11 @@ void drawSOIBoundaries() {
 }
 
 void drawSingleSOI(CelestialBody body) {
-  double soiRadius = soiSystem.calculateSOIRadius(body);
+  double soiRadius = solarSystem.renderer.calculateSOIRadius(body);
   double screenRadius = soiRadius * camera.scale;
   if (screenRadius < 2) return;
 
-  int soiColor = soiSystem.getSOIColor(body);
+  int soiColor = solarSystem.renderer.getSOIColor(body);
 
   noFill();
   stroke(soiColor);

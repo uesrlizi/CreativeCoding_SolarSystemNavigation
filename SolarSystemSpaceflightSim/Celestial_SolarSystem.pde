@@ -11,7 +11,7 @@ class CelestialSystem {
     planets = new ArrayList<CelestialBody>();
     moons = new ArrayList<CelestialBody>();
     ships = new ArrayList<Spacecraft>();
-    renderer = new CelestialBodyRenderer();
+    renderer = new CelestialBodyRenderer(this);
   }
 
   void initialize() {

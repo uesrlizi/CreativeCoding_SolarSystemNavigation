@@ -3,6 +3,24 @@
 //  处理SOI检测、参考系切换、轨道根数与状态向量转换
 // ============================================================
 
+class SOITraversal {
+  boolean willTraverse;
+  double timeToTraversal;
+  double traversalTime;
+  CelestialBody exitBody;
+  CelestialBody enterBody;
+  Vector2 traversalPosition;
+
+  SOITraversal() {
+    this.willTraverse = false;
+    this.timeToTraversal = Double.MAX_VALUE;
+    this.traversalTime = Double.MAX_VALUE;
+    this.exitBody = null;
+    this.enterBody = null;
+    this.traversalPosition = null;
+  }
+}
+
 class PatchedConicsSystem {
   CelestialSystem solarSystem;
 
@@ -248,5 +266,142 @@ class PatchedConicsSystem {
     double v_t = h / r;
     velOut.x = v_r * Math.cos(theta) - v_t * Math.sin(theta);
     velOut.y = v_r * Math.sin(theta) + v_t * Math.cos(theta);
+  }
+
+  // ============================================================
+  //  SOI穿越预测
+  // ============================================================
+
+  SOITraversal predictSOITraversal(Spacecraft ship, double dtMax, double simTime) {
+    SOITraversal result = new SOITraversal();
+
+    CelestialBody currentBody = ship.referenceBody;
+    double earliestTime = Double.MAX_VALUE;
+    CelestialBody earliestEnterBody = null;
+
+    // 收集候选天体
+    List<CelestialBody> candidates = new ArrayList<CelestialBody>();
+
+    if (currentBody == null) {
+      // 当前在日心，检查所有行星和卫星
+      for (CelestialBody planet : solarSystem.planets) {
+        candidates.add(planet);
+      }
+      for (CelestialBody moon : solarSystem.moons) {
+        candidates.add(moon);
+      }
+    } else {
+      // 当前在天体SOI内，检查：
+      // 1. 该天体的卫星（如果有的话）
+      for (CelestialBody moon : solarSystem.moons) {
+        if (moon.parentBody == currentBody) {
+          candidates.add(moon);
+        }
+      }
+      // 2. 检查是否会离开到日心（用null表示太阳）
+      candidates.add(null);
+    }
+
+    // 对每个候选计算穿越时间
+    for (CelestialBody candidate : candidates) {
+      double time = calculateTimeToSOIBoundary(ship, currentBody, candidate, dtMax, simTime);
+      if (time > 0 && time < earliestTime && time <= dtMax) {
+        earliestTime = time;
+        earliestEnterBody = candidate;
+      }
+    }
+
+    if (earliestTime < Double.MAX_VALUE) {
+      result.willTraverse = true;
+      result.timeToTraversal = earliestTime;
+      result.traversalTime = simTime + earliestTime;
+      result.exitBody = currentBody;
+      result.enterBody = earliestEnterBody;
+
+      // 计算穿越位置
+      result.traversalPosition = calculatePositionAtTime(ship, earliestTime, simTime);
+    }
+
+    return result;
+  }
+
+  private double calculateTimeToSOIBoundary(Spacecraft ship, CelestialBody currentBody,
+                                             CelestialBody targetBody, double dtMax, double simTime) {
+    // 先检查端点是否有穿越
+    boolean startInside = isInsideSOIAtTime(ship, currentBody, targetBody, 0, simTime);
+    boolean endInside = isInsideSOIAtTime(ship, currentBody, targetBody, dtMax, simTime);
+
+    if (startInside == endInside) {
+      return Double.MAX_VALUE; // 没有穿越
+    }
+
+    // 使用二分法精确求解
+    double low = 0;
+    double high = dtMax;
+    double tolerance = 1.0; // 1秒容差
+
+    for (int i = 0; i < 50; i++) {
+      double mid = (low + high) / 2;
+      boolean midInside = isInsideSOIAtTime(ship, currentBody, targetBody, mid, simTime);
+
+      if (midInside != startInside) {
+        high = mid;
+      } else {
+        low = mid;
+      }
+
+      if (high - low < tolerance) {
+        break;
+      }
+    }
+
+    return (low + high) / 2;
+  }
+
+  private boolean isInsideSOIAtTime(Spacecraft ship, CelestialBody currentBody,
+                                     CelestialBody targetBody, double dt, double simTime) {
+    Vector2 shipPos = calculatePositionAtTime(ship, dt, simTime);
+
+    if (targetBody == null) {
+      // 检查是否离开到日心
+      if (currentBody == null) return true; // 已经在日心
+      double soi = calculateSOIRadius(currentBody);
+      Vector2 bodyPos = getBodyPositionAtTime(currentBody, simTime + dt);
+      double dist = shipPos.distance(bodyPos);
+      return dist > soi; // 离开SOI = "在太阳引力主导区域内"
+    } else {
+      // 检查是否进入目标天体SOI
+      double soi = calculateSOIRadius(targetBody);
+      Vector2 bodyPos = getBodyPositionAtTime(targetBody, simTime + dt);
+      double dist = shipPos.distance(bodyPos);
+      return dist <= soi;
+    }
+  }
+
+  private Vector2 calculatePositionAtTime(Spacecraft ship, double dt, double simTime) {
+    if (ship.orbit != null && ship.referenceBody != null) {
+      // 使用轨道预测
+      return ship.orbit.getPositionAtTime(simTime + dt);
+    } else {
+      // 简单线性外推（仅用于Off-rails模式的粗略预测）
+      return new Vector2(
+        ship.worldX + ship.worldVelX * dt,
+        ship.worldY + ship.worldVelY * dt
+      );
+    }
+  }
+
+  private Vector2 getBodyPositionAtTime(CelestialBody body, double simTime) {
+    // 获取天体在指定时间的位置
+    if (body.orbit != null && body.parentBody != null) {
+      Vector2 pos = body.orbit.getPositionAtTime(simTime);
+      return new Vector2(
+        body.parentBody.px + pos.x,
+        body.parentBody.py + pos.y
+      );
+    } else {
+      // 使用当前位置作为近似（对于太阳或无轨道的天体）
+      return new Vector2(body.px, body.py);
+    }
   }
 }

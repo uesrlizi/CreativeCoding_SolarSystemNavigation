@@ -63,6 +63,40 @@ class PhysicsSystem {
   // ============================================================
 
   void updateShipInTick(Spacecraft ship, double simDt, double simTime) {
+    double remainingDt = simDt;
+    double currentSimTime = simTime;
+
+    while (remainingDt > 0) {
+      // 先预测SOI穿越
+      SOITraversal traversal = patchedConics.predictSOITraversal(ship, remainingDt, currentSimTime);
+
+      double stepDt = remainingDt;
+      boolean hasTraversal = false;
+
+      if (traversal.willTraverse && traversal.timeToTraversal <= remainingDt) {
+        // 会在本步内发生SOI穿越，先推进到穿越前一点点
+        stepDt = Math.max(traversal.timeToTraversal - 0.1, 0.001);
+        hasTraversal = true;
+      }
+
+      // 执行一步更新
+      updateShipSingleStep(ship, stepDt, currentSimTime);
+
+      if (hasTraversal) {
+        // 处理SOI穿越
+        double timeToTraversalActual = traversal.timeToTraversal - stepDt;
+        if (timeToTraversalActual <= 0) {
+          // 已经到了穿越时间
+          patchedConics.checkAndProcessSOICrossing(ship, currentSimTime + stepDt);
+        }
+      }
+
+      remainingDt -= stepDt;
+      currentSimTime += stepDt;
+    }
+  }
+
+  void updateShipSingleStep(Spacecraft ship, double simDt, double simTime) {
     PhysicsMode currentMode = determineMode(ship);
 
     // 处理模式切换

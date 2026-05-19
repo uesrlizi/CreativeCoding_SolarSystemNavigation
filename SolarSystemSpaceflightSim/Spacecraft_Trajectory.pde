@@ -59,6 +59,9 @@ class TrajectoryPredictor {
   private PhysicsMode lastMode;
   private boolean isDirty;
 
+  // 引用补丁圆锥系统，用于SOI预测
+  private PatchedConicsSystem patchedConics;
+
   // 记录上一次的油门状态，用于检测变化
   private float lastThrottle = -1;
 
@@ -68,6 +71,11 @@ class TrajectoryPredictor {
     this.lastOrbitSnapshot = null;
     this.lastMode = null;
     this.isDirty = true;
+    this.patchedConics = null;
+  }
+
+  void setPatchedConics(PatchedConicsSystem pc) {
+    this.patchedConics = pc;
   }
 
   void markDirty() {
@@ -89,8 +97,11 @@ class TrajectoryPredictor {
     trajectory.endTime = simTime + duration;
     trajectory.primaryBody = ship.referenceBody;
 
-    // 无论什么模式，都用当前状态向量计算轨道，显示椭圆
-    if (ship.referenceBody != null) {
+    if (patchedConics != null && ship.referenceBody != null) {
+      // 支持SOI预测的多段轨迹
+      predictWithSOICheck(ship, simTime, duration, trajectory);
+    } else if (ship.referenceBody != null) {
+      // 无SOI预测，简单单段轨迹
       Orbit currentOrbit = Orbit_fromStateVector(
         ship.stateVector.position,
         ship.stateVector.velocity,
@@ -113,6 +124,102 @@ class TrajectoryPredictor {
     this.isDirty = false;
 
     return trajectory;
+  }
+
+  // 带SOI检测的预测
+  private void predictWithSOICheck(Spacecraft ship, double simTime, double duration, Trajectory trajectory) {
+    double remainingDuration = duration;
+    double currentTime = simTime;
+
+    // 创建临时状态副本，用于预测
+    Spacecraft tempShip = createTempShip(ship);
+
+    while (remainingDuration > 0) {
+      // 预测当前段的SOI穿越
+      SOITraversal traversal = patchedConics.predictSOITraversal(tempShip, remainingDuration, currentTime);
+
+      double segmentDuration = remainingDuration;
+      if (traversal.willTraverse && traversal.timeToTraversal <= remainingDuration) {
+        segmentDuration = traversal.timeToTraversal;
+      }
+
+      // 预测当前轨道段
+      if (tempShip.referenceBody != null) {
+        Orbit segmentOrbit = Orbit_fromStateVector(
+          tempShip.stateVector.position,
+          tempShip.stateVector.velocity,
+          tempShip.referenceBody,
+          currentTime
+        );
+        if (segmentOrbit != null) {
+          predictOnRailsWithOrbit(segmentOrbit, tempShip.referenceBody, currentTime, segmentDuration, trajectory);
+        }
+      }
+
+      if (traversal.willTraverse && traversal.timeToTraversal <= remainingDuration) {
+        // 添加SOI事件
+        String eventType = (traversal.enterBody != null) ? "soi_enter" : "soi_exit";
+        TrajectoryEvent event = new TrajectoryEvent(traversal.traversalTime, traversal.traversalPosition, eventType);
+        event.relatedBody = (traversal.enterBody != null) ? traversal.enterBody : traversal.exitBody;
+        trajectory.events.add(event);
+
+        // 切换参考系（模拟SOI穿越后的状态）
+        simulateSOITransition(tempShip, traversal, currentTime + segmentDuration);
+      }
+
+      currentTime += segmentDuration;
+      remainingDuration -= segmentDuration;
+    }
+  }
+
+  // 创建临时航天器副本（仅包含状态，用于预测）
+  private Spacecraft createTempShip(Spacecraft ship) {
+    Spacecraft temp = new Spacecraft(ship.name, ship.col);
+    temp.referenceBody = ship.referenceBody;
+    temp.stateVector.position = new Vector2(ship.stateVector.position.x, ship.stateVector.position.y);
+    temp.stateVector.velocity = new Vector2(ship.stateVector.velocity.x, ship.stateVector.velocity.y);
+    temp.worldX = ship.worldX;
+    temp.worldY = ship.worldY;
+    temp.worldVelX = ship.worldVelX;
+    temp.worldVelY = ship.worldVelY;
+    return temp;
+  }
+
+  // 模拟SOI穿越，更新临时航天器状态
+  private void simulateSOITransition(Spacecraft tempShip, SOITraversal traversal, double simTime) {
+    // 简单模拟：更新参考系，位置/速度使用穿越点的值
+    if (traversal.exitBody != null && traversal.enterBody == null) {
+      // 离开天体到日心
+      Vector2 bodyVel = patchedConics.getBodyVelocity(traversal.exitBody, simTime);
+      tempShip.worldX = traversal.exitBody.px + tempShip.stateVector.position.x;
+      tempShip.worldY = traversal.exitBody.py + tempShip.stateVector.position.y;
+      tempShip.worldVelX = tempShip.stateVector.velocity.x + bodyVel.x;
+      tempShip.worldVelY = tempShip.stateVector.velocity.y + bodyVel.y;
+      tempShip.referenceBody = null;
+    } else if (traversal.enterBody != null) {
+      // 进入天体SOI
+      Vector2 bodyPos = new Vector2(traversal.enterBody.px, traversal.enterBody.py);
+      Vector2 bodyVel = patchedConics.getBodyVelocity(traversal.enterBody, simTime);
+
+      if (traversal.exitBody == null) {
+        // 从日心进入
+        tempShip.stateVector.position = new Vector2(
+          tempShip.worldX - bodyPos.x,
+          tempShip.worldY - bodyPos.y
+        );
+        tempShip.stateVector.velocity = new Vector2(
+          tempShip.worldVelX - bodyVel.x,
+          tempShip.worldVelY - bodyVel.y
+        );
+      } else {
+        // 从一个天体直接切换到另一个（罕见）
+        tempShip.stateVector.position = new Vector2(
+          traversal.traversalPosition.x,
+          traversal.traversalPosition.y
+        );
+      }
+      tempShip.referenceBody = traversal.enterBody;
+    }
   }
 
   private boolean needsRefresh(Spacecraft ship, double simTime) {

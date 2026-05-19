@@ -2,9 +2,45 @@
 
 class CelestialBodyRenderer {
   float time;
+  CelestialSystem solarSystem;
 
   CelestialBodyRenderer() {
     time = 0;
+  }
+
+  CelestialBodyRenderer(CelestialSystem ss) {
+    time = 0;
+    this.solarSystem = ss;
+  }
+
+  double calculateSOIRadius(CelestialBody body) {
+    if (solarSystem == null) return 500000.0;
+    if (body.name.equals("Sun")) return AU_KM * 100;
+
+    double GM_body = body.GM;
+    double GM_primary = GM_SUN;
+    double a = body.a;
+
+    if (body.parentBody != null && body.parentBody != solarSystem.sun) {
+      GM_primary = body.parentBody.GM;
+    }
+
+    if (GM_primary <= 0 || a <= 0) return 500000.0;
+
+    double massRatio = GM_body / GM_primary;
+    return a * Math.pow(massRatio, 2.0 / 5.0);
+  }
+
+  int getSOIColor(CelestialBody body) {
+    if (body.name.equals("Earth")) return color(75, 135, 235, 85);
+    if (body.name.equals("Moon")) return color(205, 205, 215, 85);
+    if (body.name.equals("Mars")) return color(215, 105, 60, 85);
+    if (body.name.equals("Venus")) return color(235, 205, 135, 85);
+    if (body.name.equals("Jupiter")) return color(215, 185, 145, 85);
+    if (body.name.equals("Saturn")) return color(225, 205, 155, 85);
+    if (body.name.equals("Uranus")) return color(175, 225, 235, 85);
+    if (body.name.equals("Neptune")) return color(65, 105, 235, 85);
+    return color(155, 155, 155, 85);
   }
 
   void update(float dt) {
