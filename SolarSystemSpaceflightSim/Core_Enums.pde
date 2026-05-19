@@ -54,6 +54,7 @@ enum LaunchState {
   COUNTDOWN,          // 倒计时
   IGNITION,           // 点火
   LAUNCHING,          // 上升中
+  COAST,              // 滑行到远地点
   CIRCULARIZING,      // 入轨圆化
   IN_ORBIT            // 在轨
 }

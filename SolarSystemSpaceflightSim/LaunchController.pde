@@ -15,6 +15,12 @@ class LaunchController {
   double pitchOverAltitude;   // 重力转向高度 (km)
   double targetOrbitAltitude; // 目标轨道高度 (km)
 
+  // 制导系统
+  FlightComputer flightComputer;
+  double circBurnStartTime;   // 圆化燃烧开始时间
+  double circBurnDuration;     // 圆化燃烧时长
+  boolean apoapsisReached;      // 是否到达远地点
+
   LaunchController() {
     this.ship = null;
     this.site = null;
@@ -23,6 +29,10 @@ class LaunchController {
     this.missionStartTime = 0;
     this.pitchOverAltitude = 10.0;  // 10km 开始重力转向
     this.targetOrbitAltitude = LEO_ALTITUDE_KM;
+    this.flightComputer = new FlightComputer();
+    this.circBurnStartTime = 0;
+    this.circBurnDuration = 0;
+    this.apoapsisReached = false;
   }
 
   // ========== 初始化 ==========
@@ -41,6 +51,9 @@ class LaunchController {
 
     this.isActive = true;
     this.missionStartTime = simTime;
+    this.apoapsisReached = false;
+    this.circBurnStartTime = 0;
+    this.circBurnDuration = 0;
 
     // 开始倒计时
     ship.launchState = LaunchState.COUNTDOWN;
@@ -72,6 +85,9 @@ class LaunchController {
       case LAUNCHING:
         updateLaunching(simTime, simDt);
         break;
+      case COAST:
+        updateCoast(simTime, simDt);
+        break;
       case CIRCULARIZING:
         updateCircularizing(simTime, simDt);
         break;
@@ -100,12 +116,14 @@ class LaunchController {
   void updateIgnition(double simTime, double simDt) {
     double elapsed = simTime - ship.ignitionStartTime;
 
-    // 点火期间启动引擎但保持固定
-    if (ship.mainEngine != null) {
-      ship.mainEngine.setThrottle(1.0f);
-    }
+    // 点火期间设置姿态为垂直向上，但不点火
+    Vector2 launchDir = site.getLaunchDirection();
     if (ship.autoControl != null) {
-      ship.autoControl.targetThrottle = 1.0f;
+      ship.autoControl.setTargetDirection(launchDir);
+      ship.autoControl.targetThrottle = 0.0f;
+    }
+    if (ship.mainEngine != null) {
+      ship.mainEngine.setThrottle(0.0f);
     }
 
     if (elapsed >= Spacecraft.IGNITION_DURATION) {
@@ -120,72 +138,133 @@ class LaunchController {
   void updateLaunching(double simTime, double simDt) {
     if (ship.referenceBody == null) return;
 
-    // 计算当前高度
-    double altitude = getCurrentAltitude();
+    double burnTime = simTime - ship.launchStartTime;
 
-    // 重力转向逻辑
-    if (altitude > pitchOverAltitude) {
-      // 开始重力转向 - 逐渐转向水平
-      performGravityTurn(altitude);
-    } else {
-      // 保持垂直向上
-      Vector2 launchDir = site.getLaunchDirection();
+    // 确保autoControl是激活的
+    if (ship.autoControl != null) {
+      ship.autoControl.isActive = true;
+    }
+
+    // 检查是否到达目标远地点
+    double currentApo = flightComputer.apoapsisAltitude(
+      ship.stateVector.position,
+      ship.stateVector.velocity,
+      EARTH_RADIUS_KM,
+      GM_EARTH
+    );
+
+    boolean shouldThrust = true;
+
+    if (currentApo >= targetOrbitAltitude) {
+      shouldThrust = false;
+      apoapsisReached = true;
+    }
+
+    // 计算推力方向
+    if (shouldThrust) {
+      Vector2 thrustDir = flightComputer.ascentThrustDirection(
+        ship.stateVector.position,
+        burnTime,
+        targetOrbitAltitude
+      );
       if (ship.autoControl != null) {
-        ship.autoControl.setTargetDirection(launchDir);
-      }
-    }
-
-    // 检查是否达到远地点（入轨点）
-    if (ship.orbit != null) {
-      double apoapsisAlt = ship.orbit.getApoapsisAltitude();
-      if (apoapsisAlt >= targetOrbitAltitude * 0.9) {
-        // 关闭引擎，准备圆化
-        if (ship.mainEngine != null) {
-          ship.mainEngine.setThrottle(0.0f);
-        }
-        if (ship.autoControl != null) {
-          ship.autoControl.targetThrottle = 0.0f;
-        }
-        ship.launchState = LaunchState.CIRCULARIZING;
-        println("Approaching orbit, preparing for circularization burn");
-      }
-    }
-  }
-
-  void updateCircularizing(double simTime, double simDt) {
-    if (ship.orbit == null) return;
-
-    double periapsisAlt = ship.orbit.getPeriapsisAltitude();
-    double apoapsisAlt = ship.orbit.getApoapsisAltitude();
-    double currentAlt = getCurrentAltitude();
-
-    // If orbit is already good enough, complete the mission
-    if (periapsisAlt >= targetOrbitAltitude * 0.8 && ship.orbit.e < 0.05) {
-      shutdownEngine();
-      ship.launchState = LaunchState.IN_ORBIT;
-      return;
-    }
-
-    // Burn prograde near apoapsis to raise periapsis (circularization burn)
-    boolean nearApoapsis = Math.abs(currentAlt - apoapsisAlt) < 15.0;
-    boolean periapsisTooLow = periapsisAlt < targetOrbitAltitude * 0.85;
-
-    if (nearApoapsis && periapsisTooLow) {
-      Vector2 prograde = ship.getPrograde();
-      if (ship.autoControl != null) {
-        ship.autoControl.setTargetDirection(prograde);
+        ship.autoControl.setTargetDirection(thrustDir);
         ship.autoControl.targetThrottle = 1.0f;
       }
       if (ship.mainEngine != null) {
         ship.mainEngine.setThrottle(1.0f);
       }
-    } else if (!periapsisTooLow) {
-      // Periapsis is high enough, complete
+    } else {
+      // 关闭引擎
+      if (ship.autoControl != null) {
+        ship.autoControl.targetThrottle = 0.0f;
+      }
+      if (ship.mainEngine != null) {
+        ship.mainEngine.setThrottle(0.0f);
+      }
+    }
+
+    // 检查是否进入滑行阶段
+    if (!shouldThrust && apoapsisReached) {
+      ship.launchState = LaunchState.COAST;
+      println("Coasting to apoapsis");
+    }
+  }
+
+  void updateCoast(double simTime, double simDt) {
+    if (ship.referenceBody == null) return;
+
+    // 关闭引擎
+    if (ship.autoControl != null) {
+      ship.autoControl.targetThrottle = 0.0f;
+    }
+    if (ship.mainEngine != null) {
+      ship.mainEngine.setThrottle(0.0f);
+    }
+
+    // 计算到达远地点的时间
+    double tta = flightComputer.timeToApoapsis(
+      ship.stateVector.position,
+      ship.stateVector.velocity,
+      GM_EARTH
+    );
+
+    // 到达远地点（tta == -1 表示已经过了远地点）
+    if (tta <= 0 || tta == -1) {
+      // 计算圆化燃烧参数
+      double[] circParams = flightComputer.computeCircularizationBurn(
+        ship.stateVector.position,
+        ship.stateVector.velocity,
+        targetOrbitAltitude,
+        EARTH_RADIUS_KM,
+        GM_EARTH
+      );
+      circBurnDuration = circParams[1];
+      circBurnStartTime = simTime;
+      ship.launchState = LaunchState.CIRCULARIZING;
+      println("Starting circularization burn, duration: " + circBurnDuration + " s");
+    }
+  }
+
+  void updateCircularizing(double simTime, double simDt) {
+    if (ship.referenceBody == null) return;
+
+    // 使用 PEG 制导计算推力方向
+    Vector2 thrustDir = flightComputer.pegGuidance(
+      ship.stateVector.position,
+      ship.stateVector.velocity,
+      LEO_RADIUS_KM,
+      GM_EARTH
+    );
+
+    // 计算近地点高度
+    double periAlt = flightComputer.perigeeAltitude(
+      ship.stateVector.position,
+      ship.stateVector.velocity,
+      EARTH_RADIUS_KM,
+      GM_EARTH
+    );
+
+    // 检查是否完成圆化
+    double elapsedBurnTime = simTime - circBurnStartTime;
+    boolean timeUp = elapsedBurnTime >= circBurnDuration * 1.5;
+    boolean orbitGood = periAlt >= targetOrbitAltitude * 0.95;
+
+    if (orbitGood || timeUp) {
+      // 完成圆化
       shutdownEngine();
       ship.launchState = LaunchState.IN_ORBIT;
-    } else {
-      // Coasting, waiting for apoapsis
-      shutdownEngine();
+      println("Orbit insertion complete, periapsis: " + periAlt + " km");
+      return;
+    }
+
+    // 使用 PEG 制导方向点火
+    if (ship.autoControl != null) {
+      ship.autoControl.setTargetDirection(thrustDir);
+      ship.autoControl.targetThrottle = 1.0f;
+    }
+    if (ship.mainEngine != null) {
+      ship.mainEngine.setThrottle(1.0f);
     }
   }
 
