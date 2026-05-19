@@ -17,13 +17,13 @@ class ManeuverNode {
     this.time = t;
     this.deltaV = dv.clone();
     this.orbitAfter = null;
-    this.direction = "prograde";  // 默认先切向，确保稳定
+    this.direction = "prograde";  // 备用方向
     this.description = "";
     this.deltaVMagnitude = dv.magnitude();
     this.burnDuration = 0;
     this.ignitionTime = t;
     this.isAbsoluteTime = false;
-    this.useDeltaVDirection = false;  // 暂时禁用，先确保方向正确
+    this.useDeltaVDirection = true;  // 启用按ΔV矢量方向定向
   }
 
   void calculateBurnDuration(Spacecraft craft) {

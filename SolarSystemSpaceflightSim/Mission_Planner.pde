@@ -75,87 +75,46 @@ class MissionPlanner {
     return node;
   }
 
-  double calculateLunarTransferWindow(CelestialBody earth, CelestialBody moon, Orbit leoOrbit, double simTime) {
-    // ============================================================
-    // 月球转移窗口计算逻辑
-    //
-    // 核心思想：
-    // 1. 飞船从LEO轨道的当前位置沿prograde方向加速
-    // 2. 进入霍曼转移轨道，半个周期后到达远地点（月球轨道半径）
-    // 3. 此时月球应该正好到达那个位置（或附近）
-    //
-    // 几何关系：
-    // - 飞船加速时位置：shipAngle = leoOrbit.w + nu_at_t_burn
-    // - 转移轨道远地点：shipAngle + PI（相反方向）
-    // - 目标：月球在(simTime + waitTime + transferTime)时位于远地点方向
-    // ============================================================
-
-    double T_moon = moon.period;
-
-    double r_leo = EARTH_RADIUS_KM + 400;
-    double r_moon = moon.a;
-    double a_trans = (r_leo + r_moon) / 2;
-    double T_trans = 2 * PI * Math.sqrt(a_trans * a_trans * a_trans / GM_EARTH);
-    double transferTime = T_trans / 2;
-
-    double bestWait = 0;
-    double bestError = 1e10;
-
-    // 检查接下来两个周期内的最佳窗口
-    for (double t_wait = 0; t_wait < 2 * T_moon; t_wait += 60.0) {
-      double t_burn = simTime + t_wait;
-      double t_arrival = t_burn + transferTime;
-
-      // 计算飞船在t_burn时刻的位置角度
-      double shipAngle = getSpacecraftAngleAtTime(leoOrbit, t_burn);
-
-      // 转移轨道的远地点方向（从近地点出发转180度）
-      double targetAngle = normalizeAngle(shipAngle + PI);
-
-      // 计算月球在到达时刻的角度
-      double moonAngle = getMoonAngleAtTime(moon, t_arrival);
-
-      // 计算角度差（取最短的角度差，0到π）
-      double delta = normalizeAngle(moonAngle - targetAngle);
-      double error = Math.min(delta, TWO_PI - delta);
-      if (error < bestError) {
-        bestError = error;
-        bestWait = t_wait;
-      }
-    }
-
-    // 如果最佳等待时间超过半个周期，减去一个周期（等下一圈更快）
-    if (bestWait > T_moon / 2) {
-      bestWait -= T_moon;
-    }
-
-    // 确保返回非负时间
-    if (bestWait < 0) {
-      bestWait += T_moon;
-    }
-
-    return bestWait;
-  }
 
   // 计算飞船在时刻t的位置角度（惯性系，弧度）
   double getSpacecraftAngleAtTime(Orbit orbit, double t) {
-    double nu = orbit.getTrueAnomalyAtTime(t);
-    return orbit.w + nu;
+    // 直接计算位置，然后从位置得到角度（与月球计算方式一致）
+    Vector2 pos = orbit.getPositionAtTime(t);
+    return Math.atan2(pos.y, pos.x);
   }
 
   // 计算月球在时刻t的角度（惯性系，弧度）
   double getMoonAngleAtTime(CelestialBody moon, double t) {
-    // 计算真近点角
-    double n = TWO_PI / moon.period;
-    double M = (moon.M0 + n * t) % TWO_PI;
-    if (M < 0) M += TWO_PI;
-    double E = solveKepler(M, moon.e);
-    double nu = trueAnomaly(E, moon.e);
+    // 计算月球相对于地球的位置角度（地球参考系！）
+    double[] posRel = getMoonPositionRelativeToEarthAtTime(moon, t);
+    return Math.atan2(posRel[1], posRel[0]);
+  }
 
-    // 在2D模拟中：
-    // - 忽略i（倾角）和Omega（升交点赤经）
-    // - 只需要 w（近地点幅角）+ nu（真近点角）
-    return moon.w + nu;
+  // 计算月球在时刻t相对于地球的位置（地球参考系，km）
+  // 与CelestialBody.update中计算方式完全一致
+  double[] getMoonPositionRelativeToEarthAtTime(CelestialBody moon, double t) {
+    if (moon.orbit != null) {
+      // ========== 完全照搬 CelestialBody.update 中的逻辑 ==========
+      double nu = moon.orbit.getTrueAnomalyAtTime(t);
+
+      // 关键！orbitalToCartesian实际期望i, omega, w都是弧度！
+      // 虽然参数名叫i_deg，但看getPositionAtTime函数，传的就是弧度！
+      double[] pos3D = orbitalToCartesian(moon.orbit.a, moon.orbit.e, moon.i, moon.omega, moon.orbit.w, nu);
+
+      // 返回2D位置（相对于地球，不加parentBody位置）
+      return new double[]{ pos3D[0], pos3D[1] };
+    } else {
+      // 备用逻辑
+      double n = TWO_PI / moon.period;
+      double M = (moon.M0 + n * t) % TWO_PI;
+      if (M < 0) M += TWO_PI;
+      double E = solveKepler(M, moon.e);
+      double nu = trueAnomaly(E, moon.e);
+
+      // 直接传弧度！
+      double[] pos3D = orbitalToCartesian(moon.a, moon.e, moon.i, moon.omega, moon.w, nu);
+      return new double[]{ pos3D[0], pos3D[1] };
+    }
   }
 
   private double getMoonTrueAnomaly(CelestialBody moon, double simTime) {
@@ -219,6 +178,11 @@ class MissionPlanner {
     double a_trans = (r_leo + r_moon) / 2;
     double transferTime = PI * Math.sqrt(a_trans * a_trans * a_trans / GM_EARTH);
 
+    // 计算TLI的Δv
+    double v1 = Math.sqrt(GM_EARTH / r_leo);
+    double v_trans_peri = Math.sqrt(GM_EARTH * (2 / r_leo - 1 / a_trans));
+    double dv_tli = v_trans_peri - v1;
+
     // 计算角速度
     double n_leo = TWO_PI / leoOrbit.period;  // LEO角速度 (rad/s)
     double n_moon = TWO_PI / moon.period;     // 月球角速度 (rad/s)
@@ -230,33 +194,74 @@ class MissionPlanner {
     // 解析求解 t_wait
     // 方程：shipAngle0 + n_leo*t_wait + PI = moonAngle0 + n_moon*(t_wait + transferTime) + k*2π
     // 整理：t_wait = [moonAngle0 - shipAngle0 - PI + n_moon*transferTime + k*2π] / (n_leo - n_moon)
+    // 我们搜索 k 的多个值，找到误差最小的解
 
-    double numerator0 = moonAngle0 - shipAngle0 - PI + n_moon * transferTime;
+    double baseAngleDiff = moonAngle0 - shipAngle0 - PI;
     double denominator = n_leo - n_moon;
 
-    // 先求一个基础解
-    double t_wait0 = numerator0 / denominator;
+    // 窗口周期是 LEO 周期 —— 每圈我们都有一次窗口机会
+    double windowPeriod = leoOrbit.period;
 
-    // 窗口周期是：2π / (n_leo - n_moon) —— 因为两个天体都在运动
-    double windowPeriod = TWO_PI / (n_leo - n_moon);
+    // 搜索 k 在合理范围内，找到误差最小的解
+    double bestWait = 1e10;
+    double bestError = 1e10;
+    double bestTburn = 0, bestTarrival = 0, bestTargetAngle = 0, bestMoonAngle = 0;
+    int bestK = 0;
 
-    // 找到最小的非负 t_wait
-    double t_wait = t_wait0;
+    for (int k = -20; k <= 20; k++) { // 搜索足够宽的范围
+      double angleDiff = baseAngleDiff + k * TWO_PI;
+      double numerator = angleDiff + n_moon * transferTime;
+      double t_wait_candidate = numerator / denominator;
 
-    // 把 t_wait 调整到未来最近的窗口
-    while (t_wait < 0) {
-      t_wait += windowPeriod;
+      // 调整到 [0, windowPeriod) 范围
+      double t_wait = t_wait_candidate;
+      while (t_wait < 0) t_wait += windowPeriod;
+      while (t_wait >= windowPeriod) t_wait -= windowPeriod;
+
+      // 保证至少有10秒准备时间
+      if (t_wait < 10) t_wait += windowPeriod;
+
+      // 验证这个候选解的误差
+      double t_burn = simTime + t_wait;
+      double t_arrival = t_burn + transferTime;
+
+      // ============ 正确方法：直接模拟转移轨道 ============
+      // 1. 计算t_burn时刻飞船的状态
+      Vector2 pos_burn = leoOrbit.getPositionAtTime(t_burn);
+      Vector2 vel_burn = leoOrbit.getVelocityAtTime(t_burn);
+
+      // 2. 计算prograde方向的单位向量
+      Vector2 prograde = vel_burn.normalized();
+
+      // 3. 计算TLI后的速度
+      Vector2 vel_after = vel_burn.add(prograde.mul(dv_tli));
+
+      // 4. 解析计算转移轨道
+      Orbit transferOrbit = Orbit_fromStateVector(pos_burn, vel_after, earth, t_burn);
+
+      // 5. 解析计算t_arrival时刻飞船的位置（远地点）
+      Vector2 pos_arrival = transferOrbit.getPositionAtTime(t_arrival);
+      double targetAngle = Math.atan2(pos_arrival.y, pos_arrival.x);
+
+      // 6. 计算月球在t_arrival时刻的角度
+      double moonAngle = getMoonAngleAtTime(moon, t_arrival);
+
+      // 7. 计算误差
+      double delta = normalizeAngle(moonAngle - targetAngle);
+      double error = Math.min(delta, TWO_PI - delta);
+
+      if (error < bestError) {
+        bestError = error;
+        bestWait = t_wait;
+        bestTburn = t_burn;
+        bestTarrival = t_arrival;
+        bestTargetAngle = targetAngle;
+        bestMoonAngle = moonAngle;
+        bestK = k;
+      }
     }
-    while (t_wait >= windowPeriod) {
-      t_wait -= windowPeriod;
-    }
 
-    // 保证至少有10秒准备时间
-    if (t_wait < 10) {
-      t_wait += windowPeriod;
-    }
-
-    return t_wait;
+    return bestWait;
   }
 
   // ========== 规划月球轨道捕获（LOI）机动 ==========

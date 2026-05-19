@@ -119,7 +119,7 @@ class MissionValidator {
     String waitInfo = "";
     if (earth != null && target.name.equals("Moon")) {
       Orbit orbitToUse = (craft.orbit != null) ? craft.orbit : preset.initialOrbit;
-      waitTime = planner.calculateLunarTransferWindow(earth, target, orbitToUse, simTime);
+      waitTime = planner.calculateSimpleLunarWindow(earth, target, orbitToUse, simTime);
       if (waitTime > 0) {
         waitInfo = String.format(", wait %.1f hours for alignment", waitTime / 3600);
       }
@@ -156,7 +156,7 @@ class MissionValidator {
     // 使用飞船当前的实际轨道，而不是 preset 的初始轨道
     Orbit orbitToUse = (craft.orbit != null) ? craft.orbit : preset.initialOrbit;
 
-    // 使用新的简化窗口计算
+    // 使用解析法计算窗口
     MissionPlanner planner = new MissionPlanner();
     double waitTime = planner.calculateSimpleLunarWindow(earth, moon, orbitToUse, simTime);
 

@@ -416,6 +416,13 @@ class MissionExecutor {
     return node.ignitionTime - timeSinceStart;  // 返回距离点火的时间
   }
 
+  // 辅助函数：规范化角度到[0, TWO_PI)
+  double normalizeAngle(double angle) {
+    while (angle < 0) angle += TWO_PI;
+    while (angle >= TWO_PI) angle -= TWO_PI;
+    return angle;
+  }
+
   void abortMission() {
     if (assignedCraft != null && assignedCraft.autoControl != null) {
       assignedCraft.autoControl.stop();
