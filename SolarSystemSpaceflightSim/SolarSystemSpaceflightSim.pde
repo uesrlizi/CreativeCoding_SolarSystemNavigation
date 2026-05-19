@@ -38,6 +38,10 @@ MissionExecutor missionExecutor;
 SpacecraftRenderer spacecraftRenderer;
 TrajectoryPredictor trajectoryPredictor;
 
+// ========== LAUNCH SYSTEM ==========
+LaunchSite launchSite;
+LaunchSiteRenderer launchSiteRenderer;
+
 // ========== DOUBLE-CLICK / FOCUS ==========
 long lastClickTime = 0;
 int lastClickX, lastClickY;
@@ -87,7 +91,18 @@ void setup() {
   // Initialize spacecraft presets
   if (spacecraftPresets == null) initSpacecraftPresets();
 
-  // Create initial spacecraft in LEO
+  // Initialize launch site
+  CelestialBody earth = solarSystem.getEarth();
+  if (earth != null) {
+    // 在地球表面0度位置创建发射场
+    launchSite = new LaunchSite(earth, 0);
+    launchSiteRenderer = new LaunchSiteRenderer();
+
+    // 设置 missionExecutor 的发射场
+    missionExecutor.setLaunchSite(launchSite, earth);
+  }
+
+  // Create initial spacecraft on launch pad
   createInitialSpacecraft();
 
   // Focus camera on spacecraft and set as follow target
@@ -106,8 +121,13 @@ void createInitialSpacecraft() {
     // 使用预设创建航天器
     Spacecraft ship = createSpacecraftFromPreset(PRESET_LEO_SATELLITE);
     if (ship != null) {
-      // Initialize LEO orbit
-      ship.initLEO(earth);
+      if (launchSite != null) {
+        // 初始化到发射场
+        ship.initOnLaunchPad(earth, launchSite);
+      } else {
+        // 如果没有发射场，回退到LEO轨道
+        ship.initLEO(earth);
+      }
 
       // Add to solar system
       solarSystem.ships.add(ship);
@@ -290,8 +310,19 @@ void draw() {
     }
   }
 
+
   solarSystem.drawSun(camera);
   solarSystem.drawPlanets(camera);
+
+  // Update launch site position to track Earth
+  if (launchSite != null) {
+    launchSite.update();
+  }
+
+  // Render launch site
+  if (launchSite != null && launchSiteRenderer != null && solarSystem.ships.size() > 0) {
+    launchSiteRenderer.draw(launchSite, camera, solarSystem.ships.get(0));
+  }
 
   // Render spacecraft
   for (Spacecraft ship : solarSystem.ships) {
@@ -366,6 +397,7 @@ void drawMilkyWay() {
     }
   }
 }
+
 
 void drawOrbits() {
   if (!showOrbits) return;

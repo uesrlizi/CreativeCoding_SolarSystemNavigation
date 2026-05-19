@@ -143,6 +143,10 @@ Orbit Orbit_fromStateVector(Vector2 pos, Vector2 vel, CelestialBody body, double
   double eVecY = (vSq - GM / r) * pos.y - (pos.dot(vel)) * vel.y;
   double e = Math.sqrt(eVecX * eVecX + eVecY * eVecY) / GM;
 
+  // 截断离心率到安全范围，防止 e=1.0 时开普勒方程除零
+  if (e > 0.99999) e = 0.99999;
+  if (e < 0) e = 0;
+
   // True anomaly
   double nu;
   if (e < 1e-8) {

@@ -193,8 +193,8 @@ class TaskMenu {
     float btnW = 80 * scale;
     float btnH = 28 * scale;
 
-    // 只要选中预设就可以点击，验证在点击后进行
-    boolean canStart = selectedPreset != null;
+    // 只要选中预设且未锁定就可以点击，验证在点击后进行
+    boolean canStart = selectedPreset != null && !isMissionLocked(selectedPreset);
     if (canStart) {
       fill(startButtonHover ? color(80, 200, 100) : color(60, 160, 80));
     } else {
@@ -243,6 +243,7 @@ class TaskMenu {
   void drawPresetRow(float y, MissionPreset preset, boolean isSelected, int idx) {
     float scale = uiScale;
     boolean isHovered = (hoveredIndex == idx);
+    boolean isLocked = isMissionLocked(preset);
 
     if (isSelected) {
       fill(255, 220, 100, 40);
@@ -254,10 +255,35 @@ class TaskMenu {
       rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
     }
 
-    fill(isSelected ? color(255, 220, 100) : 200);
+    if (isLocked) {
+      fill(100);  // 灰色表示锁定
+    } else {
+      fill(isSelected ? color(255, 220, 100) : 200);
+    }
     textSize(14 * scale);
     textAlign(LEFT, CENTER);
-    text(preset.name, panelX + panelMargin + 4 * scale, y + rowH / 2);
+
+    String displayName = preset.name;
+    if (isLocked) {
+      displayName = "[LOCKED] " + displayName;
+    }
+    text(displayName, panelX + panelMargin + 4 * scale, y + rowH / 2);
+  }
+
+  // ========== 检查任务是否锁定 ==========
+  boolean isMissionLocked(MissionPreset preset) {
+    // 发射任务永远不锁定
+    if (preset.id.equals(MISSION_PRESET_LAUNCH_TO_LEO)) {
+      return false;
+    }
+
+    // 如果已经完成发射任务，所有任务解锁
+    if (hasCompletedLaunchMission) {
+      return false;
+    }
+
+    // 否则，除了发射任务外都锁定
+    return true;
   }
 
   void drawWrappedText(String text, float x, float y, float maxW, float lineH) {
@@ -306,8 +332,12 @@ class TaskMenu {
     if (presets != null && my >= listY && my < listY + presetCount * rowH) {
       int idx = (int)((my - listY) / rowH);
       if (idx >= 0 && idx < presets.size()) {
-        selectedPreset = presets.get(idx);
-        // 不提前验证，开始任务时才验证
+        MissionPreset preset = presets.get(idx);
+        // 不能选择锁定的任务
+        if (!isMissionLocked(preset)) {
+          selectedPreset = preset;
+          // 不提前验证，开始任务时才验证
+        }
         return true;
       }
     }
@@ -347,22 +377,33 @@ class TaskMenu {
       solarSystem.ships.add(ship);
     }
 
-    // 1. 先重置飞船轨道到预设状态
-    ship.referenceBody = body;
-    if (preset.initialOrbit != null) {
-      ship.orbit = new Orbit(
-        preset.initialOrbit.a,
-        preset.initialOrbit.e,
-        preset.initialOrbit.w,
-        preset.initialOrbit.M0,
-        timeManager.simTime,
-        preset.initialOrbit.period,
-        body
-      );
-      ship.updateOnRails(timeManager.simTime);
+    // 检查是否是发射任务
+    boolean isLaunchMission = (preset.goal.type == MissionGoalType.LAUNCH_TO_ORBIT);
+
+    if (isLaunchMission) {
+      // 发射任务：重置到发射场
+      LaunchSite site = getLaunchSiteForBody(body);
+      if (site != null) {
+        ship.initOnLaunchPad(body, site);
+      }
+    } else {
+      // 普通任务：重置到预设轨道
+      ship.referenceBody = body;
+      if (preset.initialOrbit != null) {
+        ship.orbit = new Orbit(
+          preset.initialOrbit.a,
+          preset.initialOrbit.e,
+          preset.initialOrbit.w,
+          preset.initialOrbit.M0,
+          timeManager.simTime,
+          preset.initialOrbit.period,
+          body
+        );
+        ship.updateOnRails(timeManager.simTime);
+      }
     }
 
-    // 2. 再验证并计算机动（基于重置后的轨道）
+    // 验证并计算机动
     validationResult = missionValidator.validateMission(preset, ship, solarSystem, timeManager.simTime);
     if (!validationResult.canExecute) {
       return; // 验证失败，不开始
@@ -379,6 +420,12 @@ class TaskMenu {
     MissionTask task = new MissionTask(preset);
     List<ManeuverNode> maneuvers = validationResult.maneuvers;
     missionExecutor.startMission(task, maneuvers, ship, solarSystem, timeManager.simTime);
+  }
+
+  // ========== 获取天体的发射场 ==========
+  LaunchSite getLaunchSiteForBody(CelestialBody body) {
+    // 返回全局的 launchSite 变量
+    return launchSite;
   }
 
   String getHoveredTooltipText() {

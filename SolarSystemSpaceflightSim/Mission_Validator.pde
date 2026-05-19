@@ -36,6 +36,9 @@ class MissionValidator {
     }
 
     switch (preset.goal.type) {
+      case LAUNCH_TO_ORBIT:
+        result = validateLaunchMission(preset, craft);
+        break;
       case REACH_ORBIT:
         result = validateOrbitMission(preset, craft);
         break;
@@ -206,6 +209,26 @@ class MissionValidator {
     }
 
     return true;
+  }
+
+  // ========== 验证发射任务 ==========
+  MissionValidationResult validateLaunchMission(MissionPreset preset, Spacecraft craft) {
+    MissionValidationResult result = new MissionValidationResult();
+
+    // 发射任务总是可行（只要飞船在发射场）
+    result.canExecute = true;
+
+    // 计算发射到LEO所需的理论Δv
+    // 大约需要9.5 km/s（包括重力损失和空气阻力损失）
+    double requiredDeltaV = 9.5;
+
+    result.requiredDeltaV = requiredDeltaV;
+    result.reason = String.format("Launch to LEO - Estimated Δv: %.1f km/s", requiredDeltaV);
+
+    // 发射任务不需要预先规划机动节点，LaunchController会处理
+    result.maneuvers = new ArrayList<ManeuverNode>();
+
+    return result;
   }
 }
 

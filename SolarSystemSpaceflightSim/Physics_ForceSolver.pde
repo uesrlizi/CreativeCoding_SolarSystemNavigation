@@ -159,9 +159,11 @@ class SpacecraftForceModel extends ForceModel {
       return;
     }
 
-    double rho = atmosphere.density(referenceBody, alt);
-    double dragMagnitude = 0.5 * dragCoeff * crossSection * rho * v * v;
-    dragMagnitude /= shipMass;
+    double rho = atmosphere.density(referenceBody, alt);  // kg/km³
+    // crossSection 是 m²，需要转换为 km²（1 m² = 1e-6 km²）
+    double crossSectionKm2 = crossSection * 1e-6;
+    double dragMagnitude = 0.5 * dragCoeff * crossSectionKm2 * rho * v * v;
+    dragMagnitude /= shipMass;  // kg
 
     accelOut.x += -dragMagnitude * (vx / v);
     accelOut.y += -dragMagnitude * (vy / v);

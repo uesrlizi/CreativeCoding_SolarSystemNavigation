@@ -45,5 +45,15 @@ enum MissionGoalType {
   TRANSFER_TO_BODY,   // 转移到另一个天体的SOI
   ORBIT_INSERTION,    // 在目标天体插入轨道
   LAND,               // 着陆
-  CRASH               // 撞毁（娱乐任务）
+  CRASH,              // 撞毁（娱乐任务）
+  LAUNCH_TO_ORBIT     // 从地表发射到轨道
+}
+
+enum LaunchState {
+  ON_PAD,             // 在发射台，固定
+  COUNTDOWN,          // 倒计时
+  IGNITION,           // 点火
+  LAUNCHING,          // 上升中
+  CIRCULARIZING,      // 入轨圆化
+  IN_ORBIT            // 在轨
 }

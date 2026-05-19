@@ -1,8 +1,12 @@
 // ========== MISSION PRESETS ==========
 
+static final String MISSION_PRESET_LAUNCH_TO_LEO = "launch_to_leo";
 static final String MISSION_PRESET_LEO = "leo";
 static final String MISSION_PRESET_GEO = "geo";
 static final String MISSION_PRESET_LUNAR_TRANSFER = "lunar_transfer";
+
+// 任务解锁状态
+static boolean hasCompletedLaunchMission = false;
 
 private List<MissionPreset> missionPresets;
 
@@ -17,6 +21,22 @@ void initMissionPresets(CelestialSystem system) {
       break;
     }
   }
+
+  // 发射到LEO任务
+  MissionPreset launchToLeo = new MissionPreset(
+    MISSION_PRESET_LAUNCH_TO_LEO,
+    "Launch to LEO",
+    "Launch from Earth's surface to Low Earth Orbit."
+  );
+  launchToLeo.requiredSpacecraftPreset = PRESET_LEO_SATELLITE;
+  launchToLeo.initialBody = earth;
+  launchToLeo.initialOrbit = null;  // 从地表开始
+  launchToLeo.goal.type = MissionGoalType.LAUNCH_TO_ORBIT;
+  launchToLeo.goal.targetBody = earth;
+  double leoA = EARTH_RADIUS_KM + LEO_ALTITUDE_KM;
+  double leoPeriod = 2 * PI * Math.sqrt(leoA * leoA * leoA / GM_EARTH);
+  launchToLeo.goal.targetOrbit = new Orbit(leoA, 0.001, 0.0, 0.0, leoPeriod, earth);
+  missionPresets.add(launchToLeo);
 
   // LEO任务
   if (earth != null) {

@@ -12,6 +12,17 @@ class Spacecraft {
   Orbit orbit;                    // On-rails用
   StateVector2D stateVector;      // Off-rails用
 
+  // === 发射状态 ===
+  LaunchState launchState;
+  boolean isFixedToSurface;       // 是否固定在表面（发射场）
+  double countdownStartTime;      // 倒计时开始时间
+  double ignitionStartTime;       // 点火开始时间
+  double launchStartTime;         // 发射开始时间
+
+  // === 常量 ===
+  static final double COUNTDOWN_DURATION = 3.0;   // 倒计时3秒
+  static final double IGNITION_DURATION = 1.0;    // 点火1秒
+
   // === 参考系 ===
   CelestialBody referenceBody;
 
@@ -56,6 +67,13 @@ class Spacecraft {
     this.orbit = null;
     this.stateVector = new StateVector2D();
 
+    // 发射相关初始化
+    this.launchState = LaunchState.ON_PAD;
+    this.isFixedToSurface = false;
+    this.countdownStartTime = 0;
+    this.ignitionStartTime = 0;
+    this.launchStartTime = 0;
+
     this.referenceBody = null;
 
     this.attitude = new Rotation2D(0);
@@ -74,6 +92,32 @@ class Spacecraft {
     this.worldVelX = 0;
     this.worldVelY = 0;
     this.lastUpdateTime = 0;
+  }
+
+  // === 初始化为发射场状态 ===
+  void initOnLaunchPad(CelestialBody earth, LaunchSite site) {
+    this.referenceBody = earth;
+    this.physicsMode = PhysicsMode.OFF_RAILS;
+    this.launchState = LaunchState.ON_PAD;
+    this.isFixedToSurface = true;
+
+    // 使用 baseAngle 计算相对地球中心的位置，不依赖 site.px/py（它们可能过期）
+    double r = EARTH_RADIUS_KM;
+    double angle = site.baseAngle;
+    this.stateVector.position = new Vector2(r * Math.cos(angle), r * Math.sin(angle));
+    this.stateVector.velocity = new Vector2(0, 0);
+
+    // 设置姿态为径向向外（垂直向上）
+    this.attitude = new Rotation2D(angle);
+
+    // 从当前地球位置计算世界坐标
+    this.worldX = earth.px + this.stateVector.position.x;
+    this.worldY = earth.py + this.stateVector.position.y;
+    this.worldVelX = 0;
+    this.worldVelY = 0;
+
+    // 清空轨道
+    this.orbit = null;
   }
 
   // === 初始化LEO轨道 ===

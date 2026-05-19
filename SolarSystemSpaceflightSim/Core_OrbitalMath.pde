@@ -1,6 +1,8 @@
 // ========== ORBITAL MATH ==========
 
 static double solveKepler(double M, double e) {
+  // 截断到安全范围，防止 e=1.0 时牛顿迭代除零
+  if (e >= 1.0) e = 0.99999;
   double E = M;
   for (int i = 0; i < 50; i++) {
     double dE = (E - e * Math.sin(E) - M) / (1.0 - e * Math.cos(E));
@@ -11,6 +13,8 @@ static double solveKepler(double M, double e) {
 }
 
 static double trueAnomaly(double E, double e) {
+  // 截断到安全范围，防止 e=1.0 时 sqrt(1-e)=0 导致问题
+  if (e >= 1.0) e = 0.99999;
   return 2.0 * Math.atan2(Math.sqrt(1.0 + e) * Math.sin(E / 2.0), Math.sqrt(1.0 - e) * Math.cos(E / 2.0));
 }
 

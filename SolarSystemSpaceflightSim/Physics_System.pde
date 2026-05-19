@@ -36,6 +36,11 @@ class PhysicsSystem {
   // ============================================================
 
   PhysicsMode determineMode(Spacecraft ship) {
+    // 如果固定在表面，保持Off-rails模式（但物理更新特殊处理）
+    if (ship.isFixedToSurface) {
+      return PhysicsMode.OFF_RAILS;
+    }
+
     // 如果有推力激活，保持Off-rails
     if (ship.autoControl.targetThrottle > 0.01f) {
       return PhysicsMode.OFF_RAILS;
@@ -97,6 +102,12 @@ class PhysicsSystem {
   }
 
   void updateShipSingleStep(Spacecraft ship, double simDt, double simTime) {
+    // 检查是否固定在表面
+    if (ship.isFixedToSurface) {
+      updateFixedToSurface(ship, simDt, simTime);
+      return;
+    }
+
     PhysicsMode currentMode = determineMode(ship);
 
     // 处理模式切换
@@ -124,6 +135,24 @@ class PhysicsSystem {
     updateDebugInfo(ship, currentMode);
 
     previousMode = currentMode;
+  }
+
+  // ========== 固定在表面的更新 ==========
+  void updateFixedToSurface(Spacecraft ship, double simDt, double simTime) {
+    // 飞船固定在发射场，随地球自转而移动
+    // 这里假设发射场位置已经由 LaunchSite 管理
+    // 我们只需要确保飞船速度为0，保持位置固定
+
+    ship.stateVector.velocity = new Vector2(0, 0);
+
+    // 更新世界坐标（基于参考天体位置）
+    if (ship.referenceBody != null) {
+      ship.worldX = ship.referenceBody.px + ship.stateVector.position.x;
+      ship.worldY = ship.referenceBody.py + ship.stateVector.position.y;
+    }
+
+    // 清空轨道
+    ship.orbit = null;
   }
 
   // ============================================================
@@ -313,6 +342,9 @@ class PhysicsSystem {
   // ============================================================
 
   boolean needsPhysicsTick(Spacecraft ship) {
+    // 0. 固定在表面（需要特殊处理）
+    if (ship.isFixedToSurface) return true;
+
     // 1. 有推力在烧
     if (ship.autoControl.targetThrottle > 0.01f) return true;
 

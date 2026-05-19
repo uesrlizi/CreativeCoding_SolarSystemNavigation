@@ -31,6 +31,10 @@ class MissionExecutor {
   private double lastUpdateSimTime;  // 上次更新的模拟时间
   private double currentTickSimTime;  // 当前 tick 的模拟时间 (用于子步)
 
+  // 发射任务支持
+  private boolean isLaunchMission;
+  private LaunchController launchController;
+
   MissionExecutor() {
     this.state = MissionExecutorState.IDLE;
     this.currentTask = null;
@@ -44,6 +48,13 @@ class MissionExecutor {
     this.currentTickSimTime = 0;
     this.statusText = "Idle";
     this.progress = 0;
+    this.isLaunchMission = false;
+    this.launchController = new LaunchController();
+  }
+
+  // ========== 设置发射场 ==========
+  void setLaunchSite(LaunchSite site, CelestialBody earth) {
+    this.launchController.init(null, site, earth);
   }
 
   void startMission(MissionTask task, List<ManeuverNode> maneuvers, Spacecraft craft, CelestialSystem system, double simTime) {
@@ -55,6 +66,17 @@ class MissionExecutor {
     this.lastUpdateSimTime = simTime;
     this.currentManeuverIndex = 0;
 
+    // 检查是否是发射任务
+    this.isLaunchMission = (task.preset != null &&
+                           task.preset.goal.type == MissionGoalType.LAUNCH_TO_ORBIT);
+
+    if (this.isLaunchMission) {
+      // 发射任务特殊处理
+      startLaunchMission(simTime);
+      return;
+    }
+
+    // 普通任务处理
     if (maneuvers == null || maneuvers.size() == 0) {
       this.state = MissionExecutorState.FAILED;
       this.statusText = "No maneuvers to execute";
@@ -79,6 +101,19 @@ class MissionExecutor {
     if (timeToIgnition <= 0) {
       startBurningImmediately(firstNode, simTime);
     }
+  }
+
+  // ========== 开始发射任务 ==========
+  void startLaunchMission(double simTime) {
+    // 初始化发射控制器
+    launchController.init(assignedCraft, launchController.site, launchController.earth);
+
+    // 启动发射
+    launchController.startLaunch(simTime);
+
+    this.state = MissionExecutorState.WAITING_FOR_MANEUVER;  // 使用这个状态表示发射进行中
+    this.statusText = launchController.getStatusText(simTime);
+    this.progress = 0;
   }
 
   // ========== 帧级别更新 (保持向后兼容) ==========
@@ -116,6 +151,13 @@ class MissionExecutor {
       // assignedCraft.autoControl.updateTick(assignedCraft, tickDt);  // 由主循环统一调用
     }
 
+    // 如果是发射任务，交给 LaunchController 处理
+    if (isLaunchMission) {
+      updateLaunchMissionTick(tickDt, tickSimTime);
+      return;
+    }
+
+    // 普通任务处理
     switch (state) {
       case WAITING_FOR_MANEUVER:
         updateWaiting(tickSimTime);
@@ -131,6 +173,56 @@ class MissionExecutor {
     }
 
     updateProgress();
+  }
+
+  // ========== 更新发射任务 ==========
+  void updateLaunchMissionTick(double tickDt, double tickSimTime) {
+    launchController.update(tickSimTime, tickDt);
+
+    // 更新状态文本
+    statusText = launchController.getStatusText(tickSimTime);
+
+    // 检查发射是否完成
+    if (launchController.isLaunchComplete()) {
+      completeLaunchMission(tickSimTime);
+    }
+
+    // 更新进度（简单估算：从倒计时到入轨）
+    double elapsed = tickSimTime - missionStartTime;
+    if (assignedCraft.launchState == LaunchState.ON_PAD) {
+      progress = 0;
+    } else if (assignedCraft.launchState == LaunchState.COUNTDOWN) {
+      progress = 0.05 * (elapsed / Spacecraft.COUNTDOWN_DURATION);
+    } else if (assignedCraft.launchState == LaunchState.IGNITION) {
+      progress = 0.05 + 0.02 * ((elapsed - Spacecraft.COUNTDOWN_DURATION) / Spacecraft.IGNITION_DURATION);
+    } else if (assignedCraft.launchState == LaunchState.LAUNCHING) {
+      progress = 0.07 + 0.83 * Math.min(elapsed / 300.0, 1.0);  // 假设上升需要5分钟
+    } else if (assignedCraft.launchState == LaunchState.CIRCULARIZING) {
+      progress = 0.9;
+    } else if (assignedCraft.launchState == LaunchState.IN_ORBIT) {
+      progress = 1.0;
+    }
+  }
+
+  // ========== 完成发射任务 ==========
+  void completeLaunchMission(double simTime) {
+    // 设置任务完成标志，解锁其他任务
+    hasCompletedLaunchMission = true;
+
+    // 完成任务
+    this.state = MissionExecutorState.COMPLETED;
+    this.statusText = "Launch mission complete!";
+    this.progress = 1.0;
+
+    if (currentTask != null) {
+      currentTask.state = MissionState.COMPLETED;
+    }
+
+    if (assignedCraft.autoControl != null) {
+      assignedCraft.autoControl.stop();
+    }
+
+    println("Launch mission complete - other missions now unlocked!");
   }
 
   private void updateWaiting(double simTime) {
