@@ -75,25 +75,88 @@ class MissionPlanner {
     return node;
   }
 
-  double calculateLunarTransferWindow(CelestialBody earth, CelestialBody moon, double simTime) {
+  double calculateLunarTransferWindow(CelestialBody earth, CelestialBody moon, Orbit leoOrbit, double simTime) {
+    // ============================================================
+    // 月球转移窗口计算逻辑
+    //
+    // 核心思想：
+    // 1. 飞船从LEO轨道的当前位置沿prograde方向加速
+    // 2. 进入霍曼转移轨道，半个周期后到达远地点（月球轨道半径）
+    // 3. 此时月球应该正好到达那个位置（或附近）
+    //
+    // 几何关系：
+    // - 飞船加速时位置：shipAngle = leoOrbit.w + nu_at_t_burn
+    // - 转移轨道远地点：shipAngle + PI（相反方向）
+    // - 目标：月球在(simTime + waitTime + transferTime)时位于远地点方向
+    // ============================================================
+
     double T_moon = moon.period;
 
-    double r_earth = EARTH_RADIUS_KM + 400;
+    double r_leo = EARTH_RADIUS_KM + 400;
     double r_moon = moon.a;
-    double a_trans = (r_earth + r_moon) / 2;
+    double a_trans = (r_leo + r_moon) / 2;
     double T_trans = 2 * PI * Math.sqrt(a_trans * a_trans * a_trans / GM_EARTH);
     double transferTime = T_trans / 2;
 
-    double phaseAngle = PI * (1 - T_trans / T_moon);
+    double bestWait = 0;
+    double bestError = 1e10;
 
-    double moonNu = getMoonTrueAnomaly(moon, simTime);
-    double angleToWait = phaseAngle - moonNu;
-    while (angleToWait < 0) angleToWait += TWO_PI;
-    while (angleToWait > TWO_PI) angleToWait -= TWO_PI;
+    // 检查接下来两个周期内的最佳窗口
+    for (double t_wait = 0; t_wait < 2 * T_moon; t_wait += 60.0) {
+      double t_burn = simTime + t_wait;
+      double t_arrival = t_burn + transferTime;
 
-    double waitTime = angleToWait * T_moon / TWO_PI;
+      // 计算飞船在t_burn时刻的位置角度
+      double shipAngle = getSpacecraftAngleAtTime(leoOrbit, t_burn);
 
-    return waitTime;
+      // 转移轨道的远地点方向（从近地点出发转180度）
+      double targetAngle = normalizeAngle(shipAngle + PI);
+
+      // 计算月球在到达时刻的角度
+      double moonAngle = getMoonAngleAtTime(moon, t_arrival);
+
+      // 计算角度差
+      double error = Math.abs(normalizeAngle(moonAngle - targetAngle));
+      if (error < bestError) {
+        bestError = error;
+        bestWait = t_wait;
+      }
+    }
+
+    // 如果最佳等待时间超过半个周期，减去一个周期（等下一圈更快）
+    if (bestWait > T_moon / 2) {
+      bestWait -= T_moon;
+    }
+
+    // 确保返回非负时间
+    if (bestWait < 0) {
+      bestWait += T_moon;
+    }
+
+    return bestWait;
+  }
+
+  // 计算飞船在时刻t的位置角度（惯性系，弧度）
+  double getSpacecraftAngleAtTime(Orbit orbit, double t) {
+    double nu = orbit.getTrueAnomalyAtTime(t);
+    return orbit.w + nu;
+  }
+
+  // 计算月球在时刻t的角度（惯性系，弧度）
+  double getMoonAngleAtTime(CelestialBody moon, double t) {
+    // 计算真近点角
+    double n = TWO_PI / moon.period;
+    double M = (moon.M0 + n * t) % TWO_PI;
+    if (M < 0) M += TWO_PI;
+    double E = solveKepler(M, moon.e);
+    double nu = trueAnomaly(E, moon.e);
+
+    // 在2D模拟中：
+    // - 忽略i（倾角）和Omega（升交点赤经）
+    // - 只需要 w（近地点幅角）+ nu（真近点角）
+    // 注意：moon.w 是角度！需要转成弧度！
+    double w_rad = Math.toRadians(moon.w);
+    return w_rad + nu;
   }
 
   private double getMoonTrueAnomaly(CelestialBody moon, double simTime) {
@@ -146,5 +209,100 @@ class MissionPlanner {
       }
     }
     return total;
+  }
+
+  // ========== 简化地月转移窗口计算（解析法）==========
+  double calculateSimpleLunarWindow(CelestialBody earth, CelestialBody moon,
+                                    Orbit leoOrbit, double simTime) {
+    // 计算转移轨道参数
+    double r_leo = EARTH_RADIUS_KM + 400;
+    double r_moon = moon.a;
+    double a_trans = (r_leo + r_moon) / 2;
+    double transferTime = PI * Math.sqrt(a_trans * a_trans * a_trans / GM_EARTH);
+
+    // 计算角速度
+    double n_leo = TWO_PI / leoOrbit.period;  // LEO角速度 (rad/s)
+    double n_moon = TWO_PI / moon.period;     // 月球角速度 (rad/s)
+
+    // 计算当前时刻的角度
+    double shipAngle0 = getSpacecraftAngleAtTime(leoOrbit, simTime);
+    double moonAngle0 = getMoonAngleAtTime(moon, simTime);
+
+    // 解析求解 t_wait
+    // 方程：shipAngle0 + n_leo*t_wait + π = moonAngle0 + n_moon*(t_wait + transferTime) + k*2π
+    // 整理：t_wait = [moonAngle0 - shipAngle0 - π + n_moon*transferTime + k*2π] / (n_leo - n_moon)
+
+    double numerator0 = normalizeAngle(moonAngle0 - shipAngle0 - PI + n_moon * transferTime);
+    double denominator = n_leo - n_moon;
+
+    // 先求一个基础解
+    double t_wait0 = numerator0 / denominator;
+
+    // 将 t_wait 调整到未来最近的窗口
+    // 窗口周期：LEO周期，因为每圈都有一次机会
+    double leoPeriod = leoOrbit.period;
+
+    // 找到最小的非负 t_wait
+    double t_wait = t_wait0;
+    while (t_wait < 0) {
+      t_wait += leoPeriod;
+    }
+    while (t_wait >= leoPeriod) {
+      t_wait -= leoPeriod;
+    }
+
+    // 保证至少有10秒准备时间
+    if (t_wait < 10) {
+      t_wait += leoPeriod;
+    }
+
+    return t_wait;
+  }
+
+  // ========== 规划月球轨道捕获（LOI）机动 ==========
+  List<ManeuverNode> planLunarMission(CelestialBody earth, CelestialBody moon,
+                                       Orbit leoOrbit, double simTime, double t_wait) {
+    List<ManeuverNode> maneuvers = new ArrayList<ManeuverNode>();
+
+    // --- TLI机动 ---
+    double r_leo = EARTH_RADIUS_KM + 400;
+    double r_moon = moon.a;
+    double a_trans = (r_leo + r_moon) / 2;
+    double transferTime = PI * Math.sqrt(a_trans * a_trans * a_trans / GM_EARTH);
+
+    double v1 = Math.sqrt(GM_EARTH / r_leo);
+    double v_trans_peri = Math.sqrt(GM_EARTH * (2 / r_leo - 1 / a_trans));
+    double dv_tli = v_trans_peri - v1;
+
+    ManeuverNode tli = new ManeuverNode(t_wait, new Vector2(dv_tli, 0));
+    tli.description = "Trans-Lunar Injection";
+    tli.direction = "prograde";
+    tli.deltaVMagnitude = dv_tli;
+    maneuvers.add(tli);
+
+    // --- LOI机动（预计在转移时间后执行） ---
+    // 注意：这是基于地球参考系的预估，进入月球SOI后需要重新计算
+    // 这里先预留一个位置，LOI的具体参数会在SOI切换时重新规划
+    double t_loi_est = t_wait + transferTime;
+
+    // 简化计算LOI的Δv（实际在月球参考系中计算更准确）
+    double r_moon_soi = calculateSOIRadius(moon, earth);
+    double v_approach_est = Math.sqrt(GM_EARTH * (2 / r_moon - 1 / a_trans));  // 相对于地球
+    // 这是一个近似值，仅用于Δv预估
+    double dv_loi_est = 0.6;  // km/s，经验近似值
+
+    ManeuverNode loi = new ManeuverNode(t_loi_est, new Vector2(-dv_loi_est, 0));
+    loi.description = "Lunar Orbit Insertion";
+    loi.direction = "retrograde";
+    loi.deltaVMagnitude = dv_loi_est;
+    maneuvers.add(loi);
+
+    return maneuvers;
+  }
+
+  // 辅助：计算SOI半径
+  private double calculateSOIRadius(CelestialBody body, CelestialBody primary) {
+    double massRatio = body.GM / primary.GM;
+    return body.a * Math.pow(massRatio, 2.0/5.0);
   }
 }

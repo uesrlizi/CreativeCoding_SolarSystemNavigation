@@ -53,7 +53,7 @@ class TaskMenu {
       return;
     }
     Spacecraft craft = solarSystem.ships.get(0);
-    validationResult = missionValidator.validateMission(selectedPreset, craft, solarSystem);
+    validationResult = missionValidator.validateMission(selectedPreset, craft, solarSystem, timeManager.simTime);
   }
 
   void update() {

@@ -10,7 +10,7 @@ class MissionValidator {
   MissionValidator() {
   }
 
-  MissionValidationResult validateMission(MissionPreset preset, Spacecraft craft, CelestialSystem system) {
+  MissionValidationResult validateMission(MissionPreset preset, Spacecraft craft, CelestialSystem system, double simTime) {
     MissionValidationResult result = new MissionValidationResult();
 
     if (preset == null) {
@@ -40,10 +40,15 @@ class MissionValidator {
         result = validateOrbitMission(preset, craft);
         break;
       case TRANSFER_TO_BODY:
-        result = validateTransferMission(preset, craft, system);
+        result = validateTransferMission(preset, craft, system, simTime);
         break;
       case ORBIT_INSERTION:
-        result = validateOrbitInsertion(preset, craft);
+        // 如果目标是月球，用专门的地月转移逻辑
+        if (preset.goal.targetBody != null && preset.goal.targetBody.name.equals("Moon")) {
+          result = validateLunarOrbitInsertionMission(preset, craft, system, simTime);
+        } else {
+          result = validateOrbitInsertion(preset, craft);
+        }
         break;
       case LAND:
       case CRASH:
@@ -81,10 +86,16 @@ class MissionValidator {
     return result;
   }
 
-  MissionValidationResult validateTransferMission(MissionPreset preset, Spacecraft craft, CelestialSystem system) {
+  MissionValidationResult validateTransferMission(MissionPreset preset, Spacecraft craft, CelestialSystem system, double simTime) {
+    // 如果目标是月球且是ORBIT_INSERTION，使用新的简化方案
+    CelestialBody target = preset.goal.targetBody;
+    if (target != null && target.name.equals("Moon") && preset.goal.type == MissionGoalType.ORBIT_INSERTION) {
+      return validateLunarOrbitInsertionMission(preset, craft, system, simTime);
+    }
+
+    // 否则使用原逻辑
     MissionValidationResult result = new MissionValidationResult();
 
-    CelestialBody target = preset.goal.targetBody;
     if (target == null) {
       result.canExecute = false;
       result.reason = "No target body specified";
@@ -102,17 +113,69 @@ class MissionValidator {
     double dv_capture = 0.5;
     double totalDV = dv1 + dv_capture;
 
+    MissionPlanner planner = new MissionPlanner();
+    CelestialBody earth = system.getEarth();
+    double waitTime = 0;
+    String waitInfo = "";
+    if (earth != null && target.name.equals("Moon") && preset.initialOrbit != null) {
+      waitTime = planner.calculateLunarTransferWindow(earth, target, preset.initialOrbit, simTime);
+      if (waitTime > 0) {
+        waitInfo = String.format(", wait %.1f hours for alignment", waitTime / 3600);
+      }
+    }
+
     result.canExecute = true;
     result.requiredDeltaV = totalDV;
-    result.reason = String.format("Transfer to %s requires %.3f km/s Δv", target.name, totalDV);
+    result.reason = String.format("Transfer to %s requires %.3f km/s Δv%s", target.name, totalDV, waitInfo);
 
-    MissionPlanner planner = new MissionPlanner();
-    ManeuverNode tli = new ManeuverNode(0, new Vector2(dv1, 0));
+    ManeuverNode tli = new ManeuverNode(waitTime, new Vector2(dv1, 0));
     tli.description = "Trans-Lunar Injection";
     tli.direction = "prograde";
     tli.deltaVMagnitude = dv1;
     result.maneuvers = new ArrayList<ManeuverNode>();
     result.maneuvers.add(tli);
+
+    return result;
+  }
+
+  // ========== 验证月球轨道插入任务 ==========
+  MissionValidationResult validateLunarOrbitInsertionMission(MissionPreset preset, Spacecraft craft,
+                                                              CelestialSystem system, double simTime) {
+    MissionValidationResult result = new MissionValidationResult();
+
+    CelestialBody earth = system.getEarth();
+    CelestialBody moon = preset.goal.targetBody;
+
+    if (earth == null || moon == null) {
+      result.canExecute = false;
+      result.reason = "Earth or Moon not found";
+      return result;
+    }
+
+    // 使用新的简化窗口计算
+    MissionPlanner planner = new MissionPlanner();
+    double waitTime = planner.calculateSimpleLunarWindow(earth, moon, preset.initialOrbit, simTime);
+
+    // 规划完整的双机动任务
+    List<ManeuverNode> maneuvers = planner.planLunarMission(earth, moon, preset.initialOrbit, simTime, waitTime);
+
+    // 计算总Δv
+    double totalDV = planner.getTotalDeltaV(maneuvers);
+
+    // 构建提示信息
+    String waitInfo = "";
+    if (waitTime < 60) {
+      waitInfo = String.format("wait %.0f seconds", waitTime);
+    } else if (waitTime < 3600) {
+      waitInfo = String.format("wait %.1f minutes", waitTime / 60);
+    } else {
+      waitInfo = String.format("wait %.1f hours", waitTime / 3600);
+    }
+
+    result.canExecute = true;
+    result.requiredDeltaV = totalDV;
+    result.reason = String.format("Lunar transfer: TLI + LOI, %.3f km/s total, %s", totalDV, waitInfo);
+    result.maneuvers = maneuvers;
 
     return result;
   }

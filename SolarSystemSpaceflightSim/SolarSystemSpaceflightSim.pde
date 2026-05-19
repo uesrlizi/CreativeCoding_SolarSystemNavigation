@@ -129,8 +129,8 @@ void draw() {
   double timeToNextManeuver = missionExecutor.getTimeToNextManeuver(timeManager.simTime);
   boolean jumpedToManeuver = false;
 
-  // 只在 warp >= 10分钟/秒（第4级及以上）时才进行跳转判定
-  if (timeToNextManeuver > 0 && timeManager.warpIndex >= 4) {
+  // 只在 warp >= 10分钟/秒（第3级及以上）时才进行跳转判定
+  if (timeToNextManeuver > 0 && timeManager.warpIndex >= 3) {
     // 计算这一帧本来要推进的时间
     double frameAdvance = timeManager.timeWarp * DAY_S * deltaTime;
 
