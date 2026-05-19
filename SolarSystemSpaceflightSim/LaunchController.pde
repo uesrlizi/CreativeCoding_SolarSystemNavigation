@@ -20,6 +20,7 @@ class LaunchController {
   double circBurnStartTime;   // 圆化燃烧开始时间
   double circBurnDuration;     // 圆化燃烧时长
   boolean apoapsisReached;      // 是否到达远地点
+  double lastPeriAlt;           // 上次记录的近地点高度
 
   LaunchController() {
     this.ship = null;
@@ -54,6 +55,7 @@ class LaunchController {
     this.apoapsisReached = false;
     this.circBurnStartTime = 0;
     this.circBurnDuration = 0;
+    this.lastPeriAlt = -1.0;
 
     // 开始倒计时
     ship.launchState = LaunchState.COUNTDOWN;
@@ -229,7 +231,44 @@ class LaunchController {
   void updateCircularizing(double simTime, double simDt) {
     if (ship.referenceBody == null) return;
 
-    // 使用 PEG 制导计算推力方向
+    // 计算近地点和远地点高度
+    double periAlt = flightComputer.perigeeAltitude(
+      ship.stateVector.position,
+      ship.stateVector.velocity,
+      EARTH_RADIUS_KM,
+      GM_EARTH
+    );
+    double apoAlt = flightComputer.apoapsisAltitude(
+      ship.stateVector.position,
+      ship.stateVector.velocity,
+      EARTH_RADIUS_KM,
+      GM_EARTH
+    );
+
+    // 计算接近程度：0=刚开始，1=接近完成
+    double progress = Math.min(1.0, periAlt / (targetOrbitAltitude * 0.99));
+
+    // 异常保护检查
+    boolean abort = false;
+    String abortReason = "";
+
+    // 1. 远地点过高保护
+    if (apoAlt > targetOrbitAltitude * 1.15) {
+      abort = true;
+      abortReason = "apoapsis too high";
+    }
+
+    // 2. 近地点不升反降保护（已过一段时间后）
+    double elapsedBurnTime = simTime - circBurnStartTime;
+    if (lastPeriAlt > 0 && elapsedBurnTime > circBurnDuration * 0.5 && periAlt < lastPeriAlt * 0.98) {
+      abort = true;
+      abortReason = "periapsis decreasing";
+    }
+
+    // 更新上次记录的近地点
+    lastPeriAlt = periAlt;
+
+    // 始终用PEG制导
     Vector2 thrustDir = flightComputer.pegGuidance(
       ship.stateVector.position,
       ship.stateVector.velocity,
@@ -237,34 +276,43 @@ class LaunchController {
       GM_EARTH
     );
 
-    // 计算近地点高度
-    double periAlt = flightComputer.perigeeAltitude(
-      ship.stateVector.position,
-      ship.stateVector.velocity,
-      EARTH_RADIUS_KM,
-      GM_EARTH
-    );
+    // 计算节流阀：接近目标时降低推力提高精度
+    float throttle = 1.0f;
+    if (progress >= 0.85) {
+      throttle = 0.7f;
+    }
+    if (progress >= 0.95) {
+      throttle = 0.3f;
+    }
+    if (progress >= 0.98) {
+      throttle = 0.2f;
+    }
 
-    // 检查是否完成圆化
-    double elapsedBurnTime = simTime - circBurnStartTime;
-    boolean timeUp = elapsedBurnTime >= circBurnDuration * 1.5;
-    boolean orbitGood = periAlt >= targetOrbitAltitude * 0.95;
+    // 检查是否完成圆化或异常中止
+    boolean timeUp = elapsedBurnTime >= circBurnDuration * 2.0;
+    boolean periGood = periAlt >= targetOrbitAltitude * 0.975;
+    boolean apoGood = apoAlt <= targetOrbitAltitude * 1.05;
+    boolean orbitGood = periGood && apoGood;
 
-    if (orbitGood || timeUp) {
-      // 完成圆化
+    if (orbitGood || timeUp || abort) {
+      // 完成圆化或异常中止
       shutdownEngine();
       ship.launchState = LaunchState.IN_ORBIT;
-      println("Orbit insertion complete, periapsis: " + periAlt + " km");
+      if (abort) {
+        println("Orbit insertion ABORTED (" + abortReason + "), periapsis: " + periAlt + " km, apoapsis: " + apoAlt + " km");
+      } else {
+        println("Orbit insertion complete, periapsis: " + periAlt + " km, apoapsis: " + apoAlt + " km");
+      }
       return;
     }
 
-    // 使用 PEG 制导方向点火
+    // 使用制导方向点火
     if (ship.autoControl != null) {
       ship.autoControl.setTargetDirection(thrustDir);
-      ship.autoControl.targetThrottle = 1.0f;
+      ship.autoControl.targetThrottle = throttle;
     }
     if (ship.mainEngine != null) {
-      ship.mainEngine.setThrottle(1.0f);
+      ship.mainEngine.setThrottle(throttle);
     }
   }
 

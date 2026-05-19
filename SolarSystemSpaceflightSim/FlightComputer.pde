@@ -61,14 +61,28 @@ class FlightComputer {
       return new Vector2(1, 0);
     }
 
+    // 计算吻接轨道要素
+    double[] p = osculatingParams(pos, vel, GM);
+    double a = p[0];
+    double e = p[1];
+
+    // 目标：a = targetRadius, e = 0
+    double a_target = targetRadius;
+    double e_target = 0.0;
+
     // 计算径向速度
     double vRad = pos.dot(vel) / r;
 
-    // 计算高度误差
-    double altError = r - targetRadius;
+    // 计算误差
+    double da = a - a_target;           // 半长轴误差
+    double de = e - e_target;           // 偏心率误差
 
-    // 计算俯仰补偿角
-    double pitchOffset = -PEG_K_ALT * altError - PEG_K_VRAD * vRad;
+    // 计算俯仰补偿角：
+    // - da > 0 (当前半长轴太大) → 需要一点点径向向内 (pitchOffset负)
+    // - vRad > 0 (正在远离) → 需要一点点径向向内 (pitchOffset负)
+    double pitchOffset = 0.0;
+    pitchOffset -= PEG_K_ALT * da / 1000.0;   // 半长轴误差项（归一化一下）
+    pitchOffset -= PEG_K_VRAD * vRad;         // 径向速度项
     pitchOffset = constrainDouble(pitchOffset, -PEG_MAX_PITCH, PEG_MAX_PITCH);
 
     // 计算推力方向：从切向按pitchOffset向径向旋转
