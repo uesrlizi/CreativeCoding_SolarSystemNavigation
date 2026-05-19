@@ -94,7 +94,13 @@ class AutoControl {
     this.burnTimeRemaining = 0;
   }
 
+  // ========== 帧级别更新 (保持向后兼容) ==========
   void update(Spacecraft craft, double simDt) {
+    updateTick(craft, simDt);  // 直接转发给 tick 版本
+  }
+
+  // ========== Tick 级别更新 (新) ==========
+  void updateTick(Spacecraft craft, double tickDt) {
     if (!isActive) return;
 
     if (hasTargetDirection) {
@@ -110,7 +116,7 @@ class AutoControl {
     isBurning = targetThrottle > 0.01f;
 
     if (isBurning && burnTimeRemaining > 0) {
-      burnTimeRemaining -= simDt;
+      burnTimeRemaining -= tickDt;  // tick 级别扣减
       if (burnTimeRemaining <= 0) {
         burnTimeRemaining = 0;
         targetThrottle = 0;

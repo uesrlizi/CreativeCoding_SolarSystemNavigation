@@ -29,6 +29,7 @@ class MissionExecutor {
   double progress;
 
   private double lastUpdateSimTime;  // 上次更新的模拟时间
+  private double currentTickSimTime;  // 当前 tick 的模拟时间 (用于子步)
 
   MissionExecutor() {
     this.state = MissionExecutorState.IDLE;
@@ -40,6 +41,7 @@ class MissionExecutor {
     this.missionStartTime = 0;
     this.currentManeuverTime = 0;
     this.lastUpdateSimTime = 0;
+    this.currentTickSimTime = 0;
     this.statusText = "Idle";
     this.progress = 0;
   }
@@ -77,6 +79,7 @@ class MissionExecutor {
     }
   }
 
+  // ========== 帧级别更新 (保持向后兼容) ==========
   void update(double simTime, double dt) {
     if (assignedCraft == null) return;
     if (state == MissionExecutorState.IDLE ||
@@ -91,19 +94,35 @@ class MissionExecutor {
     if (simDt <= 0) simDt = 1.0 / 60.0;
     lastUpdateSimTime = simTime;
 
+    // 直接调用 tick 版本 (统一逻辑)
+    updateTick(simDt, simTime);
+  }
+
+  // ========== Tick 级别更新 ==========
+  void updateTick(double tickDt, double tickSimTime) {
+    if (assignedCraft == null) return;
+    if (state == MissionExecutorState.IDLE ||
+        state == MissionExecutorState.COMPLETED ||
+        state == MissionExecutorState.FAILED) {
+      return;
+    }
+
+    currentTickSimTime = tickSimTime;
+
+    // tick 级别更新 autoControl
     if (assignedCraft.autoControl != null) {
-      assignedCraft.autoControl.update(assignedCraft, simDt);
+      // assignedCraft.autoControl.updateTick(assignedCraft, tickDt);  // 由主循环统一调用
     }
 
     switch (state) {
       case WAITING_FOR_MANEUVER:
-        updateWaiting(simTime);
+        updateWaiting(tickSimTime);
         break;
       case ORIENTING:
-        updateOrienting(simTime);
+        updateOrienting(tickSimTime);
         break;
       case BURNING:
-        updateBurning(simTime, dt);
+        updateBurningTick(tickDt, tickSimTime);
         break;
       default:
         break;
@@ -180,6 +199,7 @@ class MissionExecutor {
                                    maneuverSequence.size());
   }
 
+  // ========== 原有 Burning 更新 (保持兼容) ==========
   private void updateBurning(double simTime, double dt) {
     ManeuverNode node = maneuverSequence.get(currentManeuverIndex);
 
@@ -195,6 +215,32 @@ class MissionExecutor {
 
     if (burnComplete) {
       completeManeuver(simTime);
+    } else {
+      double remaining = 0;
+      if (assignedCraft.autoControl != null) {
+        remaining = assignedCraft.autoControl.burnTimeRemaining;
+      }
+      statusText = String.format("Burning... %s remaining", formatTime(remaining));
+    }
+  }
+
+  // ========== Tick 级别 Burning 更新 (新) ==========
+  private void updateBurningTick(double tickDt, double tickSimTime) {
+    ManeuverNode node = maneuverSequence.get(currentManeuverIndex);
+
+    boolean burnComplete = false;
+
+    if (assignedCraft.autoControl != null) {
+      // 检查燃烧是否完成 (autoControl.updateTick 已在上层调用)
+      burnComplete = !assignedCraft.autoControl.isBurning ||
+                    assignedCraft.autoControl.burnTimeRemaining <= 0;
+    } else {
+      double burnTime = tickSimTime - currentManeuverTime;
+      burnComplete = burnTime >= node.burnDuration;
+    }
+
+    if (burnComplete) {
+      completeManeuver(tickSimTime);
     } else {
       double remaining = 0;
       if (assignedCraft.autoControl != null) {
@@ -282,7 +328,7 @@ class MissionExecutor {
         return timeManager.WARP_LEVELS.length - 2;
       case ORIENTING:
       case BURNING:
-        return 3;  // 允许低档加速到10分钟/秒，物理系统有子步保证精度
+        return 2;  // 允许低档加速到1分钟/秒，物理系统有子步保证精度
       default:
         return -1;  // IDLE/COMPLETED/FAILED: no special restriction
     }

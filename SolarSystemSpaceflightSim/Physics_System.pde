@@ -10,12 +10,14 @@ class PhysicsSystem {
   SpacecraftForceModel forceModel;
   CollisionDetector collisionDetector;
   AtmosphereModel atmosphereModel;
+  PhysicsTickSystem tickSystem;  // 新增：物理 tick 调度器
 
   // 上一帧的物理模式
   PhysicsMode previousMode;
 
   // 调试信息
   String debugInfo;
+  int lastNumTicks;  // 调试：上次执行的 tick 数
 
   PhysicsSystem(CelestialSystem solarSystem) {
     this.patchedConics = new PatchedConicsSystem(solarSystem);
@@ -23,8 +25,10 @@ class PhysicsSystem {
     this.forceModel = new SpacecraftForceModel(solarSystem);
     this.collisionDetector = new CollisionDetector(solarSystem);
     this.atmosphereModel = new AtmosphereModel();
+    this.tickSystem = new PhysicsTickSystem();
     this.previousMode = null;
     this.debugInfo = "";
+    this.lastNumTicks = 0;
   }
 
   // ============================================================
@@ -55,10 +59,10 @@ class PhysicsSystem {
   }
 
   // ============================================================
-  //  主更新
+  //  在物理 tick 内更新单个 spacecraft
   // ============================================================
 
-  void update(Spacecraft ship, double simDt, double simTime) {
+  void updateShipInTick(Spacecraft ship, double simDt, double simTime) {
     PhysicsMode currentMode = determineMode(ship);
 
     // 处理模式切换
@@ -70,7 +74,7 @@ class PhysicsSystem {
     if (currentMode == PhysicsMode.ON_RAILS) {
       updateOnRails(ship, simTime);
     } else {
-      updateOffRails(ship, simDt, simTime);
+      updateOffRailsSingleStep(ship, simDt, simTime);
     }
 
     // 检查SOI穿越（在任何模式下都需要检查）
@@ -89,6 +93,18 @@ class PhysicsSystem {
   }
 
   // ============================================================
+  //  原有的主更新 (保持向后兼容)
+  // ============================================================
+
+  void update(Spacecraft ship, double simDt, double simTime, MissionExecutor missionExecutor) {
+    updateShipInTick(ship, simDt, simTime);
+  }
+
+  void update(Spacecraft ship, double simDt, double simTime) {
+    updateShipInTick(ship, simDt, simTime);
+  }
+
+  // ============================================================
   //  On-rails更新
   // ============================================================
 
@@ -97,10 +113,10 @@ class PhysicsSystem {
   }
 
   // ============================================================
-  //  Off-rails更新
+  //  Off-rails更新 (单步版本，在 tick 内被调用)
   // ============================================================
 
-  void updateOffRails(Spacecraft ship, double simDt, double simTime) {
+  void updateOffRailsSingleStep(Spacecraft ship, double simDt, double simTime) {
     // 设置力模型
     List<CelestialBody> gravityBodies = new ArrayList<CelestialBody>();
     if (ship.referenceBody != null && ship.referenceBody.parentBody != null) {
@@ -123,10 +139,10 @@ class PhysicsSystem {
       ship.getCurrentMass()
     );
 
-    // 更新姿态控制
+    // 更新姿态控制 (已有自己的子步)
     updateAttitudeControl(ship, simDt);
 
-    // 数值积分
+    // 数值积分 (RK4)
     integrator.reset();
     integrator.integrateRK4(
       ship.stateVector.position,
@@ -148,6 +164,27 @@ class PhysicsSystem {
       ship.worldVelX = ship.stateVector.velocity.x;
       ship.worldVelY = ship.stateVector.velocity.y;
     }
+
+    // 更新orbit对象（用于绘制轨道）
+    if (ship.referenceBody != null) {
+      Orbit newOrbit = Orbit_fromStateVector(
+        ship.stateVector.position,
+        ship.stateVector.velocity,
+        ship.referenceBody,
+        simTime
+      );
+      if (newOrbit != null) {
+        ship.orbit = newOrbit;
+      }
+    }
+  }
+
+  // 保持向后兼容
+  void updateOffRails(Spacecraft ship, double simDt, double simTime) {
+    updateOffRailsSingleStep(ship, simDt, simTime);
+  }
+  void updateOffRails(Spacecraft ship, double simDt, double simTime, MissionExecutor missionExecutor) {
+    updateOffRailsSingleStep(ship, simDt, simTime);
   }
 
   // ============================================================
@@ -238,21 +275,36 @@ class PhysicsSystem {
   }
 
   // ============================================================
+  //  判定单个飞船是否需要物理tick
+  // ============================================================
+
+  boolean needsPhysicsTick(Spacecraft ship) {
+    // 1. 有推力在烧
+    if (ship.autoControl.targetThrottle > 0.01f) return true;
+
+    // 2. 在大气层内
+    if (ship.referenceBody != null) {
+      double alt = atmosphereModel.altitudeAboveSurface(ship.stateVector.position, ship.referenceBody);
+      if (atmosphereModel.inAtmosphere(ship.referenceBody, alt)) return true;
+    }
+
+    // 3. 正在调整姿态
+    if (ship.autoControl.hasTargetDirection) return true;
+
+    // 4. OFF-RAILS模式
+    if (ship.physicsMode == PhysicsMode.OFF_RAILS) return true;
+
+    return false;
+  }
+
+  // ============================================================
   //  获取最大允许的时间warp
   // ============================================================
 
   int getMaxTimeWarp(Spacecraft ship, TimeManager timeManager) {
-    if (ship.physicsMode == PhysicsMode.OFF_RAILS) {
-      // 物理模式下限制最高warp
-      return Math.min(3, timeManager.WARP_LEVELS.length - 1);
-    }
-
-    if (ship.referenceBody != null) {
-      double alt = atmosphereModel.altitudeAboveSurface(ship.stateVector.position, ship.referenceBody);
-      if (atmosphereModel.inAtmosphere(ship.referenceBody, alt)) {
-        // 在大气层内限制warp
-        return Math.min(4, timeManager.WARP_LEVELS.length - 1);
-      }
+    if (needsPhysicsTick(ship)) {
+      // 需要tick时，限制到warp 2（1分钟/秒）
+      return 2;
     }
 
     return timeManager.WARP_LEVELS.length - 1;
@@ -293,6 +345,11 @@ class PhysicsSystem {
       double angleDiff = Math.abs(ship.autoControl.targetDirection.angle() - currentDir.angle());
       while (angleDiff > Math.PI) angleDiff = TWO_PI - angleDiff;
       info += String.format("Targeting: %.1f deg err\n", Math.toDegrees(angleDiff));
+    }
+
+    // 添加 tick 调试信息
+    if (mode == PhysicsMode.OFF_RAILS) {
+      info += String.format("Ticks: %d\n", lastNumTicks);
     }
 
     this.debugInfo = info;

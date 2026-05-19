@@ -156,38 +156,115 @@ void draw() {
   }
 
   // 正常推进时间（如果没跳转）
+  double frameStartSimTime = timeManager.simTime;
   if (!jumpedToManeuver) {
     timeManager.update(deltaTime);
-    solarSystem.update(timeManager.simTime);
   }
+  double frameSimDt = timeManager.simTime - frameStartSimTime;
+
   solarSystem.updateRenderer(deltaTime);
 
-  // Update mission executor (Stage 5)
-  missionExecutor.update(timeManager.simTime, deltaTime);
+  // ========== 判定是否需要物理tick模式 ==========
+  boolean needsTickMode = false;
 
-  // Update spacecraft positions using PhysicsSystem
-  for (Spacecraft ship : solarSystem.ships) {
-    double simDt = timeManager.simTime - ship.lastUpdateTime;
-    if (simDt <= 0) simDt = 1.0f / 60.0f;
-    if (simDt > 3600) simDt = 3600;
-    ship.lastUpdateTime = timeManager.simTime;
-
-    // 使用PhysicsSystem统一更新
-    physicsSystem.update(ship, simDt, timeManager.simTime);
+  // 1. 检查MissionExecutor状态
+  if (missionExecutor.state == MissionExecutorState.ORIENTING ||
+      missionExecutor.state == MissionExecutorState.BURNING) {
+    needsTickMode = true;
   }
 
-  // 更新智能warp限制 - 优先使用missionExecutor的建议
+  // 2. 检查每个飞船
+  if (!needsTickMode) {
+    for (Spacecraft ship : solarSystem.ships) {
+      if (physicsSystem.needsPhysicsTick(ship)) {
+        needsTickMode = true;
+        break;
+      }
+    }
+  }
+
+  // ========== 更新：分两种模式 ==========
+  if (frameSimDt > 0 && !jumpedToManeuver) {
+    if (needsTickMode) {
+      // ========== Tick模式：需要精度 ==========
+      physicsSystem.tickSystem.executeTicks(
+        null, frameSimDt, frameStartSimTime,
+        (unusedShip, tickDt, currentSimTime) -> {
+          // 每个tick内的更新
+          solarSystem.update(currentSimTime);
+          missionExecutor.updateTick(tickDt, currentSimTime);
+
+          for (Spacecraft ship : solarSystem.ships) {
+            if (currentSimTime > ship.lastUpdateTime) {
+              ship.lastUpdateTime = currentSimTime;
+
+              if (ship.autoControl != null && ship.autoControl.isActive) {
+                ship.autoControl.updateTick(ship, tickDt);
+              }
+
+              physicsSystem.updateShipInTick(ship, tickDt, currentSimTime);
+            }
+          }
+        }
+      );
+    } else {
+      // ========== 直接跳转模式：不需要精度 ==========
+      solarSystem.update(timeManager.simTime);
+      missionExecutor.update(timeManager.simTime, deltaTime);
+
+      for (Spacecraft ship : solarSystem.ships) {
+        double shipSimDt = timeManager.simTime - ship.lastUpdateTime;
+        if (shipSimDt > 0) {
+          ship.lastUpdateTime = timeManager.simTime;
+
+          if (ship.physicsMode == PhysicsMode.ON_RAILS && ship.orbit != null) {
+            ship.updateOnRails(timeManager.simTime);
+          } else {
+            physicsSystem.updateShipInTick(ship, shipSimDt, timeManager.simTime);
+          }
+
+          if (ship.autoControl != null && ship.autoControl.isActive) {
+            ship.autoControl.updateTick(ship, 0);
+          }
+        }
+      }
+    }
+  } else {
+    // 跳转到机动的情况：直接更新到目标时间
+    solarSystem.update(timeManager.simTime);
+    for (Spacecraft ship : solarSystem.ships) {
+      double shipSimDt = timeManager.simTime - ship.lastUpdateTime;
+      if (shipSimDt > 0) {
+        ship.lastUpdateTime = timeManager.simTime;
+        if (ship.physicsMode == PhysicsMode.ON_RAILS && ship.orbit != null) {
+          ship.updateOnRails(timeManager.simTime);
+        } else {
+          physicsSystem.updateShipInTick(ship, shipSimDt, timeManager.simTime);
+        }
+        if (ship.autoControl != null && ship.autoControl.isActive) {
+          ship.autoControl.updateTick(ship, 0);
+        }
+      }
+    }
+    missionExecutor.update(timeManager.simTime, deltaTime);
+  }
+
+  // ========== 更新智能warp限制 ==========
   int globalMaxWarp = timeManager.WARP_LEVELS.length - 1;
-  if (missionExecutor.state != MissionExecutorState.IDLE &&
-      missionExecutor.state != MissionExecutorState.COMPLETED &&
-      missionExecutor.state != MissionExecutorState.FAILED) {
-    // 任务正在执行中（非IDLE/COMPLETED/FAILED），使用执行器的限制
+
+  if (needsTickMode) {
+    // 需要tick模式时，强制warp 2（1分钟/秒）
+    globalMaxWarp = 2;
+  } else if (missionExecutor.state != MissionExecutorState.IDLE &&
+             missionExecutor.state != MissionExecutorState.COMPLETED &&
+             missionExecutor.state != MissionExecutorState.FAILED) {
+    // 任务执行中但不需要tick（WAITING_FOR_MANEUVER），用执行器建议
     int executorMaxWarp = missionExecutor.getRecommendedWarpLevel(timeManager);
     if (executorMaxWarp >= 0) {
       globalMaxWarp = executorMaxWarp;
     }
   } else {
-    // 普通情况：使用physicsSystem的限制
+    // 普通巡航，用每个飞船的限制（应该都是无限制）
     for (Spacecraft ship : solarSystem.ships) {
       int maxWarp = physicsSystem.getMaxTimeWarp(ship, timeManager);
       if (maxWarp < globalMaxWarp) {
@@ -195,6 +272,7 @@ void draw() {
       }
     }
   }
+
   timeManager.setMaxWarpIndex(globalMaxWarp);
 
   camera.update(deltaTime);
