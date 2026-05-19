@@ -102,7 +102,8 @@ class Spacecraft {
     this.isFixedToSurface = true;
 
     // 使用 baseAngle 计算相对地球中心的位置，不依赖 site.px/py（它们可能过期）
-    double r = EARTH_RADIUS_KM;
+    double padHeight = SHIP_LENGTH_KM * 0.10;  // 发射台表面高度（见 LaunchSiteRenderer.pde 第43行）
+    double r = EARTH_RADIUS_KM + padHeight + SHIP_LENGTH_KM * 0.5;  // 发射台高度 + 半个飞船长度
     double angle = site.baseAngle;
     this.stateVector.position = new Vector2(r * Math.cos(angle), r * Math.sin(angle));
     this.stateVector.velocity = new Vector2(0, 0);

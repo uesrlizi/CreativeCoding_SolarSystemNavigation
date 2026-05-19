@@ -15,6 +15,8 @@ class TaskMenu {
   boolean startButtonHover;
   int buttonHoverFrames;
 
+  MissionExecutorState lastExecutorState;  // 跟踪执行器状态变化
+
   TaskMenu() {
     visible = false;
     float scale = uiScale;
@@ -33,6 +35,7 @@ class TaskMenu {
     buttonHoverFrames = 0;
     selectedPreset = null;
     validationResult = null;
+    lastExecutorState = MissionExecutorState.IDLE;
   }
 
   void toggle() {
@@ -67,6 +70,22 @@ class TaskMenu {
   void update() {
     if (!visible) return;
     float scale = uiScale;
+
+    // 检测任务执行器状态变化 - 当任务完成时刷新可用任务列表
+    MissionExecutorState currentState = missionExecutor.state;
+    if (lastExecutorState != currentState) {
+      // 检测是否从执行中状态变为完成/失败状态
+      boolean wasInProgress = (lastExecutorState == MissionExecutorState.WAITING_FOR_MANEUVER ||
+                               lastExecutorState == MissionExecutorState.ORIENTING ||
+                               lastExecutorState == MissionExecutorState.BURNING);
+      boolean isDone = (currentState == MissionExecutorState.COMPLETED ||
+                        currentState == MissionExecutorState.FAILED);
+
+      if (wasInProgress && isDone) {
+        refreshAvailablePresets();
+      }
+      lastExecutorState = currentState;
+    }
 
     panelX = width - 320 * scale;
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
@@ -346,22 +365,8 @@ class TaskMenu {
       if (site != null) {
         ship.initOnLaunchPad(body, site);
       }
-    } else {
-      // 普通任务：重置到预设轨道
-      ship.referenceBody = body;
-      if (preset.initialOrbit != null) {
-        ship.orbit = new Orbit(
-          preset.initialOrbit.a,
-          preset.initialOrbit.e,
-          preset.initialOrbit.w,
-          preset.initialOrbit.M0,
-          timeManager.simTime,
-          preset.initialOrbit.period,
-          body
-        );
-        ship.updateOnRails(timeManager.simTime);
-      }
     }
+    // 普通任务（GEO、月球转移）：不重置轨道，从当前位置继续
 
     // 验证并计算机动
     validationResult = missionValidator.validateMission(preset, ship, solarSystem, timeManager.simTime);
