@@ -115,8 +115,9 @@ class MissionPlanner {
       // 计算月球在到达时刻的角度
       double moonAngle = getMoonAngleAtTime(moon, t_arrival);
 
-      // 计算角度差
-      double error = Math.abs(normalizeAngle(moonAngle - targetAngle));
+      // 计算角度差（取最短的角度差，0到π）
+      double delta = normalizeAngle(moonAngle - targetAngle);
+      double error = Math.min(delta, TWO_PI - delta);
       if (error < bestError) {
         bestError = error;
         bestWait = t_wait;
@@ -154,9 +155,7 @@ class MissionPlanner {
     // 在2D模拟中：
     // - 忽略i（倾角）和Omega（升交点赤经）
     // - 只需要 w（近地点幅角）+ nu（真近点角）
-    // 注意：moon.w 是角度！需要转成弧度！
-    double w_rad = Math.toRadians(moon.w);
-    return w_rad + nu;
+    return moon.w + nu;
   }
 
   private double getMoonTrueAnomaly(CelestialBody moon, double simTime) {
@@ -229,31 +228,32 @@ class MissionPlanner {
     double moonAngle0 = getMoonAngleAtTime(moon, simTime);
 
     // 解析求解 t_wait
-    // 方程：shipAngle0 + n_leo*t_wait + π = moonAngle0 + n_moon*(t_wait + transferTime) + k*2π
-    // 整理：t_wait = [moonAngle0 - shipAngle0 - π + n_moon*transferTime + k*2π] / (n_leo - n_moon)
+    // 方程：shipAngle0 + n_leo*t_wait + PI = moonAngle0 + n_moon*(t_wait + transferTime) + k*2π
+    // 整理：t_wait = [moonAngle0 - shipAngle0 - PI + n_moon*transferTime + k*2π] / (n_leo - n_moon)
 
-    double numerator0 = normalizeAngle(moonAngle0 - shipAngle0 - PI + n_moon * transferTime);
+    double numerator0 = moonAngle0 - shipAngle0 - PI + n_moon * transferTime;
     double denominator = n_leo - n_moon;
 
     // 先求一个基础解
     double t_wait0 = numerator0 / denominator;
 
-    // 将 t_wait 调整到未来最近的窗口
-    // 窗口周期：LEO周期，因为每圈都有一次机会
-    double leoPeriod = leoOrbit.period;
+    // 窗口周期是：2π / (n_leo - n_moon) —— 因为两个天体都在运动
+    double windowPeriod = TWO_PI / (n_leo - n_moon);
 
     // 找到最小的非负 t_wait
     double t_wait = t_wait0;
+
+    // 把 t_wait 调整到未来最近的窗口
     while (t_wait < 0) {
-      t_wait += leoPeriod;
+      t_wait += windowPeriod;
     }
-    while (t_wait >= leoPeriod) {
-      t_wait -= leoPeriod;
+    while (t_wait >= windowPeriod) {
+      t_wait -= windowPeriod;
     }
 
     // 保证至少有10秒准备时间
     if (t_wait < 10) {
-      t_wait += leoPeriod;
+      t_wait += windowPeriod;
     }
 
     return t_wait;

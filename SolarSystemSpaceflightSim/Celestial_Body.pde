@@ -49,9 +49,9 @@ class CelestialBody {
     this.name = name;
     this.a = a_au * AU_KM;
     this.e = e;
-    this.i = i;
-    this.omega = omega;
-    this.w = w;
+    this.i = Math.toRadians(i);
+    this.omega = Math.toRadians(omega);
+    this.w = Math.toRadians(w);
     this.M0 = Math.toRadians(M0);
     this.period = T_days * DAY_S;
     this.orbit = new Orbit(this.a, this.e, this.w, this.M0, 0.0, this.period, null);

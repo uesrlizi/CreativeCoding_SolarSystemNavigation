@@ -42,9 +42,7 @@ class TaskMenu {
     if (visible && presets == null) {
       presets = getAllMissionPresets(solarSystem);
     }
-    if (visible) {
-      validateSelected();
-    }
+    // 不提前验证，开始任务时才验证
   }
 
   void validateSelected() {
@@ -180,7 +178,7 @@ class TaskMenu {
       } else {
         fill(150);
         textSize(11 * scale);
-        text("Validation pending...", panelX + panelMargin + 8 * scale, valY);
+        text("Click START to begin mission", panelX + panelMargin + 8 * scale, valY);
       }
     } else {
       fill(150);
@@ -195,7 +193,8 @@ class TaskMenu {
     float btnW = 80 * scale;
     float btnH = 28 * scale;
 
-    boolean canStart = selectedPreset != null && validationResult != null && validationResult.canExecute;
+    // 只要选中预设就可以点击，验证在点击后进行
+    boolean canStart = selectedPreset != null;
     if (canStart) {
       fill(startButtonHover ? color(80, 200, 100) : color(60, 160, 80));
     } else {
@@ -308,7 +307,7 @@ class TaskMenu {
       int idx = (int)((my - listY) / rowH);
       if (idx >= 0 && idx < presets.size()) {
         selectedPreset = presets.get(idx);
-        validateSelected();
+        // 不提前验证，开始任务时才验证
         return true;
       }
     }
@@ -320,7 +319,7 @@ class TaskMenu {
     float btnH = 28 * scale;
 
     if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
-      if (selectedPreset != null && validationResult != null && validationResult.canExecute) {
+      if (selectedPreset != null) {
         startMission(selectedPreset);
       }
       return true;
@@ -348,6 +347,7 @@ class TaskMenu {
       solarSystem.ships.add(ship);
     }
 
+    // 1. 先重置飞船轨道到预设状态
     ship.referenceBody = body;
     if (preset.initialOrbit != null) {
       ship.orbit = new Orbit(
@@ -360,6 +360,12 @@ class TaskMenu {
         body
       );
       ship.updateOnRails(timeManager.simTime);
+    }
+
+    // 2. 再验证并计算机动（基于重置后的轨道）
+    validationResult = missionValidator.validateMission(preset, ship, solarSystem, timeManager.simTime);
+    if (!validationResult.canExecute) {
+      return; // 验证失败，不开始
     }
 
     camera.focusOn(ship);
