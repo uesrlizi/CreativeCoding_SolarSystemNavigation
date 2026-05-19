@@ -1,12 +1,11 @@
 // ========== MISSION PRESETS ==========
 
 static final String MISSION_PRESET_LAUNCH_TO_LEO = "launch_to_leo";
-static final String MISSION_PRESET_LEO = "leo";
 static final String MISSION_PRESET_GEO = "geo";
 static final String MISSION_PRESET_LUNAR_TRANSFER = "lunar_transfer";
 
-// 任务解锁状态
-static boolean hasCompletedLaunchMission = false;
+// 游戏进度状态
+static GameProgressState currentGameProgress = GameProgressState.GROUNDED;
 
 private List<MissionPreset> missionPresets;
 
@@ -38,25 +37,7 @@ void initMissionPresets(CelestialSystem system) {
   launchToLeo.goal.targetOrbit = new Orbit(leoA, 0.001, 0.0, 0.0, leoPeriod, earth);
   missionPresets.add(launchToLeo);
 
-  // LEO任务
   if (earth != null) {
-    MissionPreset leo = new MissionPreset(
-      MISSION_PRESET_LEO,
-      "Low Earth Orbit",
-      "Start in a 400 km circular orbit around Earth."
-    );
-    leo.requiredSpacecraftPreset = PRESET_LEO_SATELLITE;
-    leo.initialBody = earth;
-    double a = EARTH_RADIUS_KM + 400;
-    double e = 0.001;
-    double w = 0.0;
-    double M0 = 0.0;
-    double period = 2 * PI * Math.sqrt(a * a * a / GM_EARTH);
-    leo.initialOrbit = new Orbit(a, e, w, M0, 0.0, period, earth);
-    leo.goal.type = MissionGoalType.REACH_ORBIT;
-    leo.goal.targetBody = earth;
-    missionPresets.add(leo);
-
     // GEO任务
     MissionPreset geo = new MissionPreset(
       MISSION_PRESET_GEO,
@@ -95,7 +76,6 @@ void initMissionPresets(CelestialSystem system) {
       lunar.goal.targetOrbit = new Orbit(aTarget, 0.001, 0.0, 0.0, 0.0, periodTarget, moon);
       missionPresets.add(lunar);
     }
-
   }
 }
 
@@ -104,10 +84,39 @@ List<MissionPreset> getAllMissionPresets(CelestialSystem system) {
   return missionPresets;
 }
 
+List<MissionPreset> getAvailableMissionPresets(CelestialSystem system) {
+  List<MissionPreset> all = getAllMissionPresets(system);
+  List<MissionPreset> available = new ArrayList<MissionPreset>();
+
+  for (MissionPreset p : all) {
+    if (!isMissionLocked(p)) {
+      available.add(p);
+    }
+  }
+  return available;
+}
+
 MissionPreset getMissionPreset(String id, CelestialSystem system) {
   if (missionPresets == null) initMissionPresets(system);
   for (MissionPreset p : missionPresets) {
     if (p.id.equals(id)) return p;
   }
   return null;
+}
+
+boolean isMissionLocked(MissionPreset preset) {
+  switch (currentGameProgress) {
+    case GROUNDED:
+      // 地面状态只能选发射任务
+      return !preset.id.equals(MISSION_PRESET_LAUNCH_TO_LEO);
+    case IN_LEO:
+      // LEO状态可以选同步轨道或月球转移
+      return preset.id.equals(MISSION_PRESET_LAUNCH_TO_LEO);
+    case IN_GEO:
+    case AT_MOON:
+      // 终态，所有任务锁定
+      return true;
+    default:
+      return true;
+  }
 }

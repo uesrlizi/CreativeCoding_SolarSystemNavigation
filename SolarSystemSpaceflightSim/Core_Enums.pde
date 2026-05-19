@@ -58,3 +58,10 @@ enum LaunchState {
   CIRCULARIZING,      // 入轨圆化
   IN_ORBIT            // 在轨
 }
+
+enum GameProgressState {
+  GROUNDED,    // 在地面，可执行发射任务
+  IN_LEO,      // 在低地球轨道，可执行同步轨道或月球转移
+  IN_GEO,      // 在地球同步轨道（完成状态）
+  AT_MOON      // 在月球轨道（完成状态）
+}

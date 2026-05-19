@@ -6,14 +6,13 @@ class TaskMenu {
   float rowH, headerH, detailH, footerH;
   float panelMargin;
 
-  List<MissionPreset> presets;
+  List<MissionPreset> availablePresets;
   MissionPreset selectedPreset;
   MissionValidationResult validationResult;
   int hoveredIndex;
   int hoveredFrames;
   boolean closeButtonHover;
   boolean startButtonHover;
-  boolean abortButtonHover;
   int buttonHoverFrames;
 
   TaskMenu() {
@@ -22,16 +21,15 @@ class TaskMenu {
     panelX = width - 320 * scale;
     panelY = 120 * scale;
     panelW = 300 * scale;
-    rowH = 26 * scale;
-    headerH = 42 * scale;
-    detailH = 160 * scale;
-    footerH = 80 * scale;
-    panelMargin = 10 * scale;
+    rowH = 32 * scale;
+    headerH = 48 * scale;
+    detailH = 140 * scale;
+    footerH = 70 * scale;
+    panelMargin = 12 * scale;
     hoveredIndex = -1;
     hoveredFrames = 0;
     closeButtonHover = false;
     startButtonHover = false;
-    abortButtonHover = false;
     buttonHoverFrames = 0;
     selectedPreset = null;
     validationResult = null;
@@ -39,10 +37,22 @@ class TaskMenu {
 
   void toggle() {
     visible = !visible;
-    if (visible && presets == null) {
-      presets = getAllMissionPresets(solarSystem);
+    if (visible) {
+      refreshAvailablePresets();
     }
-    // 不提前验证，开始任务时才验证
+  }
+
+  void refreshAvailablePresets() {
+    availablePresets = getAvailableMissionPresets(solarSystem);
+    // 如果之前选中的任务不再可用，清空选择
+    if (selectedPreset != null && isMissionLocked(selectedPreset)) {
+      selectedPreset = null;
+      validationResult = null;
+    }
+    // 默认选中第一个可用任务
+    if (selectedPreset == null && availablePresets.size() > 0) {
+      selectedPreset = availablePresets.get(0);
+    }
   }
 
   void validateSelected() {
@@ -59,7 +69,7 @@ class TaskMenu {
     float scale = uiScale;
 
     panelX = width - 320 * scale;
-    int presetCount = (presets != null) ? presets.size() : 0;
+    int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
     boolean hitPanel = (mouseX >= panelX && mouseX <= panelX + panelW &&
@@ -87,17 +97,13 @@ class TaskMenu {
 
     float footerY = panelY + headerH + presetCount * rowH + detailH + 8 * scale;
     float btnX = panelX + panelW - 100 * scale;
-    float btnY = footerY + 10 * scale;
+    float btnY = footerY + 15 * scale;
     float btnW = 80 * scale;
-    float btnH = 28 * scale;
+    float btnH = 32 * scale;
     startButtonHover = (mouseX >= btnX && mouseX <= btnX + btnW &&
                         mouseY >= btnY && mouseY <= btnY + btnH);
 
-    float abortBtnY = footerY + 44 * scale;
-    abortButtonHover = (mouseX >= btnX && mouseX <= btnX + btnW &&
-                       mouseY >= abortBtnY && mouseY <= abortBtnY + btnH);
-
-    if (startButtonHover || closeButtonHover || abortButtonHover) {
+    if (startButtonHover || closeButtonHover) {
       buttonHoverFrames++;
     } else {
       buttonHoverFrames = 0;
@@ -110,180 +116,141 @@ class TaskMenu {
 
     pushStyle();
 
-    int presetCount = (presets != null) ? presets.size() : 0;
+    int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
     noStroke();
-    fill(0, 0, 0, 160);
-    rect(panelX, panelY, panelW, panelH, 8 * scale);
+    fill(0, 0, 0, 170);
+    rect(panelX, panelY, panelW, panelH, 10 * scale);
 
-    fill(200);
-    textSize(16 * scale);
+    // 标题栏
+    fill(255, 200, 100);
+    textSize(18 * scale);
     textAlign(LEFT, TOP);
-    text("MISSIONS", panelX + panelMargin, panelY + panelMargin);
+    text("MISSIONS", panelX + panelMargin, panelY + panelMargin + 4);
 
+    // 显示当前进度状态
+    fill(180, 200, 220);
+    textSize(11 * scale);
+    String statusText = getProgressStatusText();
+    text(statusText, panelX + panelMargin, panelY + headerH - 22 * scale);
+
+    // 关闭按钮
     float closeX = panelX + panelW - 28 * scale;
     float closeY = panelY + 8 * scale;
     float closeSize = 22 * scale;
-    fill(closeButtonHover ? color(220, 100, 100) : color(180, 80, 80));
-    rect(closeX, closeY, closeSize, closeSize, 4 * scale);
+    fill(closeButtonHover ? color(220, 100, 100) : color(160, 70, 70));
+    rect(closeX, closeY, closeSize, closeSize, 5 * scale);
     fill(255);
     textSize(16 * scale);
     textAlign(CENTER, CENTER);
     text("×", closeX + closeSize / 2, closeY + closeSize / 2);
 
+    // 任务列表
     float rowY = panelY + headerH;
-    if (presets != null) {
-      for (int i = 0; i < presets.size(); i++) {
-        MissionPreset p = presets.get(i);
+    if (availablePresets != null) {
+      for (int i = 0; i < availablePresets.size(); i++) {
+        MissionPreset p = availablePresets.get(i);
         drawPresetRow(rowY, p, p == selectedPreset, i);
         rowY += rowH;
       }
     }
 
+    // 任务详情区域
     float detailY = rowY;
-    fill(10, 20, 40, 100);
-    rect(panelX + panelMargin, detailY + 4 * scale, panelW - 2 * panelMargin, detailH - 8 * scale, 4 * scale);
+    fill(15, 25, 45, 120);
+    rect(panelX + panelMargin, detailY + 4 * scale, panelW - 2 * panelMargin, detailH - 8 * scale, 6 * scale);
 
     if (selectedPreset != null) {
       fill(255, 200, 100);
-      textSize(14 * scale);
+      textSize(15 * scale);
       textAlign(LEFT, TOP);
-      text(selectedPreset.name, panelX + panelMargin + 8 * scale, detailY + 12 * scale);
+      text(selectedPreset.name, panelX + panelMargin + 10 * scale, detailY + 14 * scale);
 
-      fill(220);
+      fill(220, 230, 240);
       textSize(12 * scale);
       String desc = selectedPreset.description;
-      float maxW = panelW - 2 * panelMargin - 16 * scale;
-      float textY = detailY + 36 * scale;
-      float lineH = 16 * scale;
-      drawWrappedText(desc, panelX + panelMargin + 8 * scale, textY, maxW, lineH);
-
-      float valY = detailY + 80 * scale;
-      if (validationResult != null) {
-        if (validationResult.canExecute) {
-          fill(100, 255, 100);
-        } else {
-          fill(255, 100, 100);
-        }
-        textSize(11 * scale);
-        drawWrappedText(validationResult.reason, panelX + panelMargin + 8 * scale, valY, maxW, lineH);
-
-        if (validationResult.requiredDeltaV > 0) {
-          fill(200, 200, 255);
-          textSize(12 * scale);
-          text(String.format("Δv: %.3f km/s", validationResult.requiredDeltaV),
-               panelX + panelMargin + 8 * scale, valY + 40 * scale);
-        }
-      } else {
-        fill(150);
-        textSize(11 * scale);
-        text("Click START to begin mission", panelX + panelMargin + 8 * scale, valY);
-      }
+      float maxW = panelW - 2 * panelMargin - 20 * scale;
+      float textY = detailY + 40 * scale;
+      float lineH = 17 * scale;
+      drawWrappedText(desc, panelX + panelMargin + 10 * scale, textY, maxW, lineH);
     } else {
-      fill(150);
+      fill(140);
       textSize(12 * scale);
       textAlign(LEFT, TOP);
-      text("Select a mission...", panelX + panelMargin + 8 * scale, detailY + 40 * scale);
+      text("No mission available", panelX + panelMargin + 10 * scale, detailY + 50 * scale);
     }
 
+    // 底部区域 - START按钮
     float footerY = detailY + detailH;
     float btnX = panelX + panelW - 100 * scale;
-    float btnY = footerY + 10 * scale;
+    float btnY = footerY + 15 * scale;
     float btnW = 80 * scale;
-    float btnH = 28 * scale;
+    float btnH = 32 * scale;
 
-    // 只要选中预设且未锁定就可以点击，验证在点击后进行
-    boolean canStart = selectedPreset != null && !isMissionLocked(selectedPreset);
+    boolean missionInProgress = (missionExecutor.state != MissionExecutorState.IDLE &&
+                                 missionExecutor.state != MissionExecutorState.COMPLETED &&
+                                 missionExecutor.state != MissionExecutorState.FAILED);
+    boolean canStart = selectedPreset != null && !missionInProgress;
+
+    // 绘制按钮
     if (canStart) {
-      fill(startButtonHover ? color(80, 200, 100) : color(60, 160, 80));
+      fill(startButtonHover ? color(80, 200, 110) : color(60, 160, 80));
     } else {
-      fill(80, 80, 80);
+      fill(60, 60, 60);
     }
-    rect(btnX, btnY, btnW, btnH, 6 * scale);
+    rect(btnX, btnY, btnW, btnH, 7 * scale);
     fill(canStart ? 255 : 120);
     textSize(14 * scale);
     textAlign(CENTER, CENTER);
     text("START", btnX + btnW / 2, btnY + btnH / 2);
 
-    boolean canAbort = missionExecutor.state == MissionExecutorState.WAITING_FOR_MANEUVER ||
-                       missionExecutor.state == MissionExecutorState.ORIENTING ||
-                       missionExecutor.state == MissionExecutorState.BURNING;
-    float abortBtnY = footerY + 44 * scale;
-    if (canAbort) {
-      fill(abortButtonHover ? color(220, 80, 80) : color(180, 60, 60));
-    } else {
-      fill(60, 60, 60);
-    }
-    rect(btnX, abortBtnY, btnW, btnH, 6 * scale);
-    fill(canAbort ? 255 : 100);
-    textSize(14 * scale);
-    textAlign(CENTER, CENTER);
-    text("ABORT", btnX + btnW / 2, abortBtnY + btnH / 2);
-
-    if (missionExecutor.state != MissionExecutorState.IDLE) {
-      fill(200);
+    // 任务进行中显示状态
+    if (missionInProgress) {
+      fill(220, 180, 80);
       textSize(11 * scale);
       textAlign(LEFT, CENTER);
-      text(missionExecutor.statusText, panelX + panelMargin, footerY + 24 * scale);
-
-      float progressW = (panelW - 2 * panelMargin - btnW - 10 * scale);
-      float progressX = panelX + panelMargin;
-      float progressY = footerY + 50 * scale;
-      float progressH = 10 * scale;
-      fill(60);
-      rect(progressX, progressY, progressW, progressH, 4 * scale);
-      fill(80, 160, 220);
-      rect(progressX, progressY, (float)(progressW * missionExecutor.progress), progressH, 4 * scale);
+      text("Mission in progress...", panelX + panelMargin, footerY + 31 * scale);
     }
 
     popStyle();
   }
 
+  String getProgressStatusText() {
+    switch (currentGameProgress) {
+      case GROUNDED:
+        return "Status: Grounded at launch site";
+      case IN_LEO:
+        return "Status: In Low Earth Orbit";
+      case IN_GEO:
+        return "Status: In Geostationary Orbit";
+      case AT_MOON:
+        return "Status: At the Moon";
+      default:
+        return "";
+    }
+  }
+
   void drawPresetRow(float y, MissionPreset preset, boolean isSelected, int idx) {
     float scale = uiScale;
     boolean isHovered = (hoveredIndex == idx);
-    boolean isLocked = isMissionLocked(preset);
 
+    // 背景
     if (isSelected) {
-      fill(255, 220, 100, 40);
+      fill(255, 200, 100, 50);
     } else if (isHovered) {
-      fill(255, 255, 255, 12);
+      fill(255, 255, 255, 15);
     }
     if (isSelected || isHovered) {
       noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+      rect(panelX + 6 * scale, y + 2, panelW - 12 * scale, rowH - 4, 6 * scale);
     }
 
-    if (isLocked) {
-      fill(100);  // 灰色表示锁定
-    } else {
-      fill(isSelected ? color(255, 220, 100) : 200);
-    }
+    // 任务名称
+    fill(isSelected ? color(255, 220, 120) : 210);
     textSize(14 * scale);
     textAlign(LEFT, CENTER);
-
-    String displayName = preset.name;
-    if (isLocked) {
-      displayName = "[LOCKED] " + displayName;
-    }
-    text(displayName, panelX + panelMargin + 4 * scale, y + rowH / 2);
-  }
-
-  // ========== 检查任务是否锁定 ==========
-  boolean isMissionLocked(MissionPreset preset) {
-    // 发射任务永远不锁定
-    if (preset.id.equals(MISSION_PRESET_LAUNCH_TO_LEO)) {
-      return false;
-    }
-
-    // 如果已经完成发射任务，所有任务解锁
-    if (hasCompletedLaunchMission) {
-      return false;
-    }
-
-    // 否则，除了发射任务外都锁定
-    return true;
+    text(preset.name, panelX + panelMargin + 8 * scale, y + rowH / 2);
   }
 
   void drawWrappedText(String text, float x, float y, float maxW, float lineH) {
@@ -313,7 +280,7 @@ class TaskMenu {
     if (!visible) return false;
 
     float scale = uiScale;
-    int presetCount = (presets != null) ? presets.size() : 0;
+    int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
 
     if (mx < panelX || mx > panelX + panelW || my < panelY || my > panelY + panelH) {
       return false;
@@ -329,35 +296,28 @@ class TaskMenu {
     }
 
     float listY = panelY + headerH;
-    if (presets != null && my >= listY && my < listY + presetCount * rowH) {
+    if (availablePresets != null && my >= listY && my < listY + presetCount * rowH) {
       int idx = (int)((my - listY) / rowH);
-      if (idx >= 0 && idx < presets.size()) {
-        MissionPreset preset = presets.get(idx);
-        // 不能选择锁定的任务
-        if (!isMissionLocked(preset)) {
-          selectedPreset = preset;
-          // 不提前验证，开始任务时才验证
-        }
+      if (idx >= 0 && idx < availablePresets.size()) {
+        selectedPreset = availablePresets.get(idx);
         return true;
       }
     }
 
     float footerY = panelY + headerH + presetCount * rowH + detailH + 8 * scale;
     float btnX = panelX + panelW - 100 * scale;
-    float btnY = footerY + 10 * scale;
+    float btnY = footerY + 15 * scale;
     float btnW = 80 * scale;
-    float btnH = 28 * scale;
+    float btnH = 32 * scale;
+
+    boolean missionInProgress = (missionExecutor.state != MissionExecutorState.IDLE &&
+                                 missionExecutor.state != MissionExecutorState.COMPLETED &&
+                                 missionExecutor.state != MissionExecutorState.FAILED);
 
     if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
-      if (selectedPreset != null) {
+      if (selectedPreset != null && !missionInProgress) {
         startMission(selectedPreset);
       }
-      return true;
-    }
-
-    float abortBtnY = footerY + 44 * scale;
-    if (mx >= btnX && mx <= btnX + btnW && my >= abortBtnY && my <= abortBtnY + btnH) {
-      missionExecutor.abortMission();
       return true;
     }
 
@@ -422,9 +382,7 @@ class TaskMenu {
     missionExecutor.startMission(task, maneuvers, ship, solarSystem, timeManager.simTime);
   }
 
-  // ========== 获取天体的发射场 ==========
   LaunchSite getLaunchSiteForBody(CelestialBody body) {
-    // 返回全局的 launchSite 变量
     return launchSite;
   }
 
@@ -433,7 +391,6 @@ class TaskMenu {
     if (buttonHoverFrames >= Button.TOOLTIP_DELAY) {
       if (closeButtonHover) return "Close menu";
       if (startButtonHover) return "Start selected mission";
-      if (abortButtonHover) return "Abort current mission";
     }
     return null;
   }

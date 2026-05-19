@@ -206,8 +206,8 @@ class MissionExecutor {
 
   // ========== 完成发射任务 ==========
   void completeLaunchMission(double simTime) {
-    // 设置任务完成标志，解锁其他任务
-    hasCompletedLaunchMission = true;
+    // 切换游戏进度到 LEO
+    currentGameProgress = GameProgressState.IN_LEO;
 
     // 完成任务
     this.state = MissionExecutorState.COMPLETED;
@@ -222,7 +222,7 @@ class MissionExecutor {
       assignedCraft.autoControl.stop();
     }
 
-    println("Launch mission complete - other missions now unlocked!");
+    println("Launch mission complete - now in LEO!");
   }
 
   private void updateWaiting(double simTime) {
@@ -401,6 +401,18 @@ class MissionExecutor {
 
     if (currentTask != null) {
       currentTask.state = MissionState.COMPLETED;
+
+      // 根据完成的任务切换游戏进度状态
+      if (currentTask.preset != null) {
+        String presetId = currentTask.preset.id;
+        if (presetId.equals(MISSION_PRESET_GEO)) {
+          currentGameProgress = GameProgressState.IN_GEO;
+          println("Mission complete - now in Geostationary Orbit!");
+        } else if (presetId.equals(MISSION_PRESET_LUNAR_TRANSFER)) {
+          currentGameProgress = GameProgressState.AT_MOON;
+          println("Mission complete - now at the Moon!");
+        }
+      }
     }
 
     if (assignedCraft.autoControl != null) {
@@ -515,14 +527,8 @@ class MissionExecutor {
     return angle;
   }
 
+  // Abort disabled - missions cannot be aborted
   void abortMission() {
-    if (assignedCraft != null && assignedCraft.autoControl != null) {
-      assignedCraft.autoControl.stop();
-    }
-    if (assignedCraft != null && assignedCraft.mainEngine != null) {
-      assignedCraft.mainEngine.shutdown();
-    }
-    this.state = MissionExecutorState.FAILED;
-    this.statusText = "Mission aborted";
+    // Do nothing - missions must run to completion
   }
 }
