@@ -74,8 +74,10 @@ class MissionExecutor {
     updateProgress();
 
     ManeuverNode firstNode = maneuvers.get(0);
-    if (firstNode.time <= 0) {
-      startManeuver(firstNode, simTime);
+    double timeSinceStart = 0;  // 刚启动，相对于任务开始时间为0
+    double timeToIgnition = firstNode.ignitionTime - timeSinceStart;
+    if (timeToIgnition <= 0) {
+      startBurningImmediately(firstNode, simTime);
     }
   }
 
@@ -139,19 +141,25 @@ class MissionExecutor {
 
     ManeuverNode currentNode = maneuverSequence.get(currentManeuverIndex);
     double timeSinceStart = simTime - missionStartTime;
-    double timeToManeuver = currentNode.time - timeSinceStart;
+    double timeToIgnition = currentNode.ignitionTime - timeSinceStart;
+    double timeToMidpoint = currentNode.time - timeSinceStart;
 
-    if (timeToManeuver <= 0) {
-      startManeuver(currentNode, simTime);
+    if (timeToIgnition <= 0) {
+      // 到达点火时间，直接开始燃烧
+      startBurningImmediately(currentNode, simTime);
+    } else if (timeToIgnition <= 3.0) {
+      // 点火前3秒，开始定向旋转
+      startOrientingEarly(currentNode, simTime);
     } else {
-      statusText = String.format("T-%s to maneuver %d/%d",
-                                formatTime(timeToManeuver),
+      statusText = String.format("T-%s to maneuver %d/%d (burn %.1fs)",
+                                formatTime(timeToMidpoint),
                                 currentManeuverIndex + 1,
-                                maneuverSequence.size());
+                                maneuverSequence.size(),
+                                currentNode.burnDuration);
     }
   }
 
-  private void startManeuver(ManeuverNode node, double simTime) {
+  private void startOrientingEarly(ManeuverNode node, double simTime) {
     currentManeuverTime = simTime;
 
     Vector2 targetDir = getManeuverDirection(node);
@@ -161,24 +169,46 @@ class MissionExecutor {
     }
 
     this.state = MissionExecutorState.ORIENTING;
-    this.statusText = String.format("Orienting for maneuver %d/%d",
+    this.statusText = String.format("Orienting early for maneuver %d/%d",
                                    currentManeuverIndex + 1,
                                    maneuverSequence.size());
 
     assignedCraft.enterOffRails();
   }
 
-  private void updateOrienting(double simTime) {
-    if (assignedCraft.autoControl == null) {
-      startBurning();
-      return;
+  private void startBurningImmediately(ManeuverNode node, double simTime) {
+    currentManeuverTime = simTime;
+
+    // 设置目标方向（万一还没开始定向）
+    Vector2 targetDir = getManeuverDirection(node);
+    if (assignedCraft.autoControl != null) {
+      assignedCraft.autoControl.setTargetDirection(targetDir);
     }
 
-    if (assignedCraft.autoControl.isOriented()) {
+    assignedCraft.enterOffRails();
+
+    // 直接开始燃烧，不等待定向完成
+    startBurning();
+  }
+
+  private void updateOrienting(double simTime) {
+    ManeuverNode currentNode = maneuverSequence.get(currentManeuverIndex);
+    double timeSinceStart = simTime - missionStartTime;
+    double timeToIgnition = currentNode.ignitionTime - timeSinceStart;
+
+    // 持续更新目标方向（因为速度在变，ΔV方向也可能需要微调）
+    Vector2 targetDir = getManeuverDirection(currentNode);
+    if (assignedCraft.autoControl != null) {
+      assignedCraft.autoControl.setTargetDirection(targetDir);
+    }
+
+    if (timeToIgnition <= 0) {
+      // 到达点火时间，立即开始燃烧，不管定向是否完成
       startBurning();
     } else {
-      statusText = String.format("Orienting (%.1f° error)",
-                                Math.toDegrees(Math.abs(assignedCraft.autoControl.orientationError)));
+      statusText = String.format("Orienting (%.1f° error, T-ignition %.1fs)",
+                                Math.toDegrees(Math.abs(assignedCraft.autoControl.orientationError)),
+                                timeToIgnition);
     }
   }
 
@@ -287,6 +317,27 @@ class MissionExecutor {
   }
 
   private Vector2 getManeuverDirection(ManeuverNode node) {
+    if (node.useDeltaVDirection && assignedCraft != null) {
+      // 按ΔV矢量方向定向 - 需要从LVLH坐标系转换到惯性坐标系
+      if (node.deltaV.magnitudeSq() > 0.0001) {
+        // 获取当前轨道坐标系基向量
+        Vector2 prograde = assignedCraft.getPrograde();     // LVLH +X
+        Vector2 radialOut = assignedCraft.getRadialOut();   // LVLH +Y
+
+        // 将ΔV从LVLH坐标系转换到惯性坐标系
+        // deltaV.x = prograde 分量, deltaV.y = radial_out 分量
+        Vector2 inertialDir = new Vector2(
+          node.deltaV.x * prograde.x + node.deltaV.y * radialOut.x,
+          node.deltaV.x * prograde.y + node.deltaV.y * radialOut.y
+        );
+
+        if (inertialDir.magnitudeSq() > 0.0001) {
+          return inertialDir.normalized();
+        }
+      }
+    }
+
+    // 兼容旧的方向模式
     if (node.direction != null && assignedCraft != null) {
       switch (node.direction) {
         case "prograde":
@@ -339,7 +390,7 @@ class MissionExecutor {
            state == MissionExecutorState.BURNING;
   }
 
-  // 获取距离下一个机动的时间（秒），返回负数表示没有或已错过
+  // 获取距离下一个机动中点的时间（秒），返回负数表示没有或已错过
   double getTimeToNextManeuver(double currentSimTime) {
     if (state != MissionExecutorState.WAITING_FOR_MANEUVER) {
       return -1;
@@ -349,7 +400,20 @@ class MissionExecutor {
     }
     ManeuverNode node = maneuverSequence.get(currentManeuverIndex);
     double timeSinceStart = currentSimTime - missionStartTime;
-    return node.time - timeSinceStart;
+    return node.time - timeSinceStart;  // 返回距离燃烧中点的时间
+  }
+
+  // 获取距离下一个点火时间的时间（秒），返回负数表示没有或已错过
+  double getTimeToNextIgnition(double currentSimTime) {
+    if (state != MissionExecutorState.WAITING_FOR_MANEUVER) {
+      return -1;
+    }
+    if (currentManeuverIndex >= maneuverSequence.size()) {
+      return -1;
+    }
+    ManeuverNode node = maneuverSequence.get(currentManeuverIndex);
+    double timeSinceStart = currentSimTime - missionStartTime;
+    return node.ignitionTime - timeSinceStart;  // 返回距离点火的时间
   }
 
   void abortMission() {

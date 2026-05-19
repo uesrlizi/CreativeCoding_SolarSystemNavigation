@@ -127,16 +127,17 @@ void draw() {
 
   // Update systems - 先预判机动（只在高倍速时）
   double timeToNextManeuver = missionExecutor.getTimeToNextManeuver(timeManager.simTime);
+  double timeToNextIgnition = missionExecutor.getTimeToNextIgnition(timeManager.simTime);
   boolean jumpedToManeuver = false;
 
   // 只在 warp >= 10分钟/秒（第3级及以上）时才进行跳转判定
-  if (timeToNextManeuver > 0 && timeManager.warpIndex >= 3) {
+  if (timeToNextIgnition > 0 && timeManager.warpIndex >= 3) {
     // 计算这一帧本来要推进的时间
     double frameAdvance = timeManager.timeWarp * DAY_S * deltaTime;
 
-    if (timeToNextManeuver < frameAdvance) {
-      // 会跳过机动，直接跳转到机动前5秒
-      double targetSimTime = timeManager.simTime + timeToNextManeuver - 5.0;
+    if (timeToNextIgnition < frameAdvance) {
+      // 会跳过点火，直接跳转到点火前5秒
+      double targetSimTime = timeManager.simTime + timeToNextIgnition - 5.0;
       timeManager.simTime = targetSimTime;
 
       // 强制降到实时
