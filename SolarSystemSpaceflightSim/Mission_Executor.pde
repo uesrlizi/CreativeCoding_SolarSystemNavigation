@@ -531,4 +531,12 @@ class MissionExecutor {
   void abortMission() {
     // Do nothing - missions must run to completion
   }
+
+  // 获取脐带臂展开进度 (用于渲染)
+  float getUmbilicalDeployProgress() {
+    if (isLaunchMission && launchController != null) {
+      return launchController.getUmbilicalDeployProgress();
+    }
+    return 0.0f;
+  }
 }

@@ -321,7 +321,8 @@ void draw() {
 
   // Render launch site
   if (launchSite != null && launchSiteRenderer != null && solarSystem.ships.size() > 0) {
-    launchSiteRenderer.draw(launchSite, camera, solarSystem.ships.get(0));
+    float deployProgress = missionExecutor.getUmbilicalDeployProgress();
+    launchSiteRenderer.draw(launchSite, camera, solarSystem.ships.get(0), deployProgress);
   }
 
   // Render spacecraft

@@ -11,6 +11,9 @@ class LaunchController {
   boolean isActive;
   double missionStartTime;
 
+  // 脐带臂展开进度 (0.0 = 未展开, 1.0 = 完全展开)
+  float umbilicalDeployProgress;
+
   // 上升剖面参数
   double pitchOverAltitude;   // 重力转向高度 (km)
   double targetOrbitAltitude; // 目标轨道高度 (km)
@@ -34,6 +37,7 @@ class LaunchController {
     this.circBurnStartTime = 0;
     this.circBurnDuration = 0;
     this.apoapsisReached = false;
+    this.umbilicalDeployProgress = 0.0f;
   }
 
   // ========== 初始化 ==========
@@ -56,6 +60,7 @@ class LaunchController {
     this.circBurnStartTime = 0;
     this.circBurnDuration = 0;
     this.lastPeriAlt = -1.0;
+    this.umbilicalDeployProgress = 0.0f;
 
     // 开始倒计时
     ship.launchState = LaunchState.COUNTDOWN;
@@ -128,6 +133,10 @@ class LaunchController {
       ship.mainEngine.setThrottle(0.0f);
     }
 
+    // 点火后期开始展开脐带臂（从0到0.3）
+    float ignProgress = (float)(elapsed / Spacecraft.IGNITION_DURATION);
+    umbilicalDeployProgress = (float)constrainDouble(ignProgress * 0.3f, 0.0f, 0.3f);
+
     if (elapsed >= Spacecraft.IGNITION_DURATION) {
       // 点火结束，解除固定，开始发射
       ship.launchState = LaunchState.LAUNCHING;
@@ -141,6 +150,14 @@ class LaunchController {
     if (ship.referenceBody == null) return;
 
     double burnTime = simTime - ship.launchStartTime;
+
+    // 上升阶段继续展开脐带臂（从0.3到1.0，用2秒完成）
+    float deployTime = 2.0f;
+    if (burnTime <= deployTime) {
+      umbilicalDeployProgress = 0.3f + 0.7f * (float)(burnTime / deployTime);
+    } else {
+      umbilicalDeployProgress = 1.0f;
+    }
 
     // 确保autoControl是激活的
     if (ship.autoControl != null) {
@@ -386,5 +403,15 @@ class LaunchController {
         return "In Orbit - Launch Complete";
     }
     return "";
+  }
+
+  // 获取脐带臂展开进度 (0.0 = 未展开, 1.0 = 完全展开)
+  float getUmbilicalDeployProgress() {
+    return umbilicalDeployProgress;
+  }
+
+  // 重置脐带臂状态（返回发射台时调用）
+  void resetUmbilical() {
+    umbilicalDeployProgress = 0.0f;
   }
 }
