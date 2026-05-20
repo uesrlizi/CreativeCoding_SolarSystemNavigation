@@ -370,7 +370,7 @@ void draw() {
     }
   }
 
-  hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.sun, solarSystem.ships);
+  hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.moons, solarSystem.sun, solarSystem.ships);
   viewToggleButton.draw();
 
   // Draw debug panel

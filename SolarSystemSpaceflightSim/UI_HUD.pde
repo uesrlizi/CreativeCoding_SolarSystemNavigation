@@ -6,6 +6,7 @@ class HUD {
   TaskMenu taskMenu;
   MissionStatus missionStatus;
   HeadingIndicator headingIndicator;
+  OrbitalMinimap orbitalMinimap;
   OrbitDisplay orbitDisplay;
   Tooltip tooltip;
   String activeTooltipText;
@@ -22,6 +23,7 @@ class HUD {
     taskMenu = new TaskMenu();
     missionStatus = new MissionStatus();
     headingIndicator = new HeadingIndicator();
+    orbitalMinimap = new OrbitalMinimap();
     orbitDisplay = new OrbitDisplay();
     tooltip = new Tooltip();
     activeTooltipText = null;
@@ -57,6 +59,7 @@ class HUD {
     taskMenu.update();
     missionStatus.update();
     headingIndicator.update();
+    orbitalMinimap.update();
     orbitDisplay.update();
 
     if (taskButton != null) {
@@ -117,7 +120,7 @@ class HUD {
 
   void draw(CameraController cam, double simTime, double timeWarp,
            double[] WARP_LEVELS, String[] WARP_LABELS,
-           int warpIndex, List<CelestialBody> planets, CelestialBody sun, List<Spacecraft> ships) {
+           int warpIndex, List<CelestialBody> planets, List<CelestialBody> moons, CelestialBody sun, List<Spacecraft> ships) {
     timePanel.draw(timeManager);
     navPanel.draw(cam, sun, planets, ships);
     taskMenu.draw();
@@ -140,12 +143,19 @@ class HUD {
     }
 
     // 显示聚焦的航天器信息
+    Spacecraft displayShip = null;
     if (cam.focusShip != null) {
-      orbitDisplay.draw(cam.focusShip, simTime);
-      headingIndicator.draw(cam.focusShip);
+      displayShip = cam.focusShip;
     } else if (cam.mode == ViewMode.SHIP_VIEW && cam.followTarget != null) {
-      orbitDisplay.draw(cam.followTarget, simTime);
-      headingIndicator.draw(cam.followTarget);
+      displayShip = cam.followTarget;
+    } else if (ships != null && ships.size() > 0) {
+      displayShip = ships.get(0);
+    }
+
+    if (displayShip != null) {
+      orbitDisplay.draw(displayShip, simTime);
+      orbitalMinimap.draw(displayShip, planets, moons, sun);
+      // headingIndicator.draw(displayShip);
     }
 
     tooltip.draw();
