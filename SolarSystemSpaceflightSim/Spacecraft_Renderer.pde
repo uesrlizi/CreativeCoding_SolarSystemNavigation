@@ -548,8 +548,8 @@ class SpacecraftRenderer {
       }
     }
 
-    // 2. 画事件（AP/PE）
-    if (showApoapsis || showPeriapsis) {
+    // 2. 画事件（AP/PE）- 只在显示轨迹时才显示
+    if (showTrajectory && (showApoapsis || showPeriapsis)) {
       float markerSize = 6 * scale;
 
       for (TrajectoryEvent event : trajectory.events) {

@@ -646,10 +646,16 @@ void keyPressed() {
   }
   if (key == 't' || key == 'T') {
     showTrajectory = !showTrajectory;
-    if (hud.trajButton != null) hud.trajButton.setToggled(showTrajectory);
-  }
-  if (key == 'm' || key == 'M') {
-    hud.taskMenu.toggle();
+    hud.trajIcon.toggled = showTrajectory;
+    // 只更新显示状态，不改变用户的开关选择
+    if (!showTrajectory) {
+      showApoapsis = false;
+      showPeriapsis = false;
+    } else {
+      // 恢复用户之前的选择
+      showApoapsis = hud.apsisIcon.toggled;
+      showPeriapsis = hud.apsisIcon.toggled;
+    }
   }
   if (key == 'd' || key == 'D') {
     debugPanel.toggle();

@@ -20,11 +20,11 @@ class NavigationFocusPanel {
     float scale = uiScale;
     panelX = 10 * scale;
     panelY = 120 * scale;
-    panelW = 270 * scale;
+    panelW = 260 * scale;  // 调整为更合理的宽度
     rowH = 26 * scale;
     headerH = 42 * scale;
     footerH = 36 * scale;
-    panelMargin = 10 * scale;
+    panelMargin = 12 * scale;
 
     selectedBody = null;
     selectedShip = false;
@@ -41,14 +41,6 @@ class NavigationFocusPanel {
     float scale = uiScale;
     int bodyCount = 1 + 8;
     panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
-
-    if (camera.getMode() != ViewMode.MAP_VIEW) {
-      hoveredIndex = -1;
-      hoveredFrames = 0;
-      snapButtonHover = false;
-      snapButtonHoverFrames = 0;
-      return;
-    }
 
     boolean hitPanel = (mouseX >= panelX && mouseX <= panelX + panelW &&
                         mouseY >= panelY && mouseY <= panelY + panelH);
@@ -100,17 +92,11 @@ class NavigationFocusPanel {
   }
 
   void draw(CameraController cam, CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
-    if (cam.getMode() != ViewMode.MAP_VIEW) return;
-
     float scale = uiScale;
     pushStyle();
 
     int bodyCount = 1 + 8;
     panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
-
-    noStroke();
-    fill(0, 0, 0, 150);
-    rect(panelX, panelY, panelW, panelH, 8 * scale);
 
     fill(200);
     textSize(16 * scale);
@@ -119,7 +105,7 @@ class NavigationFocusPanel {
 
     String focusName = getFocusName(cam);
     if (focusName != null) {
-      fill(255, 200, 50);
+      fill(255, 200, 100);
       textSize(12 * scale);
       textAlign(RIGHT, TOP);
       text("Focus: " + focusName, panelX + panelW - panelMargin, panelY + panelMargin);
@@ -162,128 +148,7 @@ class NavigationFocusPanel {
     popStyle();
   }
 
-  void drawBodyRow(float y, CelestialBody body, boolean isFocused, boolean isSelected, int idx) {
-    float scale = uiScale;
-
-    boolean isHoveredLine = (hoveredIndex == idx);
-
-    if (isFocused) {
-      fill(255, 220, 100, 40);
-      noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
-    } else if (isSelected) {
-      fill(255, 255, 255, 25);
-      noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
-    } else if (isHoveredLine) {
-      fill(255, 255, 255, 12);
-      noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
-    }
-
-    fill(body.col);
-    noStroke();
-    ellipse(panelX + 16 * scale, y + rowH / 2, 8 * scale, 8 * scale);
-
-    if (isFocused) {
-      fill(255, 220, 100);
-    } else if (isSelected) {
-      fill(240);
-    } else {
-      fill(200);
-    }
-    textSize(15 * scale);
-    textAlign(LEFT, CENTER);
-    text(body.name, panelX + 32 * scale, y + rowH / 2);
-
-    if (isSelected && !isFocused) {
-      float btnX = panelX + panelW - 58 * scale;
-      float btnW = 48 * scale;
-      float btnH = 18 * scale;
-      float btnCY = y + rowH / 2;
-      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
-                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
-      fill(btnHover ? color(80, 160, 220) : color(50, 120, 180));
-      noStroke();
-      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
-      fill(255);
-      textSize(12 * scale);
-      textAlign(CENTER, CENTER);
-      text("Focus", btnX + btnW / 2, btnCY);
-    } else if (isFocused) {
-      fill(255, 220, 100, 150);
-      noStroke();
-      float cx = panelX + panelW - 18 * scale;
-      float cy = y + rowH / 2;
-      ellipse(cx, cy, 9 * scale, 9 * scale);
-    }
-  }
-
-  void drawSpacecraftRow(float y, List<Spacecraft> ships, boolean isFocused) {
-    float scale = uiScale;
-    boolean isHoveredLine = (hoveredIndex == 9);
-
-    if (isFocused) {
-      fill(255, 220, 100, 40);
-      noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
-    } else if (selectedShip) {
-      fill(255, 255, 255, 25);
-      noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
-    } else if (isHoveredLine) {
-      fill(255, 255, 255, 12);
-      noStroke();
-      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
-    }
-
-    if (ships.size() > 0) {
-      fill(ships.get(0).col);
-    } else {
-      fill(100, 255, 150);
-    }
-    float cx = panelX + 16 * scale;
-    float cy = y + rowH / 2;
-    float s = 4 * scale;
-    noStroke();
-    triangle(cx - s, cy - s, cx - s, cy + s, cx + s, cy);
-
-    if (isFocused) {
-      fill(255, 220, 100);
-    } else if (selectedShip) {
-      fill(240);
-    } else {
-      fill(200);
-    }
-    textSize(15 * scale);
-    textAlign(LEFT, CENTER);
-    text("Spacecraft", panelX + 32 * scale, y + rowH / 2);
-
-    if (selectedShip && !isFocused && ships.size() > 0) {
-      float btnX = panelX + panelW - 58 * scale;
-      float btnW = 48 * scale;
-      float btnH = 18 * scale;
-      float btnCY = y + rowH / 2;
-      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
-                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
-      fill(btnHover ? color(80, 160, 220) : color(50, 120, 180));
-      noStroke();
-      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
-      fill(255);
-      textSize(12 * scale);
-      textAlign(CENTER, CENTER);
-      text("Focus", btnX + btnW / 2, btnCY);
-    } else if (isFocused) {
-      fill(255, 220, 100, 150);
-      noStroke();
-      float indicCx = panelX + panelW - 18 * scale;
-      float indicCy = y + rowH / 2;
-      ellipse(indicCx, indicCy, 9 * scale, 9 * scale);
-    }
-  }
-
   boolean handleClick(float mx, float my, CameraController cam, CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
-    if (cam.getMode() != ViewMode.MAP_VIEW) return false;
 
     if (mx < panelX || mx > panelX + panelW || my < panelY || my > panelY + panelH) {
       selectedBody = null;
@@ -426,9 +291,138 @@ class NavigationFocusPanel {
     return null;
   }
 
+  float[] getTooltipSource() {
+    return new float[] { panelX, panelY, panelW, panelH };
+  }
+
   String getFocusName(CameraController cam) {
     if (cam.focusBody != null) return cam.focusBody.name;
     if (cam.focusShip != null) return "Spacecraft";
     return null;
+  }
+
+  float getPanelHeight() {
+    float scale = uiScale;
+    int bodyCount = 1 + 8;
+    return headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
+  }
+
+  void drawBodyRow(float y, CelestialBody body, boolean isFocused, boolean isSelected, int idx) {
+    float scale = uiScale;
+    boolean isHoveredLine = (hoveredIndex == idx);
+
+    if (isFocused) {
+      fill(255, 220, 100, 40);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (isSelected) {
+      fill(255, 255, 255, 25);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (isHoveredLine) {
+      fill(255, 255, 255, 12);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    }
+
+    fill(body.col);
+    noStroke();
+    ellipse(panelX + 16 * scale, y + rowH / 2, 8 * scale, 8 * scale);
+
+    if (isFocused) {
+      fill(255, 220, 100);
+    } else if (isSelected) {
+      fill(240);
+    } else {
+      fill(200);
+    }
+    textSize(15 * scale);
+    textAlign(LEFT, CENTER);
+    text(body.name, panelX + 32 * scale, y + rowH / 2);
+
+    if (isSelected && !isFocused) {
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = y + rowH / 2;
+      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
+                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
+      fill(btnHover ? color(80, 160, 220) : color(50, 120, 180));
+      noStroke();
+      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
+      fill(255);
+      textSize(12 * scale);
+      textAlign(CENTER, CENTER);
+      text("Focus", btnX + btnW / 2, btnCY);
+    } else if (isFocused) {
+      fill(255, 220, 100, 150);
+      noStroke();
+      float cx = panelX + panelW - 18 * scale;
+      float cy = y + rowH / 2;
+      ellipse(cx, cy, 9 * scale, 9 * scale);
+    }
+  }
+
+  void drawSpacecraftRow(float y, List<Spacecraft> ships, boolean isFocused) {
+    float scale = uiScale;
+    boolean isHoveredLine = (hoveredIndex == 9);
+
+    if (isFocused) {
+      fill(255, 220, 100, 40);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (selectedShip) {
+      fill(255, 255, 255, 25);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    } else if (isHoveredLine) {
+      fill(255, 255, 255, 12);
+      noStroke();
+      rect(panelX + 4 * scale, y + 1, panelW - 8 * scale, rowH - 2, 3 * scale);
+    }
+
+    if (ships.size() > 0) {
+      fill(ships.get(0).col);
+    } else {
+      fill(100, 255, 150);
+    }
+    float cx = panelX + 16 * scale;
+    float cy = y + rowH / 2;
+    float s = 4 * scale;
+    noStroke();
+    triangle(cx - s, cy - s, cx - s, cy + s, cx + s, cy);
+
+    if (isFocused) {
+      fill(255, 220, 100);
+    } else if (selectedShip) {
+      fill(240);
+    } else {
+      fill(200);
+    }
+    textSize(15 * scale);
+    textAlign(LEFT, CENTER);
+    text("Spacecraft", panelX + 32 * scale, y + rowH / 2);
+
+    if (selectedShip && !isFocused && ships.size() > 0) {
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = y + rowH / 2;
+      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
+                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
+      fill(btnHover ? color(80, 160, 220) : color(50, 120, 180));
+      noStroke();
+      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
+      fill(255);
+      textSize(12 * scale);
+      textAlign(CENTER, CENTER);
+      text("Focus", btnX + btnW / 2, btnCY);
+    } else if (isFocused) {
+      fill(255, 220, 100, 150);
+      noStroke();
+      float indicCx = panelX + panelW - 18 * scale;
+      float indicCy = y + rowH / 2;
+      ellipse(indicCx, indicCy, 9 * scale, 9 * scale);
+    }
   }
 }

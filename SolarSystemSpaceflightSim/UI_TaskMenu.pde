@@ -1,7 +1,6 @@
 // ========== TASK MENU PANEL ==========
 
-class TaskMenu {
-  boolean visible;
+class TaskMenu implements DrawerContent {
   float panelX, panelY, panelW, panelH;
   float rowH, headerH, detailH, footerH;
   float panelMargin;
@@ -11,26 +10,23 @@ class TaskMenu {
   MissionValidationResult validationResult;
   int hoveredIndex;
   int hoveredFrames;
-  boolean closeButtonHover;
   boolean startButtonHover;
   int buttonHoverFrames;
 
-  MissionExecutorState lastExecutorState;  // 跟踪执行器状态变化
+  MissionExecutorState lastExecutorState;
 
   TaskMenu() {
-    visible = false;
     float scale = uiScale;
-    panelX = width - 320 * scale;
+    panelX = width - 310 * scale;
     panelY = 120 * scale;
-    panelW = 300 * scale;
+    panelW = 290 * scale;  // 调整为更合理的宽度
     rowH = 32 * scale;
     headerH = 48 * scale;
     detailH = 140 * scale;
     footerH = 70 * scale;
-    panelMargin = 12 * scale;
+    panelMargin = 14 * scale;
     hoveredIndex = -1;
     hoveredFrames = 0;
-    closeButtonHover = false;
     startButtonHover = false;
     buttonHoverFrames = 0;
     selectedPreset = null;
@@ -38,21 +34,12 @@ class TaskMenu {
     lastExecutorState = MissionExecutorState.IDLE;
   }
 
-  void toggle() {
-    visible = !visible;
-    if (visible) {
-      refreshAvailablePresets();
-    }
-  }
-
   void refreshAvailablePresets() {
     availablePresets = getAvailableMissionPresets(solarSystem);
-    // 如果之前选中的任务不再可用，清空选择
     if (selectedPreset != null && isMissionLocked(selectedPreset)) {
       selectedPreset = null;
       validationResult = null;
     }
-    // 默认选中第一个可用任务
     if (selectedPreset == null && availablePresets.size() > 0) {
       selectedPreset = availablePresets.get(0);
     }
@@ -67,14 +54,18 @@ class TaskMenu {
     validationResult = missionValidator.validateMission(selectedPreset, craft, solarSystem, timeManager.simTime);
   }
 
-  void update() {
-    if (!visible) return;
+  // ========== DrawerContent 接口实现 ==========
+
+  // 保存抽屉位置供 updateContent 使用
+  float drawerX = 0;
+  float drawerY = 0;
+  float drawerW = 0;
+
+  public void updateContent() {
     float scale = uiScale;
 
-    // 检测任务执行器状态变化 - 当任务完成时刷新可用任务列表
     MissionExecutorState currentState = missionExecutor.state;
     if (lastExecutorState != currentState) {
-      // 检测是否从执行中状态变为完成/失败状态
       boolean wasInProgress = (lastExecutorState == MissionExecutorState.WAITING_FOR_MANEUVER ||
                                lastExecutorState == MissionExecutorState.ORIENTING ||
                                lastExecutorState == MissionExecutorState.BURNING);
@@ -87,20 +78,18 @@ class TaskMenu {
       lastExecutorState = currentState;
     }
 
-    panelX = width - 320 * scale;
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
-    boolean hitPanel = (mouseX >= panelX && mouseX <= panelX + panelW &&
-                       mouseY >= panelY && mouseY <= panelY + panelH);
+    // 使用抽屉位置进行悬停检测
+    float useX = (drawerX != 0) ? drawerX : panelX;
+    float useY = (drawerY != 0) ? drawerY : panelY;
+    float useW = (drawerW != 0) ? drawerW : panelW;
 
-    float closeX = panelX + panelW - 28 * scale;
-    float closeY = panelY + 8 * scale;
-    float closeSize = 22 * scale;
-    closeButtonHover = (mouseX >= closeX && mouseX <= closeX + closeSize &&
-                       mouseY >= closeY && mouseY <= closeY + closeSize);
+    boolean hitPanel = (mouseX >= useX && mouseX <= useX + useW &&
+                       mouseY >= useY && mouseY <= useY + panelH);
 
-    float listY = panelY + headerH;
+    float listY = useY + headerH;
     if (hitPanel && mouseY >= listY && mouseY < listY + presetCount * rowH) {
       int idx = (int)((mouseY - listY) / rowH);
       if (idx == hoveredIndex) {
@@ -114,58 +103,51 @@ class TaskMenu {
       hoveredFrames = 0;
     }
 
-    float footerY = panelY + headerH + presetCount * rowH + detailH + 8 * scale;
-    float btnX = panelX + panelW - 100 * scale;
+    float footerY = useY + headerH + presetCount * rowH + detailH + 8 * scale;
+    float btnX = useX + useW - 100 * scale;
     float btnY = footerY + 15 * scale;
     float btnW = 80 * scale;
     float btnH = 32 * scale;
     startButtonHover = (mouseX >= btnX && mouseX <= btnX + btnW &&
                         mouseY >= btnY && mouseY <= btnY + btnH);
 
-    if (startButtonHover || closeButtonHover) {
+    if (startButtonHover) {
       buttonHoverFrames++;
     } else {
       buttonHoverFrames = 0;
     }
   }
 
-  void draw() {
-    if (!visible) return;
+  public void drawContent(float drawX, float drawY, float drawW, float drawH) {
     float scale = uiScale;
+    float originalX = panelX;
+    float originalY = panelY;
+    float originalW = panelW;
+
+    // 保存抽屉位置供 update 使用
+    drawerX = drawX;
+    drawerY = drawY;
+    drawerW = drawW;
+
+    panelX = drawX;
+    panelY = drawY;
+    panelW = drawW;  // 使用抽屉提供的宽度
 
     pushStyle();
 
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
-    noStroke();
-    fill(0, 0, 0, 170);
-    rect(panelX, panelY, panelW, panelH, 10 * scale);
-
-    // 标题栏
     fill(255, 200, 100);
     textSize(18 * scale);
     textAlign(LEFT, TOP);
     text("MISSIONS", panelX + panelMargin, panelY + panelMargin + 4);
 
-    // 显示当前进度状态
     fill(180, 200, 220);
     textSize(11 * scale);
     String statusText = getProgressStatusText();
     text(statusText, panelX + panelMargin, panelY + headerH - 22 * scale);
 
-    // 关闭按钮
-    float closeX = panelX + panelW - 28 * scale;
-    float closeY = panelY + 8 * scale;
-    float closeSize = 22 * scale;
-    fill(closeButtonHover ? color(220, 100, 100) : color(160, 70, 70));
-    rect(closeX, closeY, closeSize, closeSize, 5 * scale);
-    fill(255);
-    textSize(16 * scale);
-    textAlign(CENTER, CENTER);
-    text("×", closeX + closeSize / 2, closeY + closeSize / 2);
-
-    // 任务列表
     float rowY = panelY + headerH;
     if (availablePresets != null) {
       for (int i = 0; i < availablePresets.size(); i++) {
@@ -175,7 +157,6 @@ class TaskMenu {
       }
     }
 
-    // 任务详情区域
     float detailY = rowY;
     fill(15, 25, 45, 120);
     rect(panelX + panelMargin, detailY + 4 * scale, panelW - 2 * panelMargin, detailH - 8 * scale, 6 * scale);
@@ -200,7 +181,6 @@ class TaskMenu {
       text("No mission available", panelX + panelMargin + 10 * scale, detailY + 50 * scale);
     }
 
-    // 底部区域 - START按钮
     float footerY = detailY + detailH;
     float btnX = panelX + panelW - 100 * scale;
     float btnY = footerY + 15 * scale;
@@ -212,7 +192,6 @@ class TaskMenu {
                                  missionExecutor.state != MissionExecutorState.FAILED);
     boolean canStart = selectedPreset != null && !missionInProgress;
 
-    // 绘制按钮
     if (canStart) {
       fill(startButtonHover ? color(80, 200, 110) : color(60, 160, 80));
     } else {
@@ -224,7 +203,6 @@ class TaskMenu {
     textAlign(CENTER, CENTER);
     text("START", btnX + btnW / 2, btnY + btnH / 2);
 
-    // 任务进行中显示状态
     if (missionInProgress) {
       fill(220, 180, 80);
       textSize(11 * scale);
@@ -233,7 +211,88 @@ class TaskMenu {
     }
 
     popStyle();
+
+    panelX = originalX;
+    panelY = originalY;
+    panelW = originalW;
   }
+
+  public boolean handleContentClick(float mx, float my, float contentX, float contentY) {
+    float scale = uiScale;
+    float originalX = panelX;
+    float originalY = panelY;
+    float originalW = panelW;
+
+    // 保存抽屉位置
+    drawerX = contentX;
+    drawerY = contentY;
+    drawerW = panelW;
+
+    panelX = contentX;
+    panelY = contentY;
+    panelW = panelW;  // 面板宽度已在构造时设置好
+
+    int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
+
+    float listY = panelY + headerH;
+    if (availablePresets != null && my >= listY && my < listY + presetCount * rowH) {
+      int idx = (int)((my - listY) / rowH);
+      if (idx >= 0 && idx < availablePresets.size()) {
+        selectedPreset = availablePresets.get(idx);
+        panelX = originalX;
+        panelY = originalY;
+        return true;
+      }
+    }
+
+    float footerY = panelY + headerH + presetCount * rowH + detailH + 8 * scale;
+    float btnX = panelX + panelW - 100 * scale;
+    float btnY = footerY + 15 * scale;
+    float btnW = 80 * scale;
+    float btnH = 32 * scale;
+
+    boolean missionInProgress = (missionExecutor.state != MissionExecutorState.IDLE &&
+                                 missionExecutor.state != MissionExecutorState.COMPLETED &&
+                                 missionExecutor.state != MissionExecutorState.FAILED);
+
+    if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
+      if (selectedPreset != null && !missionInProgress) {
+        startMission(selectedPreset);
+      }
+      panelX = originalX;
+      panelY = originalY;
+      return true;
+    }
+
+    panelX = originalX;
+    panelY = originalY;
+    panelW = originalW;
+    return true;
+  }
+
+  public String getContentTooltip() {
+    if (buttonHoverFrames >= Button.TOOLTIP_DELAY && startButtonHover) {
+      return "Start selected mission";
+    }
+    return null;
+  }
+
+  public float[] getContentTooltipSource() {
+    float useX = (drawerX != 0) ? drawerX : panelX;
+    return new float[] { useX, panelY, panelW, panelH };
+  }
+
+  public float getContentHeight() {
+    float scale = uiScale;
+    int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
+    return headerH + presetCount * rowH + detailH + footerH + 8 * scale;
+  }
+
+  public boolean shouldBeVisible() {
+    return true;  // 任务面板始终可见
+  }
+
+  // ========== 原有方法 ==========
 
   String getProgressStatusText() {
     switch (currentGameProgress) {
@@ -254,7 +313,6 @@ class TaskMenu {
     float scale = uiScale;
     boolean isHovered = (hoveredIndex == idx);
 
-    // 背景
     if (isSelected) {
       fill(255, 200, 100, 50);
     } else if (isHovered) {
@@ -265,7 +323,6 @@ class TaskMenu {
       rect(panelX + 6 * scale, y + 2, panelW - 12 * scale, rowH - 4, 6 * scale);
     }
 
-    // 任务名称
     fill(isSelected ? color(255, 220, 120) : 210);
     textSize(14 * scale);
     textAlign(LEFT, CENTER);
@@ -295,54 +352,6 @@ class TaskMenu {
     }
   }
 
-  boolean handleClick(float mx, float my) {
-    if (!visible) return false;
-
-    float scale = uiScale;
-    int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
-
-    if (mx < panelX || mx > panelX + panelW || my < panelY || my > panelY + panelH) {
-      return false;
-    }
-
-    float closeX = panelX + panelW - 28 * scale;
-    float closeY = panelY + 8 * scale;
-    float closeSize = 22 * scale;
-    if (mx >= closeX && mx <= closeX + closeSize &&
-        my >= closeY && my <= closeY + closeSize) {
-      visible = false;
-      return true;
-    }
-
-    float listY = panelY + headerH;
-    if (availablePresets != null && my >= listY && my < listY + presetCount * rowH) {
-      int idx = (int)((my - listY) / rowH);
-      if (idx >= 0 && idx < availablePresets.size()) {
-        selectedPreset = availablePresets.get(idx);
-        return true;
-      }
-    }
-
-    float footerY = panelY + headerH + presetCount * rowH + detailH + 8 * scale;
-    float btnX = panelX + panelW - 100 * scale;
-    float btnY = footerY + 15 * scale;
-    float btnW = 80 * scale;
-    float btnH = 32 * scale;
-
-    boolean missionInProgress = (missionExecutor.state != MissionExecutorState.IDLE &&
-                                 missionExecutor.state != MissionExecutorState.COMPLETED &&
-                                 missionExecutor.state != MissionExecutorState.FAILED);
-
-    if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
-      if (selectedPreset != null && !missionInProgress) {
-        startMission(selectedPreset);
-      }
-      return true;
-    }
-
-    return true;
-  }
-
   void startMission(MissionPreset preset) {
     CelestialBody body = preset.initialBody;
     if (body == null) return;
@@ -356,22 +365,18 @@ class TaskMenu {
       solarSystem.ships.add(ship);
     }
 
-    // 检查是否是发射任务
     boolean isLaunchMission = (preset.goal.type == MissionGoalType.LAUNCH_TO_ORBIT);
 
     if (isLaunchMission) {
-      // 发射任务：重置到发射场
       LaunchSite site = getLaunchSiteForBody(body);
       if (site != null) {
         ship.initOnLaunchPad(body, site);
       }
     }
-    // 普通任务（GEO、月球转移）：不重置轨道，从当前位置继续
 
-    // 验证并计算机动
     validationResult = missionValidator.validateMission(preset, ship, solarSystem, timeManager.simTime);
     if (!validationResult.canExecute) {
-      return; // 验证失败，不开始
+      return;
     }
 
     camera.focusOn(ship);
@@ -389,14 +394,5 @@ class TaskMenu {
 
   LaunchSite getLaunchSiteForBody(CelestialBody body) {
     return launchSite;
-  }
-
-  String getHoveredTooltipText() {
-    if (!visible) return null;
-    if (buttonHoverFrames >= Button.TOOLTIP_DELAY) {
-      if (closeButtonHover) return "Close menu";
-      if (startButtonHover) return "Start selected mission";
-    }
-    return null;
   }
 }
