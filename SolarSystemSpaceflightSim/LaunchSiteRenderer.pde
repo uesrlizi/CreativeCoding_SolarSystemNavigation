@@ -3,11 +3,19 @@
 
 class LaunchSiteRenderer {
 
+  // 水雾管理器（可选）
+  WaterSteamManager steamManager;
+
+  void setSteamManager(WaterSteamManager manager) {
+    this.steamManager = manager;
+  }
+
   void draw(LaunchSite site, CameraController cam, Spacecraft ship) {
     draw(site, cam, ship, 0.0f);
   }
 
-  void draw(LaunchSite site, CameraController cam, Spacecraft ship, float umbilicalDeployProgress) {
+  // 绘制发射场背景部分（在火箭之前）
+  void drawBackground(LaunchSite site, CameraController cam, Spacecraft ship, float umbilicalDeployProgress) {
     if (cam.getMode() != ViewMode.SHIP_VIEW) return;
 
     double[] sp = cam.worldToScreen(site.px, site.py);
@@ -24,36 +32,91 @@ class LaunchSiteRenderer {
     if (Float.isNaN(siteRotation) || Float.isInfinite(siteRotation)) siteRotation = 0;
     rotate(siteRotation);
 
-    drawLaunchSite(bl, ship, umbilicalDeployProgress);
+    drawLaunchSiteBack(bl, ship, umbilicalDeployProgress);
+
+    // 绘制水雾特效（在背景层）
+    if (steamManager != null) {
+      steamManager.draw(bl);
+    }
 
     popMatrix();
   }
 
-  // ========== 全新发射场设计 ==========
+  // 绘制发射场前景部分（在火箭之后，遮挡尾焰）
+  void drawForeground(LaunchSite site, CameraController cam, Spacecraft ship, float umbilicalDeployProgress) {
+    if (cam.getMode() != ViewMode.SHIP_VIEW) return;
+
+    double[] sp = cam.worldToScreen(site.px, site.py);
+    if (Double.isNaN(sp[0]) || Double.isNaN(sp[1])) return;
+
+    float bl = (float)(Spacecraft.SHIP_LENGTH_KM * cam.scale);
+    float extent = bl * 5.0f;
+    if (sp[0] + extent < -50 || sp[0] - extent > width + 50 ||
+        sp[1] + extent < -50 || sp[1] - extent > height + 50) return;
+
+    pushMatrix();
+    translate((float)sp[0], (float)sp[1]);
+    float siteRotation = (float)(site.baseAngle - cam.shipViewAngle);
+    if (Float.isNaN(siteRotation) || Float.isInfinite(siteRotation)) siteRotation = 0;
+    rotate(siteRotation);
+
+    drawLaunchSiteFront(bl, ship, umbilicalDeployProgress);
+
+    popMatrix();
+  }
+
+  // 旧的完整绘制接口（兼容）
+  void draw(LaunchSite site, CameraController cam, Spacecraft ship, float umbilicalDeployProgress) {
+    drawBackground(site, cam, ship, umbilicalDeployProgress);
+    // 注意：火箭应该在这里绘制
+    drawForeground(site, cam, ship, umbilicalDeployProgress);
+  }
+
+  // ========== 发射场背景层（火箭之前） ==========
+
+  void drawLaunchSiteBack(float bl, Spacecraft ship, float umbilicalDeployProgress) {
+    float bw = bl * 0.068f;
+    float groundY = 0;
+    float padY = -bl * 0.08f;  // 发射台稍微抬高一点
+
+    noStroke();
+
+    // 背景层：远处到近处
+    drawPerimeterFence(bl, groundY);
+    drawGround(bl, groundY);
+    drawDistantStructures(bl, groundY);
+    drawRemoteStructures(bl, groundY);
+    drawLaunchPadBase(bl, padY, groundY);  // 新：发射台基础（在火箭后）
+    drawLightningMasts(bl, groundY);
+    drawNearbyFacilities(bl, groundY);
+  }
+
+  // ========== 发射场前景层（火箭之后，遮挡尾焰） ==========
+
+  void drawLaunchSiteFront(float bl, Spacecraft ship, float umbilicalDeployProgress) {
+    float bw = bl * 0.068f;
+    float groundY = 0;
+    float padY = -bl * 0.08f;
+
+    noStroke();
+
+    // 前景层：首先画挡板（最优先遮挡尾焰）
+    drawExhaustDeflector(bl, bw, padY, groundY);  // 新：完整的导流槽和挡板系统
+    drawLaunchPadTop(bl, bw, padY, groundY);      // 新：发射台顶部结构
+    drawHoldDowns(bl, bw, padY, umbilicalDeployProgress);
+    drawServiceStructure(bl, bw, groundY);
+    drawUmbilicalConnections(bl, bw, groundY, umbilicalDeployProgress);
+  }
+
+  // ========== 兼容接口 ==========
 
   void drawLaunchSite(float bl, Spacecraft ship) {
     drawLaunchSite(bl, ship, 0.0f);
   }
 
   void drawLaunchSite(float bl, Spacecraft ship, float umbilicalDeployProgress) {
-    float bw = bl * 0.068f;    // 飞船半宽
-    float groundY = 0;         // 地面线
-    float padY = -bl * 0.10f;  // 发射台高度（保持不变）
-
-    noStroke();
-
-    // 绘制层次：从下往上
-    drawPerimeterFence(bl, groundY);
-    drawGround(bl, groundY);
-    drawDistantStructures(bl, groundY);
-    drawRemoteStructures(bl, groundY);
-    drawExhaustSystem(bl, padY, groundY);
-    drawLaunchPad(bl, padY, groundY);
-    drawHoldDowns(bl, bw, padY, umbilicalDeployProgress);
-    drawServiceStructure(bl, bw, groundY);
-    drawUmbilicalConnections(bl, bw, groundY, umbilicalDeployProgress);
-    drawLightningMasts(bl, groundY);
-    drawNearbyFacilities(bl, groundY);
+    drawLaunchSiteBack(bl, ship, umbilicalDeployProgress);
+    drawLaunchSiteFront(bl, ship, umbilicalDeployProgress);
   }
 
   // ========== 0. 外围围栏 ==========
@@ -193,63 +256,160 @@ class LaunchSiteRenderer {
     ellipse(bl * 0.94f, groundY - bl * 0.19f, bl * 0.012f, bl * 0.012f);
   }
 
-  // ========== 4. 排气系统 ==========
+  // ========== 4. 发射台基础（在火箭后面，背景层） ==========
 
-  void drawExhaustSystem(float bl, float padY, float groundY) {
-    // 火焰导流槽
-    fill(20, 18, 16);
-    rect(-bl * 0.25f, padY, bl * 0.5f, bl * 0.22f);
-
-    // 导流槽内衬
-    fill(35, 30, 25);
-    rect(-bl * 0.2f, padY + bl * 0.02f, bl * 0.4f, bl * 0.18f);
-
-    // 右排气道（更大）
-    fill(22, 20, 18);
-    rect(bl * 0.15f, padY + bl * 0.12f, bl * 0.5f, bl * 0.18f);
-    fill(85, 80, 75);
-    rect(bl * 0.15f, padY + bl * 0.12f, bl * 0.02f, bl * 0.18f);
-
-    // 左排气道
-    fill(22, 20, 18);
-    rect(-bl * 0.65f, padY + bl * 0.12f, bl * 0.4f, bl * 0.15f);
-  }
-
-  // ========== 5. 发射台 ==========
-
-  void drawLaunchPad(float bl, float padY, float groundY) {
-    // 主混凝土平台
-    fill(120, 115, 108);
-    rect(-bl * 0.75f, padY, bl * 1.5f, bl * 0.1f);
+  void drawLaunchPadBase(float bl, float padY, float groundY) {
+    // 主混凝土平台基础（在火箭后面）
+    fill(100, 95, 88);
+    rect(-bl * 0.75f, padY, bl * 1.5f, bl * 0.12f);
 
     // 平台边缘斜面
-    fill(95, 90, 83);
-    rect(-bl * 0.75f, padY, bl * 0.06f, bl * 0.1f);
-    rect(bl * 0.69f, padY, bl * 0.06f, bl * 0.1f);
+    fill(80, 75, 68);
+    rect(-bl * 0.75f, padY, bl * 0.06f, bl * 0.12f);
+    rect(bl * 0.69f, padY, bl * 0.06f, bl * 0.12f);
+
+    // 导流槽凹坑（在火箭正下方，背景层绘制底部）
+    fill(25, 22, 18);
+    rect(-bl * 0.22f, padY, bl * 0.44f, bl * 0.25f);
+
+    // 导流槽斜面（从发射台向下倾斜）
+    fill(35, 30, 25);
+    beginShape();
+      vertex(-bl * 0.22f, padY);
+      vertex(-bl * 0.12f, padY + bl * 0.25f);
+      vertex(bl * 0.12f, padY + bl * 0.25f);
+      vertex(bl * 0.22f, padY);
+    endShape(CLOSE);
+
+    // 左右排气道入口（在背景层）
+    fill(28, 25, 20);
+    // 右排气道
+    rect(bl * 0.18f, padY + bl * 0.1f, bl * 0.55f, bl * 0.22f);
+    // 左排气道
+    rect(-bl * 0.73f, padY + bl * 0.1f, bl * 0.55f, bl * 0.18f);
+  }
+
+  // ========== 5. 发射台顶部（在火箭前面，前景层） ==========
+
+  void drawLaunchPadTop(float bl, float bw, float padY, float groundY) {
+    // --- 前景完整地板（遮挡穿模）---
+    fill(135, 130, 123);
+    rect(-bl * 0.8f, padY - bl * 0.02f, bl * 1.6f, bl * 0.025f);
 
     // 平台表面高光
-    fill(140, 135, 128);
-    rect(-bl * 0.7f, padY - bl * 0.01f, bl * 1.4f, bl * 0.02f);
+    fill(155, 150, 143);
+    rect(-bl * 0.73f, padY - bl * 0.03f, bl * 1.46f, bl * 0.012f);
+
+    // 火箭周围的环形支座（更短，与发射台一体）
+    float ringOuter = bw * 1.45f;  // 缩短支座
+    float ringInner = bw * 1.1f;
+
+    // 左半环支座
+    fill(95, 90, 83);
+    rect(-ringOuter, padY - bl * 0.055f, ringOuter - ringInner, bl * 0.055f);
+
+    // 右半环支座
+    fill(95, 90, 83);
+    rect(ringInner, padY - bl * 0.055f, ringOuter - ringInner, bl * 0.055f);
+
+    // 支座顶部加强板
+    fill(120, 115, 107);
+    rect(-ringOuter, padY - bl * 0.065f, ringOuter - ringInner, bl * 0.012f);
+    rect(ringInner, padY - bl * 0.065f, ringOuter - ringInner, bl * 0.012f);
+
+    // 中心开口边缘（火箭通过的地方）
+    fill(110, 105, 98);
+    rect(-ringInner, padY - bl * 0.045f, bl * 0.016f, bl * 0.045f);  // 左边缘
+    rect(ringInner - bl * 0.016f, padY - bl * 0.045f, bl * 0.016f, bl * 0.045f);  // 右边缘
 
     // 平台防滑纹理
-    stroke(100, 95, 88, 60);
+    stroke(115, 110, 103, 60);
     strokeWeight(max(0.3f, bl * 0.002f));
-    for (int i = 0; i < 14; i++) {
-      float lx = -bl * 0.68f + i * bl * 0.105f;
-      line(lx, padY + bl * 0.02f, lx, padY + bl * 0.08f);
+    for (int i = 0; i < 12; i++) {
+      float lx = -bl * 0.7f + i * bl * 0.12f;
+      // 只在非中心区域画纹理
+      if (lx < -ringInner - bl * 0.05f || lx > ringInner + bl * 0.05f) {
+        line(lx, padY - bl * 0.01f, lx, padY - bl * 0.045f);
+      }
     }
     noStroke();
 
-    // 中心标记
-    fill(180, 50, 40, 120);
-    ellipse(0, padY + bl * 0.05f, bl * 0.05f, bl * 0.05f);
-    fill(220, 210, 200, 150);
-    ellipse(0, padY + bl * 0.05f, bl * 0.015f, bl * 0.015f);
+    // 周边行走道
+    fill(125, 120, 113);
+    rect(-bl * 0.88f, padY - bl * 0.035f, bl * 0.08f, bl * 0.018f);
+    rect(bl * 0.8f, padY - bl * 0.035f, bl * 0.08f, bl * 0.018f);
+  }
 
-    // 平台周边行走道
-    fill(110, 105, 98);
-    rect(-bl * 0.82f, padY - bl * 0.015f, bl * 0.07f, bl * 0.015f);
-    rect(bl * 0.75f, padY - bl * 0.015f, bl * 0.07f, bl * 0.015f);
+  // ========== 6. 完整的导流挡板系统（在火箭前面，遮挡尾焰） ==========
+
+  void drawExhaustDeflector(float bl, float bw, float padY, float groundY) {
+    // 这是核心：在火箭正前方的挡板，完全遮挡尾焰避免穿模
+
+    // 主挡板高度（从发射台向下延伸）
+    float baffleDepth = bl * 0.28f;
+    float baffleWidth = bw * 2.8f;
+
+    // 中心主挡板（在火箭正前方，最厚）
+    fill(50, 45, 38);
+    rect(-baffleWidth, padY, baffleWidth * 2.0f, baffleDepth);
+
+    // 挡板前缘加强层（更暗的阴影，显示厚度）
+    fill(35, 30, 25);
+    rect(-baffleWidth, padY, bl * 0.025f, baffleDepth);
+    rect(baffleWidth - bl * 0.025f, padY, bl * 0.025f, baffleDepth);
+
+    // 中间挡板分层结构（增加立体感）
+    fill(55, 50, 43);
+    rect(-bw * 2.2f, padY + bl * 0.02f, bw * 4.4f, baffleDepth - bl * 0.02f);
+
+    // 导流槽内的水平隔板（阻止尾焰向前穿出）
+    fill(40, 35, 28);
+    for (int i = 0; i < 3; i++) {
+      float y = padY + bl * 0.05f + i * bl * 0.07f;
+      float w = baffleWidth - i * bl * 0.15f;
+      rect(-w, y, w * 2.0f, bl * 0.018f);
+    }
+
+    // 左右挡板斜面（把火焰向两侧引导）
+    fill(45, 40, 33);
+    beginShape();
+      vertex(-baffleWidth, padY);
+      vertex(-bw * 1.5f, padY + baffleDepth);
+      vertex(-bw * 0.8f, padY + baffleDepth);
+      vertex(-bw * 1.2f, padY);
+    endShape(CLOSE);
+
+    beginShape();
+      vertex(bw * 1.2f, padY);
+      vertex(bw * 0.8f, padY + baffleDepth);
+      vertex(bw * 1.5f, padY + baffleDepth);
+      vertex(baffleWidth, padY);
+    endShape(CLOSE);
+
+    // 挡板底部加强筋
+    fill(65, 60, 53);
+    rect(-baffleWidth - bl * 0.015f, padY + baffleDepth - bl * 0.02f, baffleWidth * 2.0f + bl * 0.03f, bl * 0.02f);
+
+    // 垂直加强筋（左侧）
+    for (int i = 0; i < 4; i++) {
+      float x = -baffleWidth + i * bl * 0.09f;
+      fill(60, 55, 48);
+      rect(x, padY, bl * 0.015f, baffleDepth);
+    }
+
+    // 垂直加强筋（右侧）
+    for (int i = 0; i < 4; i++) {
+      float x = bw * 1.0f + i * bl * 0.09f;
+      fill(60, 55, 48);
+      rect(x, padY, bl * 0.015f, baffleDepth);
+    }
+
+    // 排气道出口（向两侧延伸，在前景层画出出口上沿）
+    fill(70, 65, 58);
+    // 右排气道上沿
+    rect(bl * 0.18f, padY + bl * 0.1f, bl * 0.55f, bl * 0.015f);
+    // 左排气道上沿
+    rect(-bl * 0.73f, padY + bl * 0.1f, bl * 0.55f, bl * 0.015f);
   }
 
   // ========== 6. 固定臂 ==========
@@ -264,23 +424,23 @@ class LaunchSiteRenderer {
 
     for (int i = 0; i < 4; i++) {
       float side = (i < 2) ? -1 : 1;
-      float offset = (i % 2 == 0) ? 0.8f : 1.2f;
+      float offset = (i % 2 == 0) ? 1.18f : 1.35f;  // 靠近火箭，在新的支座上
       float hx = side * bw * offset;
 
-      // 基座
+      // 基座（在发射台顶部）
       fill(80, 75, 68);
-      rect(hx - bl * 0.02f, padY - bl * 0.015f, bl * 0.04f, bl * 0.035f, 2);
+      rect(hx - bl * 0.022f, padY - bl * 0.05f, bl * 0.044f, bl * 0.035f, 2);
 
       // 支柱 - 松开时向外略微移动
-      float releaseOffset = releaseProgress * bl * 0.008f * side;
+      float releaseOffset = releaseProgress * bl * 0.01f * side;
       fill(65, 60, 53);
-      rect(hx - bl * 0.01f + releaseOffset, padY - bl * 0.05f, bl * 0.02f, bl * 0.04f);
+      rect(hx - bl * 0.01f + releaseOffset, padY - bl * 0.09f, bl * 0.02f, bl * 0.05f);
 
       // 夹头 - 松开时向外打开
       if (releaseProgress < 1.0f) {
-        float jawOpen = releaseProgress * bl * 0.01f * side;
+        float jawOpen = releaseProgress * bl * 0.012f * side;
         fill(95, 88, 78);
-        rect(hx - bl * 0.018f + jawOpen, padY - bl * 0.058f, bl * 0.036f, bl * 0.015f, 1);
+        rect(hx - bl * 0.018f + jawOpen, padY - bl * 0.1f, bl * 0.036f, bl * 0.015f, 1);
       }
     }
   }
@@ -482,6 +642,7 @@ class LaunchSiteRenderer {
     }
     noStroke();
   }
+
 
   // ========== 10. 周边设施 ==========
 

@@ -41,6 +41,7 @@ TrajectoryPredictor trajectoryPredictor;
 // ========== LAUNCH SYSTEM ==========
 LaunchSite launchSite;
 LaunchSiteRenderer launchSiteRenderer;
+WaterSteamManager steamManager;
 
 // ========== DOUBLE-CLICK / FOCUS ==========
 long lastClickTime = 0;
@@ -97,6 +98,10 @@ void setup() {
     // 在地球表面0度位置创建发射场
     launchSite = new LaunchSite(earth, 0);
     launchSiteRenderer = new LaunchSiteRenderer();
+
+    // 初始化水雾管理器
+    steamManager = new WaterSteamManager();
+    launchSiteRenderer.setSteamManager(steamManager);
 
     // 设置 missionExecutor 的发射场
     missionExecutor.setLaunchSite(launchSite, earth);
@@ -319,15 +324,42 @@ void draw() {
     launchSite.update();
   }
 
-  // Render launch site
+  // Update water steam effect
+  if (steamManager != null && solarSystem.ships.size() > 0) {
+    Spacecraft ship = solarSystem.ships.get(0);
+
+    // 获取发射状态和时间
+    LaunchState state = ship.launchState;
+    double stateTime = 0;
+    switch (state) {
+      case COUNTDOWN:
+        stateTime = ship.countdownStartTime > 0 ? (timeManager.simTime - ship.countdownStartTime) : 0;
+        break;
+      case IGNITION:
+        stateTime = ship.ignitionStartTime > 0 ? (timeManager.simTime - ship.ignitionStartTime) : 0;
+        break;
+      case LAUNCHING:
+        stateTime = ship.launchStartTime > 0 ? (timeManager.simTime - ship.launchStartTime) : 0;
+        break;
+    }
+    steamManager.update(deltaTime, state, stateTime);
+  }
+
+  // Render launch site background
   if (launchSite != null && launchSiteRenderer != null && solarSystem.ships.size() > 0) {
     float deployProgress = missionExecutor.getUmbilicalDeployProgress();
-    launchSiteRenderer.draw(launchSite, camera, solarSystem.ships.get(0), deployProgress);
+    launchSiteRenderer.drawBackground(launchSite, camera, solarSystem.ships.get(0), deployProgress);
   }
 
   // Render spacecraft
   for (Spacecraft ship : solarSystem.ships) {
     spacecraftRenderer.draw(ship, camera);
+  }
+
+  // Render launch site foreground (supports & baffles to block exhaust)
+  if (launchSite != null && launchSiteRenderer != null && solarSystem.ships.size() > 0) {
+    float deployProgress = missionExecutor.getUmbilicalDeployProgress();
+    launchSiteRenderer.drawForeground(launchSite, camera, solarSystem.ships.get(0), deployProgress);
   }
 
   // Render trajectories in MAP view

@@ -1,6 +1,7 @@
 class LaunchSiteRenderer {
 
-  void draw(LaunchSite site, CameraController cam, Spacecraft ship) {
+  // 绘制发射场背景部分（在火箭之前）
+  void drawBackground(LaunchSite site, CameraController cam, Spacecraft ship) {
     if (cam.getMode() != ViewMode.SHIP_VIEW) return;
 
     double[] sp = cam.worldToScreen(site.px, site.py);
@@ -13,16 +14,42 @@ class LaunchSiteRenderer {
 
     pushMatrix();
     translate((float)sp[0], (float)sp[1]);
-    // View-space rotation: world angle (baseAngle + PI/2) maps to screen angle 0
-    // screen angle 0 = world angle (shipViewAngle + PI/2) in rotated view
-    // => rotate by baseAngle - shipViewAngle
     float siteRotation = (float)(site.baseAngle - cam.shipViewAngle);
     if (Float.isNaN(siteRotation) || Float.isInfinite(siteRotation)) siteRotation = 0;
     rotate(siteRotation);
 
-    drawLaunchComplex(bl, ship);
+    drawLaunchComplexBackground(bl, ship);
 
     popMatrix();
+  }
+
+  // 绘制发射场前景部分（在火箭之后，遮挡尾焰）
+  void drawForeground(LaunchSite site, CameraController cam, Spacecraft ship) {
+    if (cam.getMode() != ViewMode.SHIP_VIEW) return;
+
+    double[] sp = cam.worldToScreen(site.px, site.py);
+    if (Double.isNaN(sp[0]) || Double.isNaN(sp[1])) return;
+
+    float bl = (float)(Spacecraft.SHIP_LENGTH_KM * cam.scale);
+    float extent = bl * 3.0;
+    if (sp[0] + extent < -50 || sp[0] - extent > width + 50 ||
+        sp[1] + extent < -50 || sp[1] - extent > height + 50) return;
+
+    pushMatrix();
+    translate((float)sp[0], (float)sp[1]);
+    float siteRotation = (float)(site.baseAngle - cam.shipViewAngle);
+    if (Float.isNaN(siteRotation) || Float.isInfinite(siteRotation)) siteRotation = 0;
+    rotate(siteRotation);
+
+    drawLaunchComplexForeground(bl, ship);
+
+    popMatrix();
+  }
+
+  // 旧的完整绘制接口（兼容）
+  void draw(LaunchSite site, CameraController cam, Spacecraft ship) {
+    drawBackground(site, cam, ship);
+    drawForeground(site, cam, ship);
   }
 
   // ========== COORDINATE SYSTEM (after rotate) ==========
@@ -34,26 +61,181 @@ class LaunchSiteRenderer {
   // groundY  = 0         — Earth surface
   // padSurfY = -bl*0.10  — pad surface (ship engine level after elevation)
 
-  // ========== MAIN COMPLEX ==========
+  // ========== MAIN COMPLEX - BACKGROUND ==========
 
-  void drawLaunchComplex(float bl, Spacecraft ship) {
+  void drawLaunchComplexBackground(float bl, Spacecraft ship) {
     float bw = bl * 0.068;           // ship half-width (stage 1 radius)
     float groundY = 0;               // Earth surface
-    float padSurfY = -bl * 0.10;     // pad surface, elevated above ground
+    float padSurfY = -bl * 0.08;     // pad surface, slightly higher
 
     noStroke();
 
     drawTerrain(bl, groundY);
     drawAccessRoad(bl, groundY, padSurfY);
-    drawFlameTrench(bl, padSurfY);
-    drawConcretePad(bl, padSurfY, groundY);
-    drawPadSurfaceDetails(bl, padSurfY);
-    drawServiceTower(bl, bw, groundY);
-    drawUmbilicalArms(bl, bw, groundY);
-    drawHoldDownArms(bl, bw, padSurfY);
+    drawLaunchPadBase(bl, padSurfY, groundY);  // 新：发射台基础（在火箭后）
     drawLightningSystem(bl, groundY);
     drawSupportBuildings(bl, groundY, ship.col);
-    drawExhaustDuct(bl, padSurfY);
+  }
+
+  // ========== MAIN COMPLEX - FOREGROUND ==========
+
+  void drawLaunchComplexForeground(float bl, Spacecraft ship) {
+    float bw = bl * 0.068;           // ship half-width (stage 1 radius)
+    float groundY = 0;               // Earth surface
+    float padSurfY = -bl * 0.08;     // pad surface, slightly higher
+
+    noStroke();
+
+    drawExhaustDeflector(bl, bw, padSurfY, groundY);  // 新：完整的挡板系统（在火箭前）
+    drawLaunchPadTop(bl, bw, padSurfY, groundY);      // 新：发射台顶部
+    drawHoldDownArms(bl, bw, padSurfY);
+    drawServiceTower(bl, bw, groundY);
+    drawUmbilicalArms(bl, bw, groundY);
+  }
+
+  // ========== LAUNCH PAD BASE (BACKGROUND) ==========
+
+  void drawLaunchPadBase(float bl, float padSurfY, float groundY) {
+    float padHalfW = bl * 1.05;
+    float padThick = bl * 0.10;
+    float padBot = padSurfY + padThick;
+
+    // 主混凝土平台
+    fill(148, 142, 132);
+    rect(-padHalfW, padSurfY, padHalfW * 2, padThick);
+
+    // 底部阴影
+    fill(108, 102, 93);
+    rect(-padHalfW, padBot - padThick * 0.22, padHalfW * 2, padThick * 0.22);
+
+    // 导流槽（在火箭下方）
+    float trenchHalfW = bl * 0.24;
+    float trenchDepth = bl * 0.22;
+    fill(22, 18, 15);
+    rect(-trenchHalfW, padSurfY, trenchHalfW * 2, trenchDepth);
+
+    // 导流槽斜面
+    fill(35, 30, 25);
+    beginShape();
+    vertex(-trenchHalfW, padSurfY);
+    vertex(-trenchHalfW * 0.6, padSurfY + trenchDepth);
+    vertex( trenchHalfW * 0.6, padSurfY + trenchDepth);
+    vertex( trenchHalfW, padSurfY);
+    endShape(CLOSE);
+
+    // 左右排气道
+    fill(28, 25, 20);
+    rect( trenchHalfW, padSurfY + bl * 0.12, bl * 0.55, bl * 0.18);
+    rect(-trenchHalfW - bl * 0.55, padSurfY + bl * 0.12, bl * 0.55, bl * 0.15);
+  }
+
+  // ========== LAUNCH PAD TOP (FOREGROUND) ==========
+
+  void drawLaunchPadTop(float bl, float bw, float padSurfY, float groundY) {
+    float padHalfW = bl * 1.05;
+
+    // --- 前景完整地板（遮挡穿模）---
+    fill(160, 154, 144);
+    rect(-padHalfW - bl * 0.08f, padSurfY - bl * 0.025f, padHalfW * 2 + bl * 0.16f, bl * 0.03f);
+
+    // 顶部高光
+    fill(178, 173, 163);
+    rect(-padHalfW * 0.93f, padSurfY - bl * 0.035f, padHalfW * 1.86f, bl * 0.012f);
+
+    // 环形支座（更短，与发射台一体）
+    float ringOuter = bw * 1.45f;  // 缩短支座
+    float ringInner = bw * 1.15f;
+
+    fill(105, 100, 92);
+    rect(-ringOuter, padSurfY - bl * 0.055f, ringOuter - ringInner, bl * 0.055f);
+    rect( ringInner, padSurfY - bl * 0.055f, ringOuter - ringInner, bl * 0.055f);
+
+    // 支座加强
+    fill(125, 120, 112);
+    rect(-ringOuter, padSurfY - bl * 0.065f, ringOuter - ringInner, bl * 0.012f);
+    rect( ringInner, padSurfY - bl * 0.065f, ringOuter - ringInner, bl * 0.012f);
+
+    // 中心开口边缘
+    fill(115, 110, 102);
+    rect(-ringInner, padSurfY - bl * 0.045f, bl * 0.016f, bl * 0.045f);
+    rect( ringInner - bl * 0.016f, padSurfY - bl * 0.045f, bl * 0.016f, bl * 0.045f);
+
+    // 伸缩缝纹理
+    stroke(122, 116, 106, 100);
+    strokeWeight(max(0.5, bl * 0.004));
+    for (int i = -4; i <= 4; i++) {
+      float lx = i * bl * 0.26f;
+      if (abs(lx) > padHalfW * 0.95) continue;
+      if (abs(lx) < ringInner + bl * 0.05f) continue;
+      line(lx, padSurfY - bl * 0.01f, lx, padSurfY - bl * 0.045f);
+    }
+    noStroke();
+  }
+
+  // ========== EXHAUST DEFLECTOR (FOREGROUND) ==========
+
+  void drawExhaustDeflector(float bl, float bw, float padSurfY, float groundY) {
+    // 主挡板（在火箭正前方，遮挡尾焰）
+    float baffleDepth = bl * 0.26;
+    float baffleWidth = bw * 2.6;
+
+    // 主挡板
+    fill(45, 40, 34);
+    rect(-baffleWidth, padSurfY, baffleWidth * 2, baffleDepth);
+
+    // 前缘加强
+    fill(30, 26, 22);
+    rect(-baffleWidth, padSurfY, bl * 0.028, baffleDepth);
+    rect( baffleWidth - bl * 0.028, padSurfY, bl * 0.028, baffleDepth);
+
+    // 中间分层
+    fill(52, 47, 40);
+    rect(-bw * 2.2, padSurfY + bl * 0.02, bw * 4.4, baffleDepth - bl * 0.02);
+
+    // 水平隔板（防止尾焰穿出）
+    fill(38, 33, 27);
+    for (int i = 0; i < 3; i++) {
+      float y = padSurfY + bl * 0.055 + i * bl * 0.07;
+      float w = baffleWidth - i * bl * 0.16;
+      rect(-w, y, w * 2, bl * 0.018);
+    }
+
+    // 侧导流斜面
+    fill(40, 35, 28);
+    beginShape();
+    vertex(-baffleWidth, padSurfY);
+    vertex(-bw * 1.5, padSurfY + baffleDepth);
+    vertex(-bw * 0.8, padSurfY + baffleDepth);
+    vertex(-bw * 1.25, padSurfY);
+    endShape(CLOSE);
+
+    beginShape();
+    vertex( bw * 1.25, padSurfY);
+    vertex( bw * 0.8, padSurfY + baffleDepth);
+    vertex( bw * 1.5, padSurfY + baffleDepth);
+    vertex( baffleWidth, padSurfY);
+    endShape(CLOSE);
+
+    // 底部加强
+    fill(65, 60, 53);
+    rect(-baffleWidth - bl * 0.015, padSurfY + baffleDepth - bl * 0.022, baffleWidth * 2 + bl * 0.03, bl * 0.022);
+
+    // 垂直加强筋
+    for (int i = 0; i < 4; i++) {
+      float x = -baffleWidth + i * bl * 0.09;
+      fill(58, 53, 46);
+      rect(x, padSurfY, bl * 0.016, baffleDepth);
+    }
+    for (int i = 0; i < 4; i++) {
+      float x = bw * 1.05 + i * bl * 0.09;
+      fill(58, 53, 46);
+      rect(x, padSurfY, bl * 0.016, baffleDepth);
+    }
+
+    // 排气道出口上沿
+    fill(75, 70, 63);
+    rect( bl * 0.22, padSurfY + bl * 0.12, bl * 0.55, bl * 0.016);
+    rect(-bl * 0.77, padSurfY + bl * 0.12, bl * 0.55, bl * 0.016);
   }
 
   // ========== TERRAIN ==========
@@ -129,149 +311,6 @@ class LaunchSiteRenderer {
     }
   }
 
-  // ========== CONCRETE LAUNCH PAD ==========
-
-  void drawConcretePad(float bl, float padSurfY, float groundY) {
-    float padHalfW = bl * 1.05;
-    float padThick = bl * 0.09;       // pad sits on ground, extends up
-    float padBot = padSurfY + padThick; // padSurfY is top, padBot = groundY
-
-    // Main pad block
-    fill(148, 142, 132);
-    rect(-padHalfW, padSurfY, padHalfW * 2, padThick);
-
-    // Bottom shadow
-    fill(108, 102, 93);
-    rect(-padHalfW, padBot - padThick * 0.22, padHalfW * 2, padThick * 0.22);
-
-    // Top surface highlight
-    fill(178, 173, 163);
-    rect(-padHalfW * 0.93, padSurfY - padThick * 0.06, padHalfW * 1.86, padThick * 0.13);
-
-    // Left bevel
-    fill(122, 116, 106);
-    rect(-padHalfW, padSurfY, padThick * 0.4, padThick);
-
-    // Right bevel
-    fill(118, 112, 102);
-    rect(padHalfW - padThick * 0.4, padSurfY, padThick * 0.4, padThick);
-
-    // Top surface grit texture
-    fill(155, 148, 138, 60);
-    for (int i = 0; i < 12; i++) {
-      float dx = -padHalfW * 0.8 + (i * 1.7 + (i * i) * 0.3) % (padHalfW * 1.6);
-      float dy = padSurfY + (i * 0.7 + 3) % (padThick * 0.5);
-      ellipse(dx, dy, bl * 0.008, bl * 0.004);
-    }
-
-    // Support pillars underneath (going into ground)
-    float pillarW = bl * 0.08;
-    float pillarH = bl * 0.06;
-    fill(112, 105, 95);
-    for (int i = -3; i <= 3; i++) {
-      if (i == 0) continue;
-      float px = i * bl * 0.28;
-      rect(px - pillarW * 0.5, padBot, pillarW, pillarH, 2);
-    }
-  }
-
-  // ========== PAD SURFACE DETAILS ==========
-
-  void drawPadSurfaceDetails(float bl, float padSurfY) {
-    float padHalfW = bl * 1.05;
-
-    // Expansion joint grid
-    stroke(122, 116, 106, 100);
-    strokeWeight(max(0.5, bl * 0.004));
-    for (int i = -3; i <= 3; i++) {
-      float lx = i * bl * 0.3;
-      if (abs(lx) > padHalfW * 0.95) continue;
-      line(lx, padSurfY - bl * 0.003, lx, padSurfY + bl * 0.03);
-    }
-    for (int i = 0; i < 3; i++) {
-      float ly = padSurfY + bl * 0.012 + i * bl * 0.02;
-      line(-padHalfW * 0.93, ly, padHalfW * 0.93, ly);
-    }
-    noStroke();
-
-    // Center alignment marker
-    fill(155, 50, 35, 160);
-    rect(-bl * 0.03, padSurfY - bl * 0.02, bl * 0.06, bl * 0.05, 2);
-    fill(200, 200, 190, 180);
-    rect(-bl * 0.005, padSurfY - bl * 0.015, bl * 0.01, bl * 0.04, 1);
-    rect(-bl * 0.025, padSurfY + bl * 0.002, bl * 0.05, bl * 0.008, 1);
-
-    // Hold-down post markings
-    fill(100, 93, 83, 100);
-    for (int sx = -1; sx <= 1; sx += 2) {
-      for (int sy = -1; sy <= 1; sy += 2) {
-        rect(sx * bl * 0.06 - bl * 0.015, padSurfY - bl * 0.002,
-             bl * 0.03, bl * 0.01, 1);
-      }
-    }
-  }
-
-  // ========== FLAME TRENCH ==========
-
-  void drawFlameTrench(float bl, float padSurfY) {
-    float trenchHalfW = bl * 0.24;
-    float trenchDepth = bl * 0.19;
-    float trenchBot = padSurfY + trenchDepth;
-
-    // Main trench void (starts at pad surface, goes down into ground)
-    fill(22, 18, 15);
-    rect(-trenchHalfW, padSurfY, trenchHalfW * 2, trenchDepth);
-
-    // Deeper interior
-    fill(15, 12, 10);
-    rect(-trenchHalfW * 0.6, padSurfY + trenchDepth * 0.08, trenchHalfW * 1.2, trenchDepth * 0.7);
-
-    // Flame deflector wedge
-    fill(42, 37, 32);
-    beginShape();
-    vertex(-trenchHalfW * 0.7, trenchBot);
-    vertex( trenchHalfW * 0.3, padSurfY + trenchDepth * 0.2);
-    vertex( trenchHalfW * 0.6, trenchBot);
-    endShape(CLOSE);
-    fill(55, 48, 42);
-    beginShape();
-    vertex(-trenchHalfW * 0.5, trenchBot);
-    vertex( trenchHalfW * 0.1, padSurfY + trenchDepth * 0.3);
-    vertex( trenchHalfW * 0.4, trenchBot);
-    endShape(CLOSE);
-
-    // Trench edge concrete coping
-    fill(158, 152, 142);
-    rect(-trenchHalfW - bl * 0.018, padSurfY - bl * 0.004, bl * 0.036, bl * 0.012, 2);
-    rect( trenchHalfW - bl * 0.018, padSurfY - bl * 0.004, bl * 0.036, bl * 0.012, 2);
-
-    // Scorch marks
-    fill(50, 43, 36, 70);
-    ellipse(-bl * 0.03, padSurfY, bl * 0.55, bl * 0.018);
-    ellipse( bl * 0.05, padSurfY, bl * 0.40, bl * 0.014);
-  }
-
-  // ========== EXHAUST DUCT ==========
-
-  void drawExhaustDuct(float bl, float padSurfY) {
-    float ductTop = padSurfY + bl * 0.12;
-    float ductBot = padSurfY + bl * 0.24;
-    float ductHalfW = bl * 0.16;
-
-    fill(28, 24, 20);
-    rect(-ductHalfW, ductTop, ductHalfW * 2, ductBot - ductTop);
-
-    fill(18, 15, 12);
-    beginShape();
-    vertex( ductHalfW * 0.6, ductTop + bl * 0.01);
-    vertex( ductHalfW * 1.1, ductTop + bl * 0.04);
-    vertex( ductHalfW * 1.1, ductBot - bl * 0.04);
-    vertex( ductHalfW * 0.6, ductBot - bl * 0.01);
-    endShape(CLOSE);
-
-    fill(140, 134, 124);
-    rect(ductHalfW - bl * 0.01, ductTop, bl * 0.018, ductBot - ductTop);
-  }
 
   // ========== SERVICE / UMBILICAL TOWER ==========
 
@@ -424,21 +463,21 @@ class LaunchSiteRenderer {
     int armCount = 4;
     for (int i = 0; i < armCount; i++) {
       float side = (i < 2) ? -1 : 1;
-      float hx = side * bw * 1.5 * (1 + (i % 2) * 0.25);
+      float hx = side * bw * 1.2f * (1 + (i % 2) * 0.18f);  // 靠近火箭
 
       // Base block on pad
       fill(98, 91, 81);
-      rect(hx - bl * 0.018, padSurfY - bl * 0.01, bl * 0.036, bl * 0.03, 2);
+      rect(hx - bl * 0.018f, padSurfY - bl * 0.05f, bl * 0.036f, bl * 0.03f, 2);
 
       // Vertical arm
       fill(82, 76, 66);
-      rect(hx - bl * 0.009, padSurfY - bl * 0.04, bl * 0.018, bl * 0.05, 1);
+      rect(hx - bl * 0.009f, padSurfY - bl * 0.088f, bl * 0.018f, bl * 0.048f, 1);
 
       // Clamp
       fill(112, 102, 90);
-      rect(hx - bl * 0.013, padSurfY - bl * 0.045, bl * 0.026, bl * 0.012, 1);
+      rect(hx - bl * 0.014f, padSurfY - bl * 0.096f, bl * 0.028f, bl * 0.012f, 1);
       fill(140, 128, 110);
-      ellipse(hx, padSurfY - bl * 0.04, bl * 0.01, bl * 0.008);
+      ellipse(hx, padSurfY - bl * 0.09f, bl * 0.01f, bl * 0.008f);
     }
   }
 

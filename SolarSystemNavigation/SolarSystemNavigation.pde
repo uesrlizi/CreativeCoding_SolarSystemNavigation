@@ -206,11 +206,15 @@ void draw() {
 
     launchSite.update();
     if (launchController.getCurrentShip() != null) {
-      launchSiteRenderer.draw(launchSite, camera, launchController.getCurrentShip());
+      launchSiteRenderer.drawBackground(launchSite, camera, launchController.getCurrentShip());
     }
 
     for (Spacecraft s : solarSystem.ships) {
       spacecraftRenderer.draw(s, camera);
+    }
+
+    if (launchController.getCurrentShip() != null) {
+      launchSiteRenderer.drawForeground(launchSite, camera, launchController.getCurrentShip());
     }
 
     hud.update();
