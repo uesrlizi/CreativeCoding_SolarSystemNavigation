@@ -191,13 +191,21 @@ class PhysicsSystem {
       }
     }
 
+    // 更新阻力系数（基于马赫数和高度）
+    if (ship.referenceBody != null) {
+      double alt = atmosphereModel.altitudeAboveSurface(ship.stateVector.position, ship.referenceBody);
+      double speed = ship.stateVector.velocity.magnitude(); // km/s
+      double mach = ship.referenceBody.atmosphere.getMachNumber(speed, alt);
+      ship.updateDragCoefficient(mach, alt);
+    }
+
     forceModel.setState(
       ship.referenceBody,
       gravityBodies,
       ship.autoControl.targetThrottle > 0.01f,
       ship.autoControl.targetDirection,
       getThrustAcceleration(ship),
-      ship.dragCoefficient,
+      ship.currentDragCoefficient,
       ship.crossSectionArea,
       ship.getCurrentMass()
     );
@@ -213,6 +221,11 @@ class PhysicsSystem {
       simDt,
       forceModel
     );
+
+    // 计算并更新G载荷
+    Vector2 accel = new Vector2(0, 0);
+    forceModel.computeForce(ship.stateVector.position, ship.stateVector.velocity, accel, false); // 不含推力
+    ship.updateGLoad(accel);
 
     // 更新世界位置
     if (ship.referenceBody != null) {

@@ -37,8 +37,17 @@ class Spacecraft {
   // === 引擎 ===
   SimpleEngine mainEngine;
   double dryMass;  // 干质量（吨）
-  double dragCoefficient;   // 阻力系数
+  double baseDragCoefficient;   // 基础阻力系数
+  double currentDragCoefficient; // 当前阻力系数（随姿态和马赫数变化）
   double crossSectionArea;  // 横截面积（m²）
+
+  // === 着陆系统 ===
+  boolean landingLegsDeployed; // 着陆腿是否展开
+  double angleOfAttack; // 当前攻角（弧度）
+
+  // === 再入相关 ===
+  double currentMach; // 当前马赫数
+  double gLoad; // 当前G载荷
 
   // === 自动控制 ===
   AutoControl autoControl;
@@ -82,8 +91,17 @@ class Spacecraft {
 
     this.mainEngine = null;
     this.dryMass = 2.0;  // 默认2吨
-    this.dragCoefficient = 0.5;  // 默认阻力系数
+    this.baseDragCoefficient = 0.5;  // 基础阻力系数
+    this.currentDragCoefficient = 0.5; // 当前阻力系数
     this.crossSectionArea = 4.0;  // 默认横截面积
+
+    // 着陆系统初始化
+    this.landingLegsDeployed = false;
+    this.angleOfAttack = 0.0;
+
+    // 再入相关
+    this.currentMach = 0.0;
+    this.gLoad = 0.0;
 
     this.autoControl = new AutoControl();
 
@@ -247,5 +265,63 @@ class Spacecraft {
         this.autoControl.setTargetDirection(prograde);
       }
     }
+  }
+
+  // === 阻力系数计算（基于马赫数和攻角）===
+  void updateDragCoefficient(double mach, double altitude) {
+    this.currentMach = mach;
+
+    // 简化的阻力系数模型：
+    // 亚音速时 ~0.5，跨音速达到峰值 ~1.2，超音速逐渐下降到 ~0.3
+    double cdMach;
+    if (mach < 0.8) {
+      cdMach = baseDragCoefficient;
+    } else if (mach < 1.2) {
+      // 跨音速区，线性增加到峰值
+      double t = (mach - 0.8) / 0.4;
+      cdMach = baseDragCoefficient + t * 0.7;
+    } else if (mach < 2.0) {
+      // 超音速区，线性下降
+      double t = (mach - 1.2) / 0.8;
+      cdMach = 1.2 - t * 0.9;
+    } else {
+      cdMach = 0.3;
+    }
+
+    // 攻角影响（简化模型）
+    double aoaFactor = 1.0 + Math.abs(angleOfAttack) * 0.5;
+
+    this.currentDragCoefficient = cdMach * aoaFactor;
+  }
+
+  // === 设置攻角 ===
+  void setAngleOfAttack(double aoa) {
+    this.angleOfAttack = constrainDouble(aoa, -PI/4, PI/4);
+  }
+
+  // === 着陆腿控制 ===
+  void deployLandingLegs() {
+    this.landingLegsDeployed = true;
+  }
+
+  void retractLandingLegs() {
+    this.landingLegsDeployed = false;
+  }
+
+  // === 获取当前高度（相对于参考天体表面）===
+  double getAltitude() {
+    if (referenceBody == null) return 0;
+    double r = stateVector.position.magnitude();
+    return r - referenceBody.radius;
+  }
+
+  // === 更新G载荷 ===
+  void updateGLoad(Vector2 acceleration) {
+    if (referenceBody == null) {
+      gLoad = acceleration.magnitude() / 9.81 * 1000; // 转换 km/s² 到 G
+      return;
+    }
+    double g0 = referenceBody.getGravityAtAltitude(0);
+    gLoad = acceleration.magnitude() / g0 * 1000;
   }
 }

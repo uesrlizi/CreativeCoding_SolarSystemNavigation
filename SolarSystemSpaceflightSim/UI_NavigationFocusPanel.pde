@@ -181,13 +181,8 @@ class NavigationFocusPanel {
       float btnW = 48 * scale;
       float btnH = 18 * scale;
       float btnCY = btnRowY + rowH / 2;
-      println("Ship SNAP button check:");
-      println("  Click: mx=" + mx + ", my=" + my);
-      println("  Button: x=" + btnX + "-" + (btnX+btnW) + ", y=" + (btnCY-btnH/2) + "-" + (btnCY+btnH/2));
-      println("  btnRowY=" + btnRowY + ", headerH=" + headerH + ", rowH=" + rowH);
       if (mx >= btnX && mx <= btnX + btnW &&
           my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
-        println("  HIT - calling snapFocus()");
         cam.snapFocus();
         return true;
       }

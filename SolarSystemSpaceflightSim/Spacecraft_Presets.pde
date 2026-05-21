@@ -29,7 +29,7 @@ class SpacecraftPreset {
     Spacecraft craft = new Spacecraft(name, shipColor);
     craft.presetId = this.id;
     craft.dryMass = this.dryMass;
-    craft.dragCoefficient = this.dragCoefficient;
+    craft.baseDragCoefficient = this.dragCoefficient;
     craft.crossSectionArea = this.crossSectionArea;
     craft.mainEngine = new SimpleEngine(this.engineThrust, 0.5);  // 引擎干质量0.5吨
     return craft;

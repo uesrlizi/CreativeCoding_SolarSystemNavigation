@@ -35,6 +35,14 @@ class MissionExecutor {
   private boolean isLaunchMission;
   private LaunchController launchController;
 
+  // 回收任务支持
+  private boolean isRecoveryMission;
+  private RecoveryController recoveryController;
+
+  // 保存发射场和地球的引用
+  private LaunchSite launchSite;
+  private CelestialBody earth;
+
   MissionExecutor() {
     this.state = MissionExecutorState.IDLE;
     this.currentTask = null;
@@ -50,14 +58,24 @@ class MissionExecutor {
     this.progress = 0;
     this.isLaunchMission = false;
     this.launchController = new LaunchController();
+    this.isRecoveryMission = false;
+    this.recoveryController = new RecoveryController();
   }
 
   // ========== 设置发射场 ==========
   void setLaunchSite(LaunchSite site, CelestialBody earth) {
+    this.launchSite = site;
+    this.earth = earth;
     this.launchController.init(null, site, earth);
+    this.recoveryController.init(null, site, earth);
   }
 
   void startMission(MissionTask task, List<ManeuverNode> maneuvers, Spacecraft craft, CelestialSystem system, double simTime) {
+    println("[MissionExecutor] ========== startMission() called ==========");
+    println("[MissionExecutor] Task: " + (task != null && task.preset != null ? task.preset.name : "null"));
+    println("[MissionExecutor] Spacecraft: " + (craft != null ? "exists" : "null"));
+    println("[MissionExecutor] Maneuvers: " + (maneuvers != null ? maneuvers.size() : "null"));
+
     this.currentTask = task;
     this.maneuverSequence = maneuvers;
     this.assignedCraft = craft;
@@ -70,9 +88,23 @@ class MissionExecutor {
     this.isLaunchMission = (task.preset != null &&
                            task.preset.goal.type == MissionGoalType.LAUNCH_TO_ORBIT);
 
+    // 检查是否是回收任务
+    this.isRecoveryMission = (task.preset != null &&
+                             task.preset.goal.type == MissionGoalType.RETURN_TO_LAUNCHSITE);
+
+    println("[MissionExecutor] isLaunchMission=" + isLaunchMission + ", isRecoveryMission=" + isRecoveryMission);
+
     if (this.isLaunchMission) {
+      println("[MissionExecutor] Starting launch mission...");
       // 发射任务特殊处理
       startLaunchMission(simTime);
+      return;
+    }
+
+    if (this.isRecoveryMission) {
+      println("[MissionExecutor] Starting recovery mission...");
+      // 回收任务特殊处理
+      startRecoveryMission(simTime);
       return;
     }
 
@@ -157,6 +189,12 @@ class MissionExecutor {
       return;
     }
 
+    // 如果是回收任务，交给 RecoveryController 处理
+    if (isRecoveryMission) {
+      updateRecoveryMissionTick(tickDt, tickSimTime);
+      return;
+    }
+
     // 普通任务处理
     switch (state) {
       case WAITING_FOR_MANEUVER:
@@ -223,6 +261,64 @@ class MissionExecutor {
     }
 
     println("Launch mission complete - now in LEO!");
+  }
+
+  // ========== 开始回收任务 ==========
+  void startRecoveryMission(double simTime) {
+    println("[MissionExecutor] ========== startRecoveryMission() ==========");
+    println("[MissionExecutor] launchSite: " + (launchSite != null ? "exists" : "null"));
+    println("[MissionExecutor] earth: " + (earth != null ? earth.name : "null"));
+    println("[MissionExecutor] assignedCraft: " + (assignedCraft != null ? "exists" : "null"));
+
+    // 初始化回收控制器
+    recoveryController.init(assignedCraft, launchSite, earth);
+    println("[MissionExecutor] recoveryController initialized");
+
+    // 启动回收任务
+    recoveryController.startRecovery(simTime);
+    println("[MissionExecutor] recoveryController.startRecovery() called");
+
+    this.state = MissionExecutorState.WAITING_FOR_MANEUVER;
+    this.statusText = recoveryController.statusText;
+    this.progress = 0;
+
+    println("[MissionExecutor] Initial status: " + statusText);
+    println("[MissionExecutor] ========== startRecoveryMission() complete ==========");
+  }
+
+  // ========== 更新回收任务 ==========
+  void updateRecoveryMissionTick(double tickDt, double tickSimTime) {
+    recoveryController.updateTick(tickDt, tickSimTime);
+
+    // 更新状态文本
+    statusText = recoveryController.statusText;
+    progress = recoveryController.progress;
+
+    // 检查回收是否完成
+    if (recoveryController.isComplete()) {
+      completeRecoveryMission(tickSimTime);
+    }
+  }
+
+  // ========== 完成回收任务 ==========
+  void completeRecoveryMission(double simTime) {
+    // 切换游戏进度回到地面（可以再次发射）
+    currentGameProgress = GameProgressState.GROUNDED;
+
+    // 完成任务
+    this.state = MissionExecutorState.COMPLETED;
+    this.statusText = "Recovery mission complete - landed at launch site!";
+    this.progress = 1.0;
+
+    if (currentTask != null) {
+      currentTask.state = MissionState.COMPLETED;
+    }
+
+    if (assignedCraft.autoControl != null) {
+      assignedCraft.autoControl.stop();
+    }
+
+    println("Recovery mission complete - successfully returned to launch site!");
   }
 
   private void updateWaiting(double simTime) {
@@ -478,6 +574,26 @@ class MissionExecutor {
   }
 
   int getRecommendedWarpLevel(TimeManager timeManager) {
+    // 回收任务的 warp 限制
+    if (isRecoveryMission && recoveryController != null) {
+      switch (recoveryController.stage) {
+        case PREPARING:
+        case COAST_TO_ENTRY:
+          return timeManager.WARP_LEVELS.length - 2;  // 可以快速加速
+        case DEORBIT_BURN:
+        case REENTRY_GUIDANCE:
+        case GLIDE_PHASE:
+        case TURNAROUND_MANEUVER:
+        case HOVER_SLIDE:
+        case FINAL_DESCENT:
+        case LANDING_BURN:
+          return 2;  // 关键阶段限制 warp
+        default:
+          return -1;
+      }
+    }
+
+    // 普通任务的 warp 限制
     switch (state) {
       case WAITING_FOR_MANEUVER:
         return timeManager.WARP_LEVELS.length - 2;
@@ -490,6 +606,17 @@ class MissionExecutor {
   }
 
   boolean shouldPauseWarp() {
+    // 回收任务的暂停条件
+    if (isRecoveryMission && recoveryController != null) {
+      RecoveryStage stage = recoveryController.stage;
+      return stage == RecoveryStage.DEORBIT_BURN ||
+             stage == RecoveryStage.REENTRY_GUIDANCE ||
+             stage == RecoveryStage.TURNAROUND_MANEUVER ||
+             stage == RecoveryStage.HOVER_SLIDE ||
+             stage == RecoveryStage.LANDING_BURN;
+    }
+
+    // 普通任务的暂停条件
     return state == MissionExecutorState.ORIENTING ||
            state == MissionExecutorState.BURNING;
   }

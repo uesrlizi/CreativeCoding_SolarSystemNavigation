@@ -83,6 +83,11 @@ class AutoControl {
   double orientationError;    // 当前朝向误差（弧度）
   double burnTimeRemaining;   // 剩余点火时间（秒）
 
+  // === 增强的PD控制器 ===
+  double kp, kd;  // PD参数
+  double integralError; // 积分项（可选）
+  double maxAngularAccel; // 最大角加速度
+
   AutoControl() {
     this.isActive = false;
     this.hasTargetDirection = false;
@@ -92,6 +97,12 @@ class AutoControl {
     this.isBurning = false;
     this.orientationError = 0;
     this.burnTimeRemaining = 0;
+
+    // 默认PD参数
+    this.kp = 8.0;
+    this.kd = 4.0;
+    this.integralError = 0.0;
+    this.maxAngularAccel = 8.0;
   }
 
   // ========== 帧级别更新 (保持向后兼容) ==========
@@ -108,6 +119,20 @@ class AutoControl {
       double targetAngle = targetDirection.angle();
       double currentAngle = currentDir.angle();
       orientationError = angleDifference(targetAngle, currentAngle);
+
+      // 使用PD控制器计算角加速度
+      double desiredAngularAccel = kp * orientationError - kd * craft.angularVelocity;
+
+      // 限制最大角加速度
+      desiredAngularAccel = constrainDouble(desiredAngularAccel, -maxAngularAccel, maxAngularAccel);
+      craft.angularAcceleration = desiredAngularAccel;
+
+      // 更新朝向
+      craft.angularVelocity += craft.angularAcceleration * tickDt;
+      craft.angularVelocity = constrainDouble(craft.angularVelocity, -Spacecraft.MAX_ANGULAR_VELOCITY, Spacecraft.MAX_ANGULAR_VELOCITY);
+      craft.attitude.angle += craft.angularVelocity * tickDt;
+      craft.attitude.normalize();
+
       isOrienting = Math.abs(orientationError) > 0.01 || Math.abs(craft.angularVelocity) > 0.01;
     } else {
       isOrienting = false;
@@ -139,8 +164,14 @@ class AutoControl {
     this.isBurning = throttle > 0.01f;
   }
 
+  // === 设置PD参数 ===
+  void setPDParameters(double p, double d) {
+    this.kp = p;
+    this.kd = d;
+  }
+
   boolean isOriented() {
-    return !hasTargetDirection || !isOrienting;
+    return !hasTargetDirection || Math.abs(orientationError) < 0.05;
   }
 
   void stop() {

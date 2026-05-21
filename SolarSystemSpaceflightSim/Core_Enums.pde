@@ -46,7 +46,8 @@ enum MissionGoalType {
   ORBIT_INSERTION,    // 在目标天体插入轨道
   LAND,               // 着陆
   CRASH,              // 撞毁（娱乐任务）
-  LAUNCH_TO_ORBIT     // 从地表发射到轨道
+  LAUNCH_TO_ORBIT,    // 从地表发射到轨道
+  RETURN_TO_LAUNCHSITE  // 返回发射场着陆
 }
 
 enum LaunchState {
@@ -64,4 +65,28 @@ enum GameProgressState {
   IN_LEO,      // 在低地球轨道，可执行同步轨道或月球转移
   IN_GEO,      // 在地球同步轨道（完成状态）
   AT_MOON      // 在月球轨道（完成状态）
+}
+
+// ========== 回收任务阶段 ==========
+enum RecoveryStage {
+  IDLE,                 // 空闲
+  PREPARING,           // 准备阶段（计算离轨窗口）
+  DEORBIT_BURN,        // 离轨制动燃烧
+  COAST_TO_ENTRY,      // 滑行到再入界面
+  REENTRY_GUIDANCE,    // 再入制导阶段
+  GLIDE_PHASE,         // 滑翔阶段
+  TURNAROUND_MANEUVER, // 转向机动
+  HOVER_SLIDE,         // 悬停平移
+  FINAL_DESCENT,       // 最终下降
+  LANDING_BURN,        // 着陆燃烧
+  LANDED,              // 已着陆
+  ABORT                // 任务中止
+}
+
+// ========== 制导模式 ==========
+enum GuidanceMode {
+  PEG_GUIDANCE,             // PEG显式制导
+  REENTRY_GUIDANCE,         // 再入制导
+  GLIDE_GUIDANCE,           // 滑翔制导
+  PROPULSIVE_LANDING_GUIDANCE  // 动力着陆制导
 }

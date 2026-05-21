@@ -383,31 +383,46 @@ class TaskMenu implements DrawerContent {
   }
 
   void startMission(MissionPreset preset) {
+    println("[TaskMenu] ========== Starting mission: " + preset.name + " ==========");
     CelestialBody body = preset.initialBody;
-    if (body == null) return;
+    if (body == null) {
+      println("[TaskMenu] FAILED: initialBody is null");
+      return;
+    }
 
     Spacecraft ship;
     if (solarSystem.ships.size() > 0) {
       ship = solarSystem.ships.get(0);
+      println("[TaskMenu] Using existing spacecraft");
     } else {
       ship = createSpacecraftFromPreset(preset.requiredSpacecraftPreset);
-      if (ship == null) return;
+      if (ship == null) {
+        println("[TaskMenu] FAILED: Could not create spacecraft from preset");
+        return;
+      }
       solarSystem.ships.add(ship);
+      println("[TaskMenu] Created new spacecraft");
     }
 
     boolean isLaunchMission = (preset.goal.type == MissionGoalType.LAUNCH_TO_ORBIT);
+    boolean isReturnMission = (preset.goal.type == MissionGoalType.RETURN_TO_LAUNCHSITE);
+    println("[TaskMenu] isLaunchMission=" + isLaunchMission + ", isReturnMission=" + isReturnMission);
 
     if (isLaunchMission) {
       LaunchSite site = getLaunchSiteForBody(body);
       if (site != null) {
         ship.initOnLaunchPad(body, site);
+        println("[TaskMenu] Initialized spacecraft on launch pad");
       }
     }
 
+    println("[TaskMenu] Validating mission...");
     validationResult = missionValidator.validateMission(preset, ship, solarSystem, timeManager.simTime);
     if (!validationResult.canExecute) {
+      println("[TaskMenu] FAILED: " + validationResult.reason);
       return;
     }
+    println("[TaskMenu] Validation passed: " + validationResult.reason);
 
     camera.focusOn(ship);
     camera.followShip(ship);
@@ -419,7 +434,9 @@ class TaskMenu implements DrawerContent {
 
     MissionTask task = new MissionTask(preset);
     List<ManeuverNode> maneuvers = validationResult.maneuvers;
+    println("[TaskMenu] Calling missionExecutor.startMission()...");
     missionExecutor.startMission(task, maneuvers, ship, solarSystem, timeManager.simTime);
+    println("[TaskMenu] ========== Mission startup complete ==========");
   }
 
   LaunchSite getLaunchSiteForBody(CelestialBody body) {

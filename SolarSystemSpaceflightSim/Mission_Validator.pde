@@ -13,16 +13,33 @@ class MissionValidator {
   MissionValidationResult validateMission(MissionPreset preset, Spacecraft craft, CelestialSystem system, double simTime) {
     MissionValidationResult result = new MissionValidationResult();
 
+    println("[MissionValidator] Validating mission: " + (preset != null ? preset.name : "null"));
+
     if (preset == null) {
       result.canExecute = false;
       result.reason = "Mission preset is null";
+      println("[MissionValidator] FAILED: " + result.reason);
       return result;
+    }
+
+    println("[MissionValidator] Mission type: " + preset.goal.type);
+    println("[MissionValidator] Spacecraft: " + (craft != null ? "exists" : "null"));
+    if (craft != null) {
+      println("[MissionValidator]   - referenceBody: " + (craft.referenceBody != null ? craft.referenceBody.name : "null"));
+      println("[MissionValidator]   - orbit: " + (craft.orbit != null ? "exists" : "null"));
+      println("[MissionValidator]   - stateVector: " + (craft.stateVector != null ? "exists" : "null"));
+      if (craft.stateVector != null && craft.referenceBody != null) {
+        double r = craft.stateVector.position.magnitude();
+        double alt = r - craft.referenceBody.radius;
+        println("[MissionValidator]   - altitude: " + alt + " km");
+      }
     }
 
     if (preset.requiredSpacecraftPreset != null && craft.presetId != null) {
       if (!craft.presetId.equals(preset.requiredSpacecraftPreset)) {
         result.canExecute = false;
         result.reason = "Spacecraft preset mismatch";
+        println("[MissionValidator] FAILED: " + result.reason);
         return result;
       }
     }
@@ -31,6 +48,7 @@ class MissionValidator {
       if (!isValidOrbit(preset.initialOrbit)) {
         result.canExecute = false;
         result.reason = "Invalid initial orbit";
+        println("[MissionValidator] FAILED: " + result.reason);
         return result;
       }
     }
@@ -53,6 +71,9 @@ class MissionValidator {
           result = validateOrbitInsertion(preset, craft);
         }
         break;
+      case RETURN_TO_LAUNCHSITE:
+        result = validateReturnToLaunchSiteMission(preset, craft, system, simTime);
+        break;
       case LAND:
       case CRASH:
         result.canExecute = true;
@@ -64,6 +85,69 @@ class MissionValidator {
         break;
     }
 
+    println("[MissionValidator] Result: canExecute=" + result.canExecute + ", reason=" + result.reason);
+    return result;
+  }
+
+  // ========== 验证返回发射场任务 ==========
+  MissionValidationResult validateReturnToLaunchSiteMission(MissionPreset preset, Spacecraft craft, CelestialSystem system, double simTime) {
+    MissionValidationResult result = new MissionValidationResult();
+
+    println("[ReturnMission] Starting validation...");
+
+    if (craft == null) {
+      result.canExecute = false;
+      result.reason = "No spacecraft available";
+      println("[ReturnMission] FAILED: " + result.reason);
+      return result;
+    }
+
+    CelestialBody earth = system.getEarth();
+    if (earth == null) {
+      result.canExecute = false;
+      result.reason = "Earth not found";
+      println("[ReturnMission] FAILED: " + result.reason);
+      return result;
+    }
+
+    if (craft.referenceBody == null || !craft.referenceBody.name.equals("Earth")) {
+      result.canExecute = false;
+      result.reason = "Spacecraft must be orbiting Earth";
+      println("[ReturnMission] FAILED: " + result.reason);
+      return result;
+    }
+
+    // 检查飞船是否有有效的轨道或状态向量
+    boolean hasValidState = (craft.orbit != null ||
+                            (craft.stateVector != null &&
+                             craft.stateVector.position != null &&
+                             craft.stateVector.velocity != null));
+
+    if (!hasValidState) {
+      result.canExecute = false;
+      result.reason = "No valid orbit or state vector available";
+      println("[ReturnMission] FAILED: " + result.reason);
+      return result;
+    }
+
+    // 计算当前高度
+    double altitude = -1;
+    if (craft.orbit != null) {
+      altitude = craft.orbit.getApoapsisAltitude();
+    } else if (craft.stateVector != null) {
+      double r = craft.stateVector.position.magnitude();
+      altitude = r - earth.radius;
+    }
+
+    println("[ReturnMission] Current altitude: " + altitude + " km");
+
+    // 只要在地球轨道上就可以执行返回任务
+    result.canExecute = true;
+    result.requiredDeltaV = 0.15; // 大约需要 150 m/s 进行离轨制动
+    result.reason = String.format("Ready to deorbit from %.1f km altitude", altitude);
+    result.maneuvers = new ArrayList<ManeuverNode>(); // 返回任务不需要预先规划机动，RecoveryController 会处理
+
+    println("[ReturnMission] SUCCESS: " + result.reason);
     return result;
   }
 

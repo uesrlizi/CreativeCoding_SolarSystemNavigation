@@ -3,6 +3,7 @@
 static final String MISSION_PRESET_LAUNCH_TO_LEO = "launch_to_leo";
 static final String MISSION_PRESET_GEO = "geo";
 static final String MISSION_PRESET_LUNAR_TRANSFER = "lunar_transfer";
+static final String MISSION_PRESET_RETURN_TO_LAUNCH_SITE = "return_to_launch_site";
 
 // 游戏进度状态
 static GameProgressState currentGameProgress = GameProgressState.GROUNDED;
@@ -76,6 +77,20 @@ void initMissionPresets(CelestialSystem system) {
       lunar.goal.targetOrbit = new Orbit(aTarget, 0.001, 0.0, 0.0, 0.0, periodTarget, moon);
       missionPresets.add(lunar);
     }
+
+    // 回收任务
+    if (earth != null) {
+      MissionPreset recovery = new MissionPreset(
+        MISSION_PRESET_RETURN_TO_LAUNCH_SITE,
+        "Return to Launch Site",
+        "Deorbit from current orbit, reenter atmosphere, and perform propulsive landing at the launch site."
+      );
+      recovery.requiredSpacecraftPreset = PRESET_LEO_SATELLITE;
+      recovery.initialBody = earth;
+      recovery.goal.type = MissionGoalType.RETURN_TO_LAUNCHSITE;
+      recovery.goal.targetBody = earth;
+      missionPresets.add(recovery);
+    }
   }
 }
 
@@ -110,7 +125,7 @@ boolean isMissionLocked(MissionPreset preset) {
       // 地面状态只能选发射任务
       return !preset.id.equals(MISSION_PRESET_LAUNCH_TO_LEO);
     case IN_LEO:
-      // LEO状态可以选同步轨道或月球转移
+      // LEO状态可以选同步轨道、月球转移或回收任务
       return preset.id.equals(MISSION_PRESET_LAUNCH_TO_LEO);
     case IN_GEO:
     case AT_MOON:
