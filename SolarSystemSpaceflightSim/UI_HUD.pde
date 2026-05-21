@@ -9,16 +9,18 @@ class NavigationDrawerContent implements DrawerContent {
     panel = new NavigationFocusPanel();
   }
 
-  public void updateContent() {
-    // 更新时也使用抽屉的位置，确保悬停检测坐标正确
-    if (currentDrawerX == 0) return;  // 还没有绘制过，跳过
+  public void updateContent(float drawerX, float drawerY, float drawerW) {
+    // 更新时直接使用传入的抽屉位置，确保悬停检测坐标正确
+    this.currentDrawerX = drawerX;
+    this.currentDrawerY = drawerY;
+    this.currentDrawerW = drawerW;
 
     float originalX = panel.panelX;
     float originalY = panel.panelY;
     float originalW = panel.panelW;
-    panel.panelX = currentDrawerX;
-    panel.panelY = currentDrawerY;
-    panel.panelW = currentDrawerW;
+    panel.panelX = drawerX;
+    panel.panelY = drawerY;
+    panel.panelW = drawerW;
     panel.update();
     panel.panelX = originalX;
     panel.panelY = originalY;
@@ -43,13 +45,13 @@ class NavigationDrawerContent implements DrawerContent {
     panel.panelW = originalW;
   }
 
-  public boolean handleContentClick(float mx, float my, float contentX, float contentY) {
+  public boolean handleContentClick(float mx, float my, float contentX, float contentY, float contentW) {
     float originalX = panel.panelX;
     float originalY = panel.panelY;
     float originalW = panel.panelW;
     panel.panelX = contentX;
     panel.panelY = contentY;
-    panel.panelW = currentDrawerW;  // 使用保存的抽屉宽度
+    panel.panelW = contentW;  // 使用传入的抽屉宽度
     boolean result = panel.handleClick(mx, my, camera, solarSystem.sun, solarSystem.planets, solarSystem.ships);
     panel.panelX = originalX;
     panel.panelY = originalY;
@@ -93,10 +95,12 @@ class HUD {
   String activeTooltipText;
   float tooltipSourceX, tooltipSourceY, tooltipSourceW, tooltipSourceH;
 
+  ViewToggleButton viewToggleButton;
   TrajectoryIconButton trajIcon;
   ApsisIconButton apsisIcon;
 
   HUD() {
+    viewToggleButton = new ViewToggleButton();
     timePanel = new TimeControlPanel();
 
     NavigationDrawerContent navContent = new NavigationDrawerContent();
@@ -159,6 +163,7 @@ class HUD {
   }
 
   void update() {
+    viewToggleButton.update();
     timePanel.update();
     navDrawer.update();
     taskDrawer.update();
@@ -173,6 +178,18 @@ class HUD {
     apsisIcon.update(mouseX, mouseY, mousePressed);
 
     activeTooltipText = null;
+
+    // Check view toggle button first (highest priority since it's top-right)
+    if (activeTooltipText == null) {
+      String viewToggleTip = viewToggleButton.getHoveredTooltipText();
+      if (viewToggleTip != null) {
+        activeTooltipText = viewToggleTip;
+        tooltipSourceX = viewToggleButton.getX();
+        tooltipSourceY = viewToggleButton.getY();
+        tooltipSourceW = viewToggleButton.getW();
+        tooltipSourceH = viewToggleButton.getH();
+      }
+    }
 
     ArrayList<Button> timeButtons = timePanel.getAllButtons();
     for (Button b : timeButtons) {
@@ -267,6 +284,7 @@ class HUD {
     navDrawer.draw();
     taskDrawer.draw();
     missionStatus.draw();
+    viewToggleButton.draw();
 
     if (cam.getMode() == ViewMode.MAP_VIEW) {
       trajIcon.draw();
@@ -301,6 +319,9 @@ class HUD {
 
   boolean handleMousePressed(float mx, float my, CameraController cam,
                              CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
+    if (viewToggleButton.handleClick(cam, ships)) {
+      return true;
+    }
     if (navDrawer.handleClick(mx, my)) {
       return true;
     }

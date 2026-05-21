@@ -2,9 +2,9 @@
 
 // DrawerContent 接口 - 抽屉内容提供者
 interface DrawerContent {
-  void updateContent();
+  void updateContent(float drawerX, float drawerY, float drawerW); // 更新时传递位置
   void drawContent(float drawX, float drawY, float drawW, float drawH);
-  boolean handleContentClick(float mx, float my, float contentX, float contentY);
+  boolean handleContentClick(float mx, float my, float contentX, float contentY, float contentW);
   String getContentTooltip();
   float[] getContentTooltipSource();
   float getContentHeight();
@@ -93,7 +93,10 @@ class DrawerPanel {
     currentPosition = lerp(currentPosition, target, animationSpeed);
 
     if (content != null) {
-      content.updateContent();
+      float scale = uiScale;
+      float contentY = 120 * scale;
+      float contentHeight = content.getContentHeight();
+      content.updateContent(currentPosition, contentY, panelWidth);
     }
 
     updateToggleButtonPosition();
@@ -224,7 +227,7 @@ class DrawerPanel {
       float contentHeight = content.getContentHeight();
       if (mx >= currentPosition && mx <= currentPosition + panelWidth &&
           my >= contentY && my <= contentY + contentHeight) {
-        return content.handleContentClick(mx, my, currentPosition, contentY);
+        return content.handleContentClick(mx, my, currentPosition, contentY, panelWidth);
       }
     }
 
@@ -271,11 +274,7 @@ class DrawerPanel {
     }
 
     if (content != null) {
-      float[] source = content.getContentTooltipSource();
-      if (source != null && source.length == 4) {
-        source[0] = currentPosition;
-        return source;
-      }
+      return content.getContentTooltipSource();
     }
     return null;
   }

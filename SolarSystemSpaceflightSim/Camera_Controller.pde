@@ -213,7 +213,17 @@ class CameraController {
   }
 
   void snapFocus() {
-    if (mode == ViewMode.SHIP_VIEW) return;
+    println("=== snapFocus() called ===");
+    println("  mode: " + mode);
+    println("  focusBody: " + (focusBody != null ? focusBody.name : "null"));
+    println("  focusShip: " + (focusShip != null ? "not null" : "null"));
+    println("  targetOffsetX: " + targetOffsetX + ", targetOffsetY: " + targetOffsetY);
+    println("  scale: " + scale + ", targetScale: " + targetScale);
+
+    if (mode == ViewMode.SHIP_VIEW) {
+      println("  EARLY RETURN: mode is SHIP_VIEW");
+      return;
+    }
 
     // First, calculate desired target scale
     double desiredScale = targetScale;
@@ -221,13 +231,16 @@ class CameraController {
 
     if (focusShip != null) {
       hasSpecificTarget = true;
+      println("  Handling focusShip");
       if (focusShip.referenceBody != null) {
         // Earth-relative phase
         double r = focusShip.stateVector.position.magnitude();
         double altitude = r - EARTH_RADIUS_KM;
+        println("    referenceBody: " + focusShip.referenceBody.name + ", altitude: " + altitude);
         if (altitude < 50.0) {
           // On surface: zoom to planet scale
           desiredScale = height / (2.0 * focusShip.referenceBody.radius);
+          println("    On surface, desiredScale: " + desiredScale);
         } else {
           // In flight: zoom to orbit semi-major axis scale
           if (focusShip.orbit != null && focusShip.orbit.a > 0.0 && focusShip.orbit.a < Double.MAX_VALUE / 2.0) {
@@ -235,6 +248,7 @@ class CameraController {
           } else {
             desiredScale = height / (4.0 * r);
           }
+          println("    In flight, desiredScale: " + desiredScale);
         }
       } else {
         // Heliocentric phase: use solar orbit semi-major axis
@@ -244,9 +258,11 @@ class CameraController {
           double r = Math.sqrt(focusShip.worldX * focusShip.worldX + focusShip.worldY * focusShip.worldY);
           desiredScale = height / (4.0 * Math.max(r, AU_KM));
         }
+        println("    Heliocentric, desiredScale: " + desiredScale);
       }
     } else if (focusBody != null) {
       hasSpecificTarget = true;
+      println("  Handling focusBody: " + focusBody.name);
       if (focusBody.a != 0) {
         // Planet: zoom to planet radius scale
         desiredScale = height / (4.0 * focusBody.radius);
@@ -254,24 +270,34 @@ class CameraController {
         // Sun: use default solar system scale
         desiredScale = (width * 0.15) / AU_KM;
       }
+      println("    desiredScale: " + desiredScale);
     } else {
       desiredScale = (width * 0.15) / AU_KM;
+      println("  No specific target, desiredScale: " + desiredScale);
     }
 
     // Check if we need to center
     boolean needsCenter = Math.abs(targetOffsetX) > 0.01 || Math.abs(targetOffsetY) > 0.01;
+    println("  needsCenter: " + needsCenter);
+    println("  hasSpecificTarget: " + hasSpecificTarget + ", desiredScale < scale: " + (desiredScale < scale));
 
     if (needsCenter) {
+      println("  Centering...");
       targetOffsetX = 0;
       targetOffsetY = 0;
       // If desired scale is smaller than current, also zoom in on first snap
       if (hasSpecificTarget && desiredScale < scale) {
+        println("  Setting targetScale to: " + desiredScale);
         targetScale = desiredScale;
+      } else {
+        println("  NOT changing targetScale (condition not met)");
       }
     } else {
+      println("  Already centered, setting targetScale to: " + desiredScale);
       // Already centered, just set the scale
       targetScale = desiredScale;
     }
+    println("  Done - targetScale: " + targetScale + ", targetOffset: (" + targetOffsetX + ", " + targetOffsetY + ")");
   }
 
   double[] screenToWorld(double sx, double sy) {

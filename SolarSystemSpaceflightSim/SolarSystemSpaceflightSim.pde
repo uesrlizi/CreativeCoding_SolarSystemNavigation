@@ -24,7 +24,6 @@ CelestialSystem solarSystem;  // 原来的SolarSystem改名为CelestialSystem
 CameraController camera;
 TimeManager timeManager;
 HUD hud;
-ViewToggleButton viewToggleButton;
 PhysicsSystem physicsSystem;  // 新增：物理系统
 DebugPanel debugPanel;         // 新增：调试面板
 float uiScale;
@@ -117,7 +116,6 @@ void setup() {
   }
 
   hud = new HUD();
-  viewToggleButton = new ViewToggleButton();
 }
 
 void createInitialSpacecraft() {
@@ -302,7 +300,6 @@ void draw() {
 
   camera.update(deltaTime);
   hud.update();
-  viewToggleButton.update();
 
   // Render order: background -> orbits -> SOI -> sun -> planets -> spacecraft -> UI
   drawStars();
@@ -371,7 +368,6 @@ void draw() {
   }
 
   hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.moons, solarSystem.sun, solarSystem.ships);
-  viewToggleButton.draw();
 
   // Draw debug panel
   debugPanel.draw(physicsSystem, camera, uiScale);
@@ -539,10 +535,6 @@ void drawSingleSOI(CelestialBody body) {
 }
 
 void mousePressed() {
-  if (viewToggleButton.handleClick(camera, solarSystem.ships)) {
-    return;
-  }
-
   if (hud.handleMousePressed(mouseX, mouseY, camera, solarSystem.sun, solarSystem.planets, solarSystem.ships)) {
     return;
   }

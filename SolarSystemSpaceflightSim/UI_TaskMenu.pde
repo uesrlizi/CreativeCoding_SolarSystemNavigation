@@ -15,11 +15,16 @@ class TaskMenu implements DrawerContent {
 
   MissionExecutorState lastExecutorState;
 
+  // 保存抽屉当前位置
+  float currentDrawerX = 0;
+  float currentDrawerY = 0;
+  float currentDrawerW = 0;
+
   TaskMenu() {
     float scale = uiScale;
     panelX = width - 310 * scale;
     panelY = 120 * scale;
-    panelW = 290 * scale;  // 调整为更合理的宽度
+    panelW = 290; // 使用像素值，与 DrawerPanel 传入的一致
     rowH = 32 * scale;
     headerH = 48 * scale;
     detailH = 140 * scale;
@@ -61,7 +66,7 @@ class TaskMenu implements DrawerContent {
   float drawerY = 0;
   float drawerW = 0;
 
-  public void updateContent() {
+  public void updateContent(float drawerX, float drawerY, float drawerW) {
     float scale = uiScale;
 
     MissionExecutorState currentState = missionExecutor.state;
@@ -78,18 +83,25 @@ class TaskMenu implements DrawerContent {
       lastExecutorState = currentState;
     }
 
+    // 保存抽屉位置 - DrawerPanel 传入的就是实际像素值
+    this.currentDrawerX = drawerX;
+    this.currentDrawerY = drawerY;
+    this.currentDrawerW = drawerW;
+
+    float originalX = panelX;
+    float originalY = panelY;
+    float originalW = panelW;
+    panelX = drawerX;
+    panelY = drawerY;
+    panelW = drawerW;
+
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
-    // 使用抽屉位置进行悬停检测
-    float useX = (drawerX != 0) ? drawerX : panelX;
-    float useY = (drawerY != 0) ? drawerY : panelY;
-    float useW = (drawerW != 0) ? drawerW : panelW;
+    boolean hitPanel = (mouseX >= panelX && mouseX <= panelX + panelW &&
+                       mouseY >= panelY && mouseY <= panelY + panelH);
 
-    boolean hitPanel = (mouseX >= useX && mouseX <= useX + useW &&
-                       mouseY >= useY && mouseY <= useY + panelH);
-
-    float listY = useY + headerH;
+    float listY = panelY + headerH;
     if (hitPanel && mouseY >= listY && mouseY < listY + presetCount * rowH) {
       int idx = (int)((mouseY - listY) / rowH);
       if (idx == hoveredIndex) {
@@ -103,8 +115,8 @@ class TaskMenu implements DrawerContent {
       hoveredFrames = 0;
     }
 
-    float footerY = useY + headerH + presetCount * rowH + detailH + 8 * scale;
-    float btnX = useX + useW - 100 * scale;
+    float footerY = panelY + headerH + presetCount * rowH + detailH + 8 * scale;
+    float btnX = panelX + panelW - 100 * scale;
     float btnY = footerY + 15 * scale;
     float btnW = 80 * scale;
     float btnH = 32 * scale;
@@ -116,6 +128,10 @@ class TaskMenu implements DrawerContent {
     } else {
       buttonHoverFrames = 0;
     }
+
+    panelX = originalX;
+    panelY = originalY;
+    panelW = originalW;
   }
 
   public void drawContent(float drawX, float drawY, float drawW, float drawH) {
@@ -125,28 +141,23 @@ class TaskMenu implements DrawerContent {
     float originalW = panelW;
 
     // 保存抽屉位置供 update 使用
-    drawerX = drawX;
-    drawerY = drawY;
-    drawerW = drawW;
+    currentDrawerX = drawX;
+    currentDrawerY = drawY;
+    currentDrawerW = drawW;
 
     panelX = drawX;
     panelY = drawY;
-    panelW = drawW;  // 使用抽屉提供的宽度
+    panelW = drawW;  // DrawerPanel 传入的就是实际像素值
 
     pushStyle();
 
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
-    fill(255, 200, 100);
-    textSize(18 * scale);
-    textAlign(LEFT, TOP);
-    text("MISSIONS", panelX + panelMargin, panelY + panelMargin + 4);
-
     fill(180, 200, 220);
     textSize(11 * scale);
     String statusText = getProgressStatusText();
-    text(statusText, panelX + panelMargin, panelY + headerH - 22 * scale);
+    text(statusText, panelX + panelMargin, panelY + panelMargin + 4);
 
     float rowY = panelY + headerH;
     if (availablePresets != null) {
@@ -217,20 +228,20 @@ class TaskMenu implements DrawerContent {
     panelW = originalW;
   }
 
-  public boolean handleContentClick(float mx, float my, float contentX, float contentY) {
+  public boolean handleContentClick(float mx, float my, float contentX, float contentY, float contentW) {
     float scale = uiScale;
     float originalX = panelX;
     float originalY = panelY;
     float originalW = panelW;
 
     // 保存抽屉位置
-    drawerX = contentX;
-    drawerY = contentY;
-    drawerW = panelW;
+    currentDrawerX = contentX;
+    currentDrawerY = contentY;
+    currentDrawerW = contentW;
 
     panelX = contentX;
     panelY = contentY;
-    panelW = panelW;  // 面板宽度已在构造时设置好
+    panelW = contentW;  // 使用传入的宽度，DrawerPanel 传入的就是实际像素值
 
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
 
@@ -241,6 +252,7 @@ class TaskMenu implements DrawerContent {
         selectedPreset = availablePresets.get(idx);
         panelX = originalX;
         panelY = originalY;
+        panelW = originalW;
         return true;
       }
     }
@@ -261,6 +273,7 @@ class TaskMenu implements DrawerContent {
       }
       panelX = originalX;
       panelY = originalY;
+      panelW = originalW;
       return true;
     }
 
@@ -278,8 +291,25 @@ class TaskMenu implements DrawerContent {
   }
 
   public float[] getContentTooltipSource() {
-    float useX = (drawerX != 0) ? drawerX : panelX;
-    return new float[] { useX, panelY, panelW, panelH };
+    float scale = uiScale;
+    // If START button is hovered, use its position
+    if (buttonHoverFrames >= Button.TOOLTIP_DELAY && startButtonHover) {
+      float useX = (currentDrawerX != 0) ? currentDrawerX : panelX;
+      float useY = (currentDrawerY != 0) ? currentDrawerY : panelY;
+      float useW = (currentDrawerW != 0) ? currentDrawerW : panelW;
+      int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
+      float footerY = useY + headerH + presetCount * rowH + detailH + 8 * scale;
+      float btnX = useX + useW - 100 * scale;
+      float btnY = footerY + 15 * scale;
+      float btnW = 80 * scale;
+      float btnH = 32 * scale;
+      return new float[] { btnX, btnY, btnW, btnH };
+    }
+    // Fallback to full panel
+    float useX = (currentDrawerX != 0) ? currentDrawerX : panelX;
+    float useY = (currentDrawerY != 0) ? currentDrawerY : panelY;
+    float useW = (currentDrawerW != 0) ? currentDrawerW : panelW;
+    return new float[] { useX, useY, useW, panelH };
   }
 
   public float getContentHeight() {

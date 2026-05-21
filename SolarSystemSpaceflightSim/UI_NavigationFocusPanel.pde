@@ -2,7 +2,7 @@
 
 class NavigationFocusPanel {
   float panelX, panelY, panelW, panelH;
-  float rowH, headerH, footerH;
+  float rowH, headerH;
   CelestialBody selectedBody;
   boolean selectedShip;
   long lastClickTime;
@@ -13,8 +13,6 @@ class NavigationFocusPanel {
 
   int hoveredIndex;
   int hoveredFrames;
-  boolean snapButtonHover;
-  int snapButtonHoverFrames;
 
   NavigationFocusPanel() {
     float scale = uiScale;
@@ -23,7 +21,6 @@ class NavigationFocusPanel {
     panelW = 260 * scale;  // 调整为更合理的宽度
     rowH = 26 * scale;
     headerH = 42 * scale;
-    footerH = 36 * scale;
     panelMargin = 12 * scale;
 
     selectedBody = null;
@@ -33,14 +30,12 @@ class NavigationFocusPanel {
     lastClickedShip = false;
     hoveredIndex = -1;
     hoveredFrames = 0;
-    snapButtonHover = false;
-    snapButtonHoverFrames = 0;
   }
 
   void update() {
     float scale = uiScale;
     int bodyCount = 1 + 8;
-    panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
+    panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale;
 
     boolean hitPanel = (mouseX >= panelX && mouseX <= panelX + panelW &&
                         mouseY >= panelY && mouseY <= panelY + panelH);
@@ -76,19 +71,6 @@ class NavigationFocusPanel {
         hoveredFrames = 1;
       }
     }
-
-    float footerY = panelY + headerH + (9 + 1 + 1) * rowH + 8 * scale;
-    float btnX = panelX + panelW - 70 * scale;
-    float btnY = footerY + 2;
-    float btnW = 56 * scale;
-    float btnH = 22 * scale;
-    snapButtonHover = (mouseX >= btnX && mouseX <= btnX + btnW &&
-                       mouseY >= btnY && mouseY <= btnY + btnH);
-    if (snapButtonHover) {
-      snapButtonHoverFrames++;
-    } else {
-      snapButtonHoverFrames = 0;
-    }
   }
 
   void draw(CameraController cam, CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
@@ -96,12 +78,7 @@ class NavigationFocusPanel {
     pushStyle();
 
     int bodyCount = 1 + 8;
-    panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
-
-    fill(200);
-    textSize(16 * scale);
-    textAlign(LEFT, TOP);
-    text("NAVIGATION", panelX + panelMargin, panelY + panelMargin);
+    panelH = headerH + (bodyCount + 1 + 1) * rowH + 8 * scale;
 
     String focusName = getFocusName(cam);
     if (focusName != null) {
@@ -113,12 +90,12 @@ class NavigationFocusPanel {
 
     float rowY = panelY + headerH;
 
-    drawBodyRow(rowY, sun, sun == cam.focusBody, selectedBody == sun, 0);
+    drawBodyRow(rowY, sun, sun == cam.focusBody, selectedBody == sun, 0, cam);
     rowY += rowH;
 
     for (int i = 0; i < planets.size(); i++) {
       CelestialBody p = planets.get(i);
-      drawBodyRow(rowY, p, p == cam.focusBody, selectedBody == p, i + 1);
+      drawBodyRow(rowY, p, p == cam.focusBody, selectedBody == p, i + 1, cam);
       rowY += rowH;
     }
 
@@ -128,24 +105,40 @@ class NavigationFocusPanel {
     noStroke();
     rowY += rowH;
 
-    drawSpacecraftRow(rowY, ships, cam.focusShip != null);
+    // Log spacecraft row position
+    if (cam.focusShip != null) {
+      println("drawSpacecraftRow at y=" + rowY + ", (headerH=" + headerH + ", 10*rowH=" + (10*rowH) + ")");
+    }
+
+    drawSpacecraftRow(rowY, ships, cam.focusShip != null, cam);
     rowY += rowH;
 
-    float footerY = rowY + 8 * scale;
-    float btnX = panelX + panelW - 70 * scale;
-    float btnY = footerY + 2;
-    float btnW = 56 * scale;
-    float btnH = 22 * scale;
-
-    fill(snapButtonHover ? color(80, 160, 220) : color(50, 120, 180));
-    noStroke();
-    rect(btnX, btnY, btnW, btnH, 4 * scale);
-    fill(255);
-    textSize(13 * scale);
-    textAlign(CENTER, CENTER);
-    text("SNAP", btnX + btnW / 2, btnY + btnH / 2);
-
     popStyle();
+  }
+
+  // Check if target is visible on screen (center position only)
+  boolean isTargetVisible(CameraController cam, CelestialBody body) {
+    if (cam.getMode() == ViewMode.MAP_VIEW) {
+      // In map view, check if within view bounds - simplified
+      double[] screenPos = cam.worldToScreen(body.px, body.py);
+      double px = screenPos[0];
+      double py = screenPos[1];
+      return px >= 0 && px <= width && py >= 0 && py <= height;
+    } else {
+      // In ship view, just check if this is the follow target
+      return cam.followTarget != null;
+    }
+  }
+
+  boolean isTargetVisible(CameraController cam, Spacecraft ship) {
+    if (cam.getMode() == ViewMode.MAP_VIEW) {
+      double[] screenPos = cam.worldToScreen(ship.worldX, ship.worldY);
+      double px = screenPos[0];
+      double py = screenPos[1];
+      return px >= 0 && px <= width && py >= 0 && py <= height;
+    } else {
+      return cam.followTarget == ship;
+    }
   }
 
   boolean handleClick(float mx, float my, CameraController cam, CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
@@ -154,6 +147,54 @@ class NavigationFocusPanel {
       selectedBody = null;
       selectedShip = false;
       return false;
+    }
+
+    // Check if clicked on SNAP button for already focused body
+    if (cam.focusBody != null) {
+      int focusIdx = -1;
+      if (cam.focusBody == sun) {
+        focusIdx = 0;
+      } else {
+        for (int i = 0; i < planets.size(); i++) {
+          if (planets.get(i) == cam.focusBody) {
+            focusIdx = i + 1;
+            break;
+          }
+        }
+      }
+      if (focusIdx >= 0) {
+        float scale = uiScale;
+        float btnRowY = panelY + headerH + focusIdx * rowH;
+        float btnX = panelX + panelW - 58 * scale;
+        float btnW = 48 * scale;
+        float btnH = 18 * scale;
+        float btnCY = btnRowY + rowH / 2;
+        if (mx >= btnX && mx <= btnX + btnW &&
+            my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
+          cam.snapFocus();
+          return true;
+        }
+      }
+    }
+
+    // Check if clicked on SNAP button for already focused ship
+    if (cam.focusShip != null && ships.size() > 0 && cam.focusShip == ships.get(0)) {
+      float scale = uiScale;
+      float btnRowY = panelY + headerH + 10 * rowH;  // 10: sun(1) + planets(8) + separator(1)
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = btnRowY + rowH / 2;
+      println("Ship SNAP button check:");
+      println("  Click: mx=" + mx + ", my=" + my);
+      println("  Button: x=" + btnX + "-" + (btnX+btnW) + ", y=" + (btnCY-btnH/2) + "-" + (btnCY+btnH/2));
+      println("  btnRowY=" + btnRowY + ", headerH=" + headerH + ", rowH=" + rowH);
+      if (mx >= btnX && mx <= btnX + btnW &&
+          my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
+        println("  HIT - calling snapFocus()");
+        cam.snapFocus();
+        return true;
+      }
     }
 
     if (selectedBody != null) {
@@ -178,6 +219,10 @@ class NavigationFocusPanel {
         if (mx >= btnX && mx <= btnX + btnW &&
             my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
           cam.focusOn(selectedBody);
+          // Auto-snap if target is not visible
+          if (!isTargetVisible(cam, selectedBody)) {
+            cam.snapFocus();
+          }
           selectedBody = null;
           selectedShip = false;
           return true;
@@ -187,7 +232,7 @@ class NavigationFocusPanel {
 
     if (selectedShip && ships.size() > 0) {
       float scale = uiScale;
-      float btnRowY = panelY + headerH + (9 + 1) * rowH;
+      float btnRowY = panelY + headerH + 10 * rowH;  // 10: sun(1) + planets(8) + separator(1)
       float btnX = panelX + panelW - 58 * scale;
       float btnW = 48 * scale;
       float btnH = 18 * scale;
@@ -195,6 +240,10 @@ class NavigationFocusPanel {
       if (mx >= btnX && mx <= btnX + btnW &&
           my >= btnCY - btnH / 2 && my <= btnCY + btnH / 2) {
         cam.focusOn(ships.get(0));
+        // Auto-snap if target is not visible
+        if (!isTargetVisible(cam, ships.get(0))) {
+          cam.snapFocus();
+        }
         selectedShip = false;
         selectedBody = null;
         return true;
@@ -221,6 +270,10 @@ class NavigationFocusPanel {
       if (lastClickedShip && selectedShip &&
           now - lastClickTime < PANEL_DOUBLE_CLICK_MS) {
         cam.focusOn(ships.get(0));
+        // Auto-snap if target is not visible
+        if (!isTargetVisible(cam, ships.get(0))) {
+          cam.snapFocus();
+        }
         selectedShip = false;
         selectedBody = null;
         lastClickTime = 0;
@@ -232,20 +285,6 @@ class NavigationFocusPanel {
         lastClickBody = null;
         lastClickedShip = true;
       }
-      return true;
-    }
-    rowY += rowH;
-
-    float scale = uiScale;
-    float footerY = rowY + 8 * scale;
-    float btnX = panelX + panelW - 70 * scale;
-    float btnY = footerY + 2;
-    float btnW = 56 * scale;
-    float btnH = 22 * scale;
-    if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
-      selectedBody = null;
-      selectedShip = false;
-      cam.snapFocus();
       return true;
     }
 
@@ -264,6 +303,10 @@ class NavigationFocusPanel {
       lastClickBody = null;
       lastClickedShip = false;
       cam.focusOn(body);
+      // Auto-snap if target is not visible
+      if (!isTargetVisible(cam, body)) {
+        cam.snapFocus();
+      }
       return true;
     } else {
       selectedBody = body;
@@ -285,13 +328,17 @@ class NavigationFocusPanel {
         return "Focus on Spacecraft (double-click)";
       }
     }
-    if (snapButtonHoverFrames >= Button.TOOLTIP_DELAY) {
-      return "Snap camera to current focus  [F]";
-    }
     return null;
   }
 
   float[] getTooltipSource() {
+    float scale = uiScale;
+    // If a row is hovered, use that row's position
+    if (hoveredIndex >= 0 && hoveredFrames >= Button.TOOLTIP_DELAY) {
+      float rowY = panelY + headerH + hoveredIndex * rowH;
+      return new float[] { panelX, rowY, panelW, rowH };
+    }
+    // Fallback to full panel
     return new float[] { panelX, panelY, panelW, panelH };
   }
 
@@ -304,10 +351,10 @@ class NavigationFocusPanel {
   float getPanelHeight() {
     float scale = uiScale;
     int bodyCount = 1 + 8;
-    return headerH + (bodyCount + 1 + 1) * rowH + 8 * scale + footerH;
+    return headerH + (bodyCount + 1 + 1) * rowH + 8 * scale;
   }
 
-  void drawBodyRow(float y, CelestialBody body, boolean isFocused, boolean isSelected, int idx) {
+  void drawBodyRow(float y, CelestialBody body, boolean isFocused, boolean isSelected, int idx, CameraController cam) {
     float scale = uiScale;
     boolean isHoveredLine = (hoveredIndex == idx);
 
@@ -355,15 +402,23 @@ class NavigationFocusPanel {
       textAlign(CENTER, CENTER);
       text("Focus", btnX + btnW / 2, btnCY);
     } else if (isFocused) {
-      fill(255, 220, 100, 150);
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = y + rowH / 2;
+      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
+                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
+      fill(btnHover ? color(80, 200, 110) : color(60, 160, 80));
       noStroke();
-      float cx = panelX + panelW - 18 * scale;
-      float cy = y + rowH / 2;
-      ellipse(cx, cy, 9 * scale, 9 * scale);
+      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
+      fill(255);
+      textSize(11 * scale);
+      textAlign(CENTER, CENTER);
+      text("SNAP", btnX + btnW / 2, btnCY);
     }
   }
 
-  void drawSpacecraftRow(float y, List<Spacecraft> ships, boolean isFocused) {
+  void drawSpacecraftRow(float y, List<Spacecraft> ships, boolean isFocused, CameraController cam) {
     float scale = uiScale;
     boolean isHoveredLine = (hoveredIndex == 9);
 
@@ -418,11 +473,19 @@ class NavigationFocusPanel {
       textAlign(CENTER, CENTER);
       text("Focus", btnX + btnW / 2, btnCY);
     } else if (isFocused) {
-      fill(255, 220, 100, 150);
+      float btnX = panelX + panelW - 58 * scale;
+      float btnW = 48 * scale;
+      float btnH = 18 * scale;
+      float btnCY = y + rowH / 2;
+      boolean btnHover = mouseX >= btnX && mouseX <= btnX + btnW &&
+                         mouseY >= btnCY - btnH / 2 && mouseY <= btnCY + btnH / 2;
+      fill(btnHover ? color(80, 200, 110) : color(60, 160, 80));
       noStroke();
-      float indicCx = panelX + panelW - 18 * scale;
-      float indicCy = y + rowH / 2;
-      ellipse(indicCx, indicCy, 9 * scale, 9 * scale);
+      rect(btnX, btnCY - btnH / 2, btnW, btnH, 3 * scale);
+      fill(255);
+      textSize(11 * scale);
+      textAlign(CENTER, CENTER);
+      text("SNAP", btnX + btnW / 2, btnCY);
     }
   }
 }

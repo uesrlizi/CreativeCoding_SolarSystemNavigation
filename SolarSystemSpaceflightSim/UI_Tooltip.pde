@@ -35,11 +35,23 @@ class Tooltip {
     popStyle();
 
     float gap = 6 * scale;
-    float preferredX = bx + bw + gap;
-    if (preferredX + tw <= width) {
-      tx = preferredX;
+    // If button is in the right half of the screen, prefer to show tooltip on left
+    boolean isOnRightSide = (bx > width / 2);
+    float preferredX;
+    if (isOnRightSide) {
+      preferredX = bx - tw - gap;
+      if (preferredX >= 0) {
+        tx = preferredX;
+      } else {
+        tx = bx + bw + gap;
+      }
     } else {
-      tx = bx - tw - gap;
+      preferredX = bx + bw + gap;
+      if (preferredX + tw <= width) {
+        tx = preferredX;
+      } else {
+        tx = bx - tw - gap;
+      }
     }
 
     float preferredY = by;
