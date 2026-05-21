@@ -98,7 +98,8 @@ class OrbitalMinimap {
     beginShape();
     int steps = 100;
     for (int i = 0; i <= steps; i++) {
-      double nu = 2.0 * PI * i / steps;
+      double E = 2.0 * PI * i / steps;  // 偏近点角均匀步进
+      double nu = trueAnomaly(E, orbit.e);  // 转换为真近点角
       double[] pos = orbitalToCartesian2D(orbit.a, orbit.e, orbit.w, nu);
 
       // 轨道坐标是相对于参考天体的，需要加上参考天体位置再减去椭圆中心

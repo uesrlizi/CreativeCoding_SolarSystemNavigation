@@ -105,10 +105,6 @@ class NavigationFocusPanel {
     noStroke();
     rowY += rowH;
 
-    // Log spacecraft row position
-    if (cam.focusShip != null) {
-      println("drawSpacecraftRow at y=" + rowY + ", (headerH=" + headerH + ", 10*rowH=" + (10*rowH) + ")");
-    }
 
     drawSpacecraftRow(rowY, ships, cam.focusShip != null, cam);
     rowY += rowH;

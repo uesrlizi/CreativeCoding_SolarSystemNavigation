@@ -34,15 +34,21 @@ class DrawerPanel {
   float panelWidth;
   float visibleWidthWhenCollapsed;
   String collapsedLabel;
+  float verticalOffset;  // 垂直偏移
 
   DrawerContent content;
 
   DrawerPanel(int side, float panelWidth, float visibleWidthWhenCollapsed, DrawerContent content, String collapsedLabel) {
+    this(side, panelWidth, visibleWidthWhenCollapsed, content, collapsedLabel, 0);
+  }
+
+  DrawerPanel(int side, float panelWidth, float visibleWidthWhenCollapsed, DrawerContent content, String collapsedLabel, float verticalOffset) {
     this.side = side;
     this.panelWidth = panelWidth;
     this.visibleWidthWhenCollapsed = visibleWidthWhenCollapsed;
     this.content = content;
     this.collapsedLabel = collapsedLabel;
+    this.verticalOffset = verticalOffset;
 
     float scale = uiScale;
     this.toggleBtnWidth = 36 * scale;   // 窄宽度
@@ -94,7 +100,7 @@ class DrawerPanel {
 
     if (content != null) {
       float scale = uiScale;
-      float contentY = 120 * scale;
+      float contentY = 120 * scale + verticalOffset;
       float contentHeight = content.getContentHeight();
       content.updateContent(currentPosition, contentY, panelWidth);
     }
@@ -120,7 +126,7 @@ class DrawerPanel {
       toggleBtnX = currentPosition - toggleBtnWidth - 4 * scale;
     }
 
-    float panelTop = 120 * scale;
+    float panelTop = 120 * scale + verticalOffset;
     toggleBtnY = panelTop + contentHeight / 2 - toggleBtnHeight / 2;
   }
 
@@ -134,7 +140,7 @@ class DrawerPanel {
     pushStyle();
 
     if (content != null) {
-      float contentY = 120 * scale;
+      float contentY = 120 * scale + verticalOffset;
       float contentHeight = content.getContentHeight();
 
       // 始终绘制面板，根据 currentPosition 平滑滑动
@@ -223,7 +229,7 @@ class DrawerPanel {
     }
 
     if (content != null) {
-      float contentY = 120 * scale;
+      float contentY = 120 * scale + verticalOffset;
       float contentHeight = content.getContentHeight();
       if (mx >= currentPosition && mx <= currentPosition + panelWidth &&
           my >= contentY && my <= contentY + contentHeight) {
@@ -246,11 +252,8 @@ class DrawerPanel {
                       mouseY >= toggleBtnY && mouseY <= toggleBtnY + toggleBtnHeight);
 
     if (hovered && toggleBtnHoverFrames >= Button.TOOLTIP_DELAY) {
-      if (side == DRAWER_LEFT) {
-        return expanded ? "Collapse navigation panel" : "Expand navigation panel";
-      } else {
-        return expanded ? "Collapse mission panel" : "Expand mission panel";
-      }
+      String label = (collapsedLabel != null) ? collapsedLabel.toLowerCase() : "panel";
+      return expanded ? "Collapse " + label : "Expand " + label;
     }
     return null;
   }

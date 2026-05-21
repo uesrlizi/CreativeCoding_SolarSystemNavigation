@@ -147,7 +147,7 @@ class CelestialSystem {
     }
   }
 
-  void drawSun(CameraController cam) {
+  void drawSun(CameraController cam, boolean drawLabels) {
     double[] sp = cam.worldToScreen(0, 0);
     double sx = sp[0], sy = sp[1];
     double sR = sun.radius * cam.scale;
@@ -191,24 +191,61 @@ class CelestialSystem {
       }
     }
 
-    if (showLabels) {
-      fill(255, 230, 100, 220);
-      textSize(18 * uiScale);
-      textAlign(LEFT, CENTER);
-      text("Sun", (float)(sx + drawR + 5), (float)sy);
-    }
+    // Old label drawing removed - now handled by LabelManager
   }
 
   void updateRenderer(float dt) {
     renderer.update(dt);
   }
 
-  void drawPlanets(CameraController cam) {
+  void drawPlanets(CameraController cam, boolean drawLabels) {
     for (CelestialBody p : planets) {
-      p.draw(cam);
+      p.draw(cam, false);
     }
     for (CelestialBody moon : moons) {
-      moon.draw(cam);
+      moon.draw(cam, false);
     }
+  }
+
+  void collectLabels(CameraController cam, LabelManager lm) {
+    // Sun label
+    double[] sunSp = cam.worldToScreen(0, 0);
+    float sunRadius = (float)(sun.radius * cam.scale);
+    sunRadius = max(sunRadius, 2);
+    int sunPriority = (cam.focusBody == sun) ? 110 : 90;
+    lm.addLabel("Sun", (float)sunSp[0], (float)sunSp[1], sunRadius, color(255, 230, 100), sunPriority, 0);
+
+    // Planet labels
+    for (CelestialBody p : planets) {
+      double[] sp = cam.worldToScreen(p.px, p.py);
+      // Check if on screen
+      if (sp[0] < -100 || sp[0] > width + 100 || sp[1] < -100 || sp[1] > height + 100) continue;
+      float radius = (float)(p.radius * cam.scale);
+      radius = max(radius, 2);
+      int priority = (cam.focusBody == p) ? 100 : 80;
+      float dir = getSmartOffsetDir((float)sp[0], (float)sp[1]);
+      lm.addLabel(p.name, (float)sp[0], (float)sp[1], radius, p.col, priority, dir);
+    }
+
+    // Moon labels (lower priority)
+    for (CelestialBody moon : moons) {
+      double[] sp = cam.worldToScreen(moon.px, moon.py);
+      // Check if on screen
+      if (sp[0] < -100 || sp[0] > width + 100 || sp[1] < -100 || sp[1] > height + 100) continue;
+      float radius = (float)(moon.radius * cam.scale);
+      radius = max(radius, 2);
+      int priority = (cam.focusBody == moon) ? 100 : 60;
+      float dir = getSmartOffsetDir((float)sp[0], (float)sp[1]);
+      lm.addLabel(moon.name, (float)sp[0], (float)sp[1], radius, moon.col, priority, dir);
+    }
+  }
+
+  float getSmartOffsetDir(float x, float y) {
+    float margin = 100 * uiScale;
+    if (x < margin) return 0;  // Left side - label to right
+    if (x > width - margin) return 2;  // Right side - label to left
+    if (y < margin) return 3;  // Top - label below
+    if (y > height - margin) return 1;  // Bottom - label above
+    return 0;  // Default right
   }
 }

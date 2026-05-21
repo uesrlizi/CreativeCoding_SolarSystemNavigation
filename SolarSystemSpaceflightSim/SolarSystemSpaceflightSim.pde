@@ -12,6 +12,9 @@ boolean showTrajectory = true;
 boolean showApoapsis = true;
 boolean showPeriapsis = true;
 
+// ========== LABEL MANAGEMENT ==========
+LabelManager labelManager;
+
 // ========== STARFIELD ==========
 int[] starSeed;
 
@@ -57,6 +60,7 @@ void setup() {
   uiScale = height / 1080.0f;
   lastFrameMillis = millis();
   textFont(createFont("Segoe UI Semibold", 48));
+  labelManager = new LabelManager();
 
   // Initialize random seed for stars
   starSeed = new int[1500];
@@ -313,8 +317,46 @@ void draw() {
   }
 
 
-  solarSystem.drawSun(camera);
-  solarSystem.drawPlanets(camera);
+  // Draw celestial bodies (without labels)
+  solarSystem.drawSun(camera, false);
+  solarSystem.drawPlanets(camera, false);
+
+  // Collect all labels
+  labelManager.reset();
+  if (showLabels) {
+    solarSystem.collectLabels(camera, labelManager);
+    // No spacecraft text labels anymore, only the ship icon is shown
+  }
+  // Collect AP/PE markers if in map view and trajectory is shown
+  if (camera.getMode() == ViewMode.MAP_VIEW && showTrajectory && (showApoapsis || showPeriapsis)) {
+    float scale = uiScale;
+    float markerSize = 6 * scale;
+    for (Spacecraft ship : solarSystem.ships) {
+      if (ship.referenceBody != null) {
+        Trajectory trajectory = trajectoryPredictor.predict(ship, timeManager.simTime);
+        if (trajectory != null) {
+          CelestialBody body = ship.referenceBody;
+          for (TrajectoryEvent event : trajectory.events) {
+            if ((event.type.equals("apoapsis") && showApoapsis) ||
+                (event.type.equals("periapsis") && showPeriapsis)) {
+              double worldX = body.px + event.position.x;
+              double worldY = body.py + event.position.y;
+              double[] sp = camera.worldToScreen(worldX, worldY);
+              color markerColor = event.type.equals("apoapsis") ?
+                  color(255, 150, 100) : color(100, 200, 255);
+              String label = event.type.equals("apoapsis") ? "AP" : "PE";
+              // Priority 10 - low priority, will be hidden first if overlapping
+              labelManager.addMarker(label, (float)sp[0], (float)sp[1], markerSize, markerColor, 10);
+            }
+          }
+        }
+      }
+    }
+  }
+  // Sort and resolve collisions
+  labelManager.processLabels();
+  // Draw labels and markers
+  labelManager.drawLabels();
 
   // Update launch site position to track Earth
   if (launchSite != null) {
@@ -371,6 +413,15 @@ void draw() {
 
   // Draw debug panel
   debugPanel.draw(physicsSystem, camera, uiScale);
+}
+
+float getSmartLabelDir(float x, float y) {
+  float margin = 100 * uiScale;
+  if (x < margin) return 0;  // Left side - label to right
+  if (x > width - margin) return 2;  // Right side - label to left
+  if (y < margin) return 3;  // Top - label below
+  if (y > height - margin) return 1;  // Bottom - label above
+  return 0;  // Default right
 }
 
 void drawStars() {
@@ -440,12 +491,6 @@ void drawOrbits() {
     if (moon.a == 0 || moon.parentBody == null) continue;
     drawOrbitPath(moon.parentBody.px, moon.parentBody.py, moon.a, moon.e, moon.i, moon.omega, moon.w, color(60, 60, 80, 80));
   }
-  // Draw spacecraft orbits
-  for (Spacecraft ship : solarSystem.ships) {
-    if (ship.referenceBody != null && ship.orbit != null) {
-      drawEarthRelOrbit(ship);
-    }
-  }
 }
 
 void drawOrbitPath(double a, double e, double i, double omega, double w, color c) {
@@ -459,7 +504,8 @@ void drawOrbitPath(double centerX, double centerY, double a, double e, double i,
   beginShape();
   int steps = 200;
   for (int j = 0; j <= steps; j++) {
-    double nu = 2.0 * PI * j / steps;
+    double E = 2.0 * PI * j / steps;  // 偏近点角均匀步进
+    double nu = trueAnomaly(E, e);    // 转换为真近点角
     double[] pos = orbitalToCartesian(a, e, i, omega, w, nu);
     double[] sp = camera.worldToScreen(centerX + pos[0], centerY + pos[1]);
     vertex((float)sp[0], (float)sp[1]);
@@ -481,7 +527,8 @@ void drawEarthRelOrbit(Spacecraft ship) {
   beginShape();
   int steps = 200;
   for (int j = 0; j <= steps; j++) {
-    double nu = 2.0 * PI * j / steps;
+    double E = 2.0 * PI * j / steps;  // 偏近点角均匀步进
+    double nu = trueAnomaly(E, orbit.e);  // 转换为真近点角
     double[] pos = orbitalToCartesian2D(orbit.a, orbit.e, orbit.w, nu);
     double worldX = centerX + pos[0];
     double worldY = centerY + pos[1];

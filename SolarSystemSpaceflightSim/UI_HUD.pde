@@ -87,10 +87,11 @@ class HUD {
   TimeControlPanel timePanel;
   DrawerPanel navDrawer;
   DrawerPanel taskDrawer;
+  DrawerPanel orbitDrawer;
+  OrbitDrawerContent orbitContent;
   MissionStatus missionStatus;
   HeadingIndicator headingIndicator;
   OrbitalMinimap orbitalMinimap;
-  OrbitDisplay orbitDisplay;
   Tooltip tooltip;
   String activeTooltipText;
   float tooltipSourceX, tooltipSourceY, tooltipSourceW, tooltipSourceH;
@@ -98,6 +99,8 @@ class HUD {
   ViewToggleButton viewToggleButton;
   TrajectoryIconButton trajIcon;
   ApsisIconButton apsisIcon;
+  SOIIconButton soiIcon;
+  OrbitIconButton orbitIcon;
 
   HUD() {
     viewToggleButton = new ViewToggleButton();
@@ -124,10 +127,20 @@ class HUD {
     );
     taskDrawer.expanded = true;
 
+    orbitContent = new OrbitDrawerContent();
+    orbitDrawer = new DrawerPanel(
+      DRAWER_LEFT,
+      220,  // 轨道信息面板宽度
+      40,
+      orbitContent,
+      "ORBIT",
+      550  // 垂直偏移，在导航抽屉下方
+    );
+    orbitDrawer.expanded = false;  // 默认折叠
+
     missionStatus = new MissionStatus();
     headingIndicator = new HeadingIndicator();
     orbitalMinimap = new OrbitalMinimap();
-    orbitDisplay = new OrbitDisplay();
     tooltip = new Tooltip();
     activeTooltipText = null;
 
@@ -146,6 +159,12 @@ class HUD {
 
     apsisIcon = new ApsisIconButton(0, y, iconSize);
     apsisIcon.toggled = showApoapsis; // Use apoapsis as the toggle for both
+
+    orbitIcon = new OrbitIconButton(0, y, iconSize);
+    orbitIcon.toggled = showOrbits;
+
+    soiIcon = new SOIIconButton(0, y, iconSize);
+    soiIcon.toggled = showSOI;
   }
 
   void updateIconPositions() {
@@ -157,9 +176,15 @@ class HUD {
     // Calculate position relative to viewToggleButton
     float viewToggleX = width - 175 * scale - 10 * scale;
 
-    // Apsis icon goes first, then trajectory icon
-    apsisIcon.updatePosition(viewToggleX - iconSize - gap, y);
-    trajIcon.updatePosition(viewToggleX - iconSize * 2 - gap * 2, y);
+    // Order from right to left: apsis, traj, orbit, soi
+    float currentX = viewToggleX - iconSize - gap;
+    apsisIcon.updatePosition(currentX, y);
+    currentX -= iconSize + gap;
+    trajIcon.updatePosition(currentX, y);
+    currentX -= iconSize + gap;
+    orbitIcon.updatePosition(currentX, y);
+    currentX -= iconSize + gap;
+    soiIcon.updatePosition(currentX, y);
   }
 
   void update() {
@@ -167,15 +192,17 @@ class HUD {
     timePanel.update();
     navDrawer.update();
     taskDrawer.update();
+    orbitDrawer.update();
     missionStatus.update();
     headingIndicator.update();
     orbitalMinimap.update();
-    orbitDisplay.update();
 
     updateIconPositions();
 
     trajIcon.update(mouseX, mouseY, mousePressed);
     apsisIcon.update(mouseX, mouseY, mousePressed);
+    orbitIcon.update(mouseX, mouseY, mousePressed);
+    soiIcon.update(mouseX, mouseY, mousePressed);
 
     activeTooltipText = null;
 
@@ -254,6 +281,31 @@ class HUD {
     }
 
     if (activeTooltipText == null) {
+      String orbitToggleTip = orbitDrawer.getToggleButtonTooltip();
+      if (orbitToggleTip != null) {
+        activeTooltipText = orbitToggleTip;
+        tooltipSourceX = orbitDrawer.toggleBtnX;
+        tooltipSourceY = orbitDrawer.toggleBtnY;
+        tooltipSourceW = orbitDrawer.toggleBtnWidth;
+        tooltipSourceH = orbitDrawer.toggleBtnHeight;
+      }
+    }
+
+    if (activeTooltipText == null && orbitDrawer.expanded) {
+      String orbitTip = orbitDrawer.getContentTooltip();
+      if (orbitTip != null) {
+        activeTooltipText = orbitTip;
+        float[] source = orbitDrawer.getContentTooltipSource();
+        if (source != null && source.length == 4) {
+          tooltipSourceX = source[0];
+          tooltipSourceY = source[1];
+          tooltipSourceW = source[2];
+          tooltipSourceH = source[3];
+        }
+      }
+    }
+
+    if (activeTooltipText == null) {
       if (trajIcon.shouldShowTooltip()) {
         activeTooltipText = trajIcon.getTooltipText();
         tooltipSourceX = trajIcon.getTooltipSourceX();
@@ -266,6 +318,18 @@ class HUD {
         tooltipSourceY = apsisIcon.getTooltipSourceY();
         tooltipSourceW = apsisIcon.getTooltipSourceW();
         tooltipSourceH = apsisIcon.getTooltipSourceH();
+      } else if (orbitIcon.shouldShowTooltip()) {
+        activeTooltipText = orbitIcon.getTooltipText();
+        tooltipSourceX = orbitIcon.getTooltipSourceX();
+        tooltipSourceY = orbitIcon.getTooltipSourceY();
+        tooltipSourceW = orbitIcon.getTooltipSourceW();
+        tooltipSourceH = orbitIcon.getTooltipSourceH();
+      } else if (soiIcon.shouldShowTooltip()) {
+        activeTooltipText = soiIcon.getTooltipText();
+        tooltipSourceX = soiIcon.getTooltipSourceX();
+        tooltipSourceY = soiIcon.getTooltipSourceY();
+        tooltipSourceW = soiIcon.getTooltipSourceW();
+        tooltipSourceH = soiIcon.getTooltipSourceH();
       }
     }
 
@@ -289,6 +353,8 @@ class HUD {
     if (cam.getMode() == ViewMode.MAP_VIEW) {
       trajIcon.draw();
       apsisIcon.draw(trajIcon.toggled); // Only show as active when trajectory is on
+      orbitIcon.draw();
+      soiIcon.draw();
     }
 
     if (timeWarp == 0) {
@@ -309,8 +375,10 @@ class HUD {
       displayShip = ships.get(0);
     }
 
+    orbitContent.setSpacecraft(displayShip, simTime);
+    orbitDrawer.draw();
+
     if (displayShip != null) {
-      orbitDisplay.draw(displayShip, simTime);
       orbitalMinimap.draw(displayShip, planets, moons, sun);
     }
 
@@ -325,8 +393,10 @@ class HUD {
     if (navDrawer.handleClick(mx, my)) {
       return true;
     }
-
     if (taskDrawer.handleClick(mx, my)) {
+      return true;
+    }
+    if (orbitDrawer.handleClick(mx, my)) {
       return true;
     }
 
@@ -350,6 +420,14 @@ class HUD {
         // 只在轨迹也开启时才实际显示
         showApoapsis = nowOn && trajIcon.toggled;
         showPeriapsis = nowOn && trajIcon.toggled;
+        return true;
+      }
+      if (orbitIcon.handleClick(mx, my)) {
+        showOrbits = orbitIcon.toggled;
+        return true;
+      }
+      if (soiIcon.handleClick(mx, my)) {
+        showSOI = soiIcon.toggled;
         return true;
       }
     }

@@ -33,12 +33,7 @@ class SpacecraftRenderer {
 
     popMatrix();
 
-    if (showLabels && !isShipView) {
-      fill(red(ship.col), green(ship.col), blue(ship.col), 220);
-      textSize(15 * uiScale);
-      textAlign(LEFT, CENTER);
-      text(ship.name, (float)sp[0] + 16, (float)sp[1]);
-    }
+    // No ship name label anymore, only the icon
   }
 
   void drawMapIcon(Spacecraft ship, CameraController cam) {
@@ -524,7 +519,7 @@ class SpacecraftRenderer {
 
     CelestialBody body = ship.referenceBody;
 
-    // 1. 画轨道段（椭圆）
+    // 1. 画轨道段（椭圆）- 使用偏近点角(E)均匀采样使点分布更均匀
     if (showTrajectory) {
       noFill();
       stroke(red(ship.col), green(ship.col), blue(ship.col), 100);
@@ -536,7 +531,8 @@ class SpacecraftRenderer {
           beginShape();
           int steps = 200;
           for (int j = 0; j <= steps; j++) {
-            double nu = 2.0 * PI * j / steps;
+            double E = 2.0 * PI * j / steps;  // 偏近点角均匀步进
+            double nu = trueAnomaly(E, seg.orbit.e);  // 转换为真近点角
             double[] pos = orbitalToCartesian2D(seg.orbit.a, seg.orbit.e, seg.orbit.w, nu);
             double worldX = body.px + pos[0];
             double worldY = body.py + pos[1];
@@ -548,35 +544,7 @@ class SpacecraftRenderer {
       }
     }
 
-    // 2. 画事件（AP/PE）- 只在显示轨迹时才显示
-    if (showTrajectory && (showApoapsis || showPeriapsis)) {
-      float markerSize = 6 * scale;
-
-      for (TrajectoryEvent event : trajectory.events) {
-        if ((event.type.equals("apoapsis") && showApoapsis) ||
-            (event.type.equals("periapsis") && showPeriapsis)) {
-          double worldX = body.px + event.position.x;
-          double worldY = body.py + event.position.y;
-          double[] sp = cam.worldToScreen(worldX, worldY);
-
-          if (event.type.equals("apoapsis")) {
-            fill(255, 150, 100, 200);
-          } else {
-            fill(100, 200, 255, 200);
-          }
-          noStroke();
-          ellipse((float)sp[0], (float)sp[1], markerSize, markerSize);
-
-          if (showLabels) {
-            fill(255, 230);
-            textSize(11 * scale);
-            textAlign(LEFT, CENTER);
-            String label = event.type.equals("apoapsis") ? "AP" : "PE";
-            text(label, (float)sp[0] + markerSize + 3, (float)sp[1]);
-          }
-        }
-      }
-    }
+    // 2. 画事件（AP/PE）- 现在由LabelManager处理，支持防重叠
 
     popStyle();
   }

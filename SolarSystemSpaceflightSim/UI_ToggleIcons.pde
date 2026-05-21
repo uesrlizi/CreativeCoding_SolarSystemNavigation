@@ -183,3 +183,102 @@ class ApsisIconButton extends ToggleIconButton {
     }
   }
 }
+
+class SOIIconButton extends ToggleIconButton {
+  SOIIconButton(float x, float y, float size) {
+    super(x, y, size, "Toggle SOI boundaries", "K");
+  }
+
+  void draw() {
+    float scale = uiScale;
+    float halfW = w / 2;
+    float halfH = h / 2;
+
+    noStroke();
+    if (mousePressed && hovered) {
+      fill(80, 100, 140, 200);
+    } else if (hovered) {
+      fill(60, 60, 80, 180);
+    } else {
+      fill(0, 0, 0, 160);
+    }
+    rect(x, y, w, h, 6 * scale);
+
+    // Draw SOI icon - dashed circle with center dot
+    float centerX = x + halfW;
+    float centerY = y + halfH;
+    float iconSize = w * 0.3f;
+
+    noFill();
+    if (toggled) {
+      stroke(255, 220, 100);
+    } else {
+      stroke(150, 180, 220, 150);
+    }
+    strokeWeight(2 * scale);
+
+    // Draw dashed circle
+    int dashCount = 12;
+    for (int i = 0; i < dashCount; i++) {
+      float startAngle = i * TWO_PI / dashCount;
+      float endAngle = startAngle + TWO_PI / dashCount * 0.6f;
+      arc(centerX, centerY, iconSize * 2, iconSize * 2, startAngle, endAngle);
+    }
+
+    // Draw center dot
+    noStroke();
+    if (toggled) {
+      fill(255, 220, 100);
+    } else {
+      fill(150, 180, 220, 150);
+    }
+    ellipse(centerX, centerY, 6 * scale, 6 * scale);
+  }
+}
+
+class OrbitIconButton extends ToggleIconButton {
+  OrbitIconButton(float x, float y, float size) {
+    super(x, y, size, "Toggle orbital lines", "O");
+  }
+
+  void draw() {
+    float scale = uiScale;
+    float halfW = w / 2;
+    float halfH = h / 2;
+
+    noStroke();
+    if (mousePressed && hovered) {
+      fill(80, 100, 140, 200);
+    } else if (hovered) {
+      fill(60, 60, 80, 180);
+    } else {
+      fill(0, 0, 0, 160);
+    }
+    rect(x, y, w, h, 6 * scale);
+
+    // Draw orbit icon - ellipse/circle
+    float centerX = x + halfW;
+    float centerY = y + halfH;
+    float iconSize = w * 0.35f;
+
+    noFill();
+    if (toggled) {
+      stroke(255, 220, 100);
+    } else {
+      stroke(150, 180, 220, 150);
+    }
+    strokeWeight(2 * scale);
+
+    // Draw elliptical orbit
+    ellipse(centerX, centerY, iconSize * 2, iconSize * 1.2f);
+
+    // Draw small center dot
+    noStroke();
+    if (toggled) {
+      fill(255, 220, 100);
+    } else {
+      fill(150, 180, 220, 150);
+    }
+    ellipse(centerX, centerY, 4 * scale, 4 * scale);
+  }
+}

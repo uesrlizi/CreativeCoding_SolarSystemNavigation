@@ -10,7 +10,7 @@ class MissionStatus {
     panelW = 300 * scale;
     panelH = 100 * scale;
     panelX = (width - panelW) / 2;
-    panelY = 10 * scale;
+    panelY = height - panelH - 10 * scale;
     margin = 12 * scale;
     rowH = 20 * scale;
   }
@@ -19,7 +19,7 @@ class MissionStatus {
     float scale = uiScale;
     panelW = 300 * scale;
     panelX = (width - panelW) / 2;
-    panelY = 10 * scale;
+    panelY = height - panelH - 10 * scale;
   }
 
   void draw() {

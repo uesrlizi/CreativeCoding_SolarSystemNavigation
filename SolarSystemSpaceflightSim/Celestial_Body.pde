@@ -171,7 +171,7 @@ class CelestialBody {
     if (rotation < 0) rotation += TWO_PI;
   }
 
-  void draw(CameraController cam) {
+  void draw(CameraController cam, boolean drawLabels) {
     double[] sp = cam.worldToScreen(px, py);
     double screenR = radius * cam.scale;
 
@@ -216,16 +216,7 @@ class CelestialBody {
       }
     }
 
-    if (showLabels) {
-      fill(200, 200, 200, 200);
-      textSize(17 * uiScale);
-      textAlign(LEFT, CENTER);
-      float labelR = (float)drawR;
-      if (labelR < 2) labelR = 2;
-      float labelX = (float)(cx + labelR + 5);
-      float labelY = (float)cy;
-      text(name, labelX, labelY);
-    }
+    // Labels now handled by LabelManager - removed direct drawing
   }
 
   void drawGroundScanline(double cx, double cy, double r) {
