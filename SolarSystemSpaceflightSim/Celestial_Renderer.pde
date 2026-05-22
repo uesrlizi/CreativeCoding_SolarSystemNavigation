@@ -4,13 +4,21 @@ class CelestialBodyRenderer {
   float time;
   CelestialSystem solarSystem;
 
+  // SVG 地球
+  PShape earthSVG;
+  boolean useEarthSVG;
+
   CelestialBodyRenderer() {
     time = 0;
+    earthSVG = loadShape("earth.svg");
+    useEarthSVG = true;
   }
 
   CelestialBodyRenderer(CelestialSystem ss) {
     time = 0;
     this.solarSystem = ss;
+    earthSVG = loadShape("earth.svg");
+    useEarthSVG = true;
   }
 
   double calculateSOIRadius(CelestialBody body) {
@@ -80,9 +88,35 @@ class CelestialBodyRenderer {
       }
     }
 
-    if (body.hasAtmosphere && r < max(width, height)) {
+    if (body.hasAtmosphere) {
       drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
     }
+  }
+
+  void drawEarthSVG(CelestialBody body, double cx, double cy, double r, boolean withAtmosphere) {
+    pushMatrix();
+    translate((float)cx, (float)cy);
+    rotate(body.axialTilt);
+    rotate(body.rotation);
+
+    // SVG 是 14x14 单位，缩放适配半径 r
+    float scaleFactor = (float)(r * 2) / 14.0;
+    scale(scaleFactor);
+
+    // SVG 中心在 (7,7)，平移到原点
+    translate(-7, -7);
+
+    shape(earthSVG);
+
+    popMatrix();
+
+    if (withAtmosphere && body.hasAtmosphere) {
+      drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+    }
+  }
+
+  void drawEarthSVG(CelestialBody body, double cx, double cy, double r) {
+    drawEarthSVG(body, cx, cy, r, false);
   }
 
   void drawLOD0(CelestialBody body, double cx, double cy, double r) {
@@ -95,6 +129,12 @@ class CelestialBodyRenderer {
   }
 
   void drawLOD1(CelestialBody body, double cx, double cy, double r) {
+    // 地球使用 SVG（无大气）
+    if (useEarthSVG && body.name.equals("Earth")) {
+      drawEarthSVG(body, cx, cy, r, false);
+      return;
+    }
+
     noStroke();
     float fr = (float)r;
 
@@ -109,6 +149,12 @@ class CelestialBodyRenderer {
   }
 
   void drawLOD2(CelestialBody body, double cx, double cy, double r) {
+    // 地球使用 SVG（带大气）
+    if (useEarthSVG && body.name.equals("Earth")) {
+      drawEarthSVG(body, cx, cy, r, true);
+      return;
+    }
+
     noStroke();
     float fr = (float)r;
 
@@ -124,6 +170,12 @@ class CelestialBodyRenderer {
   }
 
   void drawLOD3(CelestialBody body, double cx, double cy, double r) {
+    // 地球使用 SVG（带大气）
+    if (useEarthSVG && body.name.equals("Earth")) {
+      drawEarthSVG(body, cx, cy, r, true);
+      return;
+    }
+
     noStroke();
     float fr = (float)r;
 
@@ -511,9 +563,15 @@ class CelestialBodyRenderer {
     for (int i = layers; i > 0; i--) {
       float k = i / (float)layers;
       float ar = r * (1 + k * 0.13f);
-      fill(red(atmos), green(atmos), blue(atmos), (int)(35 * (1 - k) * (1 - k)));
-      ellipse(cx, cy, ar * 2, ar * 2);
+      float innerAr = r * (1 + (k - 0.4f) * 0.13f);
+      if (innerAr < r) innerAr = r;
+
+      noFill();
+      stroke(red(atmos), green(atmos), blue(atmos), (int)(35 * (1 - k) * (1 - k)));
+      strokeWeight((ar - innerAr) * 0.8f);
+      ellipse(cx, cy, (ar + innerAr), (ar + innerAr));
     }
+    noStroke();
     blendMode(ADD);
     fill(red(atmos), green(atmos), blue(atmos), 18);
     ellipse(cx, cy, r * 2.15f, r * 2.15f);
