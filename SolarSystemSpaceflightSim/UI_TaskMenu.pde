@@ -156,7 +156,12 @@ class TaskMenu implements DrawerContent {
 
     fill(180, 200, 220);
     textSize(11 * scale);
-    String statusText = getProgressStatusText();
+    String statusText;
+    if (missionExecutor.hasActiveMission()) {
+      statusText = missionExecutor.getDetailedStatus();
+    } else {
+      statusText = getProgressStatusText();
+    }
     text(statusText, panelX + panelMargin, panelY + panelMargin + 4);
 
     float rowY = panelY + headerH;
@@ -198,9 +203,7 @@ class TaskMenu implements DrawerContent {
     float btnW = 80 * scale;
     float btnH = 32 * scale;
 
-    boolean missionInProgress = (missionExecutor.state != MissionExecutorState.IDLE &&
-                                 missionExecutor.state != MissionExecutorState.COMPLETED &&
-                                 missionExecutor.state != MissionExecutorState.FAILED);
+    boolean missionInProgress = missionExecutor.hasActiveMission();
     boolean canStart = selectedPreset != null && !missionInProgress;
 
     if (canStart) {
@@ -215,6 +218,7 @@ class TaskMenu implements DrawerContent {
     text("START", btnX + btnW / 2, btnY + btnH / 2);
 
     if (missionInProgress) {
+      // 只显示简单的状态提示
       fill(220, 180, 80);
       textSize(11 * scale);
       textAlign(LEFT, CENTER);
@@ -423,10 +427,6 @@ class TaskMenu implements DrawerContent {
       return;
     }
     println("[TaskMenu] Validation passed: " + validationResult.reason);
-
-    camera.focusOn(ship);
-    camera.followShip(ship);
-    camera.snapFocus();
 
     if (trajectoryPredictor != null) {
       trajectoryPredictor.markDirty();

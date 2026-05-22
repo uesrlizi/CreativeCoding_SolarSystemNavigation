@@ -225,21 +225,8 @@ class MissionExecutor {
       completeLaunchMission(tickSimTime);
     }
 
-    // 更新进度（简单估算：从倒计时到入轨）
-    double elapsed = tickSimTime - missionStartTime;
-    if (assignedCraft.launchState == LaunchState.ON_PAD) {
-      progress = 0;
-    } else if (assignedCraft.launchState == LaunchState.COUNTDOWN) {
-      progress = 0.05 * (elapsed / Spacecraft.COUNTDOWN_DURATION);
-    } else if (assignedCraft.launchState == LaunchState.IGNITION) {
-      progress = 0.05 + 0.02 * ((elapsed - Spacecraft.COUNTDOWN_DURATION) / Spacecraft.IGNITION_DURATION);
-    } else if (assignedCraft.launchState == LaunchState.LAUNCHING) {
-      progress = 0.07 + 0.83 * Math.min(elapsed / 300.0, 1.0);  // 假设上升需要5分钟
-    } else if (assignedCraft.launchState == LaunchState.CIRCULARIZING) {
-      progress = 0.9;
-    } else if (assignedCraft.launchState == LaunchState.IN_ORBIT) {
-      progress = 1.0;
-    }
+    // 从 launchController 获取精细进度
+    progress = launchController.getProgress();
   }
 
   // ========== 完成发射任务 ==========
@@ -553,12 +540,82 @@ class MissionExecutor {
     return assignedCraft.getPrograde();
   }
 
+  // 计算所有机动的总权重（基于燃烧时间）
+  private double calculateTotalManeuverWeight() {
+    double total = 0;
+    if (maneuverSequence != null) {
+      for (ManeuverNode node : maneuverSequence) {
+        total += Math.max(node.burnDuration, 1.0); // 每个机动至少算1秒
+      }
+    }
+    return total;
+  }
+
+  // 获取已完成机动的权重总和
+  private double getCompletedManeuverWeight() {
+    double total = 0;
+    if (maneuverSequence != null) {
+      for (int i = 0; i < currentManeuverIndex && i < maneuverSequence.size(); i++) {
+        total += Math.max(maneuverSequence.get(i).burnDuration, 1.0);
+      }
+    }
+    return total;
+  }
+
   private void updateProgress() {
     if (maneuverSequence == null || maneuverSequence.size() == 0) {
       progress = 0;
       return;
     }
-    progress = (double)currentManeuverIndex / maneuverSequence.size();
+
+    double totalWeight = calculateTotalManeuverWeight();
+    if (totalWeight <= 0) {
+      progress = (double)currentManeuverIndex / maneuverSequence.size();
+      return;
+    }
+
+    double completedWeight = getCompletedManeuverWeight();
+    double currentManeuverProgress = 0;
+
+    if (currentManeuverIndex < maneuverSequence.size()) {
+      ManeuverNode currentNode = maneuverSequence.get(currentManeuverIndex);
+      double currentWeight = Math.max(currentNode.burnDuration, 1.0);
+
+      switch (state) {
+        case WAITING_FOR_MANEUVER: {
+          // 等待阶段：基于到点火的时间进度
+          double timeSinceStart = currentTickSimTime - missionStartTime;
+          double timeToIgnition = currentNode.ignitionTime - timeSinceStart;
+          // 假设等待时间最多为当前机动燃烧时间的3倍
+          double estimatedWaitTime = currentWeight * 3.0;
+          double waitProgress = 1.0 - constrainDouble(timeToIgnition / estimatedWaitTime, 0.0, 1.0);
+          currentManeuverProgress = currentWeight * Math.max(0.0, waitProgress * 0.3); // 等待阶段最多算30%
+          break;
+        }
+
+        case ORIENTING: {
+          // 定向阶段：基于定向误差
+          double orientError = Math.abs(assignedCraft.autoControl.orientationError);
+          double orientProgress = 1.0 - constrainDouble(orientError / Math.PI, 0.0, 1.0);
+          currentManeuverProgress = currentWeight * (0.3 + orientProgress * 0.2); // 30%-50%
+          break;
+        }
+
+        case BURNING: {
+          // 燃烧阶段：基于剩余时间
+          double burnRemaining = assignedCraft.autoControl.burnTimeRemaining;
+          double burnProgress = 1.0 - constrainDouble(burnRemaining / currentNode.burnDuration, 0.0, 1.0);
+          currentManeuverProgress = currentWeight * (0.5 + burnProgress * 0.5); // 50%-100%
+          break;
+        }
+
+        default:
+          break;
+      }
+    }
+
+    progress = (completedWeight + currentManeuverProgress) / totalWeight;
+    progress = constrainDouble(progress, 0.0, 1.0);
   }
 
   private String formatTime(double seconds) {
@@ -665,5 +722,62 @@ class MissionExecutor {
       return launchController.getUmbilicalDeployProgress();
     }
     return 0.0f;
+  }
+
+  // ========== 统一状态查询方法 ==========
+
+  // 获取详细状态文本（检查子系统）
+  String getDetailedStatus() {
+    if (isRecoveryMission && recoveryController != null) {
+      return recoveryController.getStatusText();
+    } else if (isLaunchMission && launchController != null) {
+      return launchController.getStatusText();
+    } else {
+      return statusText;
+    }
+  }
+
+  // 获取当前进度（0~1）
+  double getDetailedProgress() {
+    if (isRecoveryMission && recoveryController != null) {
+      return recoveryController.getProgress();
+    } else if (isLaunchMission && launchController != null) {
+      return launchController.getProgress();
+    } else {
+      return progress;
+    }
+  }
+
+  // 检查是否有活动任务
+  boolean hasActiveMission() {
+    if (isRecoveryMission && recoveryController != null) {
+      return recoveryController.isActive();
+    } else if (isLaunchMission && launchController != null) {
+      return launchController.isActive();
+    } else {
+      return state == MissionExecutorState.WAITING_FOR_MANEUVER ||
+             state == MissionExecutorState.ORIENTING ||
+             state == MissionExecutorState.BURNING;
+    }
+  }
+
+  // 检查是否是回收任务
+  boolean isRecoveryMission() {
+    return isRecoveryMission;
+  }
+
+  // 检查是否是发射任务
+  boolean isLaunchMission() {
+    return isLaunchMission;
+  }
+
+  // 获取回收控制器（用于UI）
+  RecoveryController getRecoveryController() {
+    return recoveryController;
+  }
+
+  // 获取发射控制器（用于UI）
+  LaunchController getLaunchController() {
+    return launchController;
   }
 }

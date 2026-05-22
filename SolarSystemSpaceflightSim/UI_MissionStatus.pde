@@ -7,7 +7,7 @@ class MissionStatus {
 
   MissionStatus() {
     float scale = uiScale;
-    panelW = 300 * scale;
+    panelW = width * 0.5f;
     panelH = 100 * scale;
     panelX = (width - panelW) / 2;
     panelY = height - panelH - 10 * scale;
@@ -17,14 +17,14 @@ class MissionStatus {
 
   void update() {
     float scale = uiScale;
-    panelW = 300 * scale;
+    panelW = width * 0.5f;
     panelX = (width - panelW) / 2;
     panelY = height - panelH - 10 * scale;
   }
 
   void draw() {
     if (missionExecutor == null) return;
-    if (missionExecutor.state == MissionExecutorState.IDLE) return;
+    if (missionExecutor.state == MissionExecutorState.IDLE && !missionExecutor.hasActiveMission()) return;
 
     pushStyle();
 
@@ -46,7 +46,7 @@ class MissionStatus {
     // Status text
     fill(220, 220, 220);
     textSize(12 * scale);
-    String statusText = missionExecutor.statusText;
+    String statusText = missionExecutor.getDetailedStatus();
     if (statusText != null) {
       text(statusText, panelX + panelW / 2, panelY + margin + rowH);
     }
@@ -60,7 +60,7 @@ class MissionStatus {
     fill(40, 40, 40);
     rect(progressBarX, progressBarY, progressBarW, progressBarH, 4 * scale);
 
-    float progress = (float)missionExecutor.progress;
+    float progress = (float)missionExecutor.getDetailedProgress();
     fill(80, 160, 220);
     rect(progressBarX, progressBarY, progressBarW * progress, progressBarH, 4 * scale);
 
@@ -74,6 +74,16 @@ class MissionStatus {
   }
 
   String getStateTitle() {
+    // 优先检查回收任务
+    if (missionExecutor.isRecoveryMission() && missionExecutor.getRecoveryController() != null) {
+      RecoveryStage stage = missionExecutor.getRecoveryController().getStage();
+      return getRecoveryStageTitle(stage);
+    }
+    // 然后检查发射任务
+    if (missionExecutor.isLaunchMission() && missionExecutor.getLaunchController() != null) {
+      return "LAUNCH MISSION IN PROGRESS";
+    }
+    // 普通任务
     switch (missionExecutor.state) {
       case WAITING_FOR_MANEUVER: return "MISSION IN PROGRESS - Waiting";
       case ORIENTING: return "MISSION IN PROGRESS - Orienting";
@@ -85,12 +95,56 @@ class MissionStatus {
   }
 
   color getStateColor() {
+    // 优先检查回收任务
+    if (missionExecutor.isRecoveryMission() && missionExecutor.getRecoveryController() != null) {
+      RecoveryStage stage = missionExecutor.getRecoveryController().getStage();
+      return getRecoveryStageColor(stage);
+    }
+    // 普通任务
     switch (missionExecutor.state) {
       case WAITING_FOR_MANEUVER: return color(255, 220, 100);
       case ORIENTING: return color(100, 200, 255);
       case BURNING: return color(255, 100, 100);
       case COMPLETED: return color(100, 255, 100);
       case FAILED: return color(255, 50, 50);
+      default: return color(200, 200, 200);
+    }
+  }
+
+  // ========== 回收任务阶段标题 ==========
+  String getRecoveryStageTitle(RecoveryStage stage) {
+    switch (stage) {
+      case IDLE: return "RECOVERY READY";
+      case PREPARING: return "RECOVERY - Preparing";
+      case DEORBIT_BURN: return "RECOVERY - Deorbit Burn";
+      case COAST_TO_ENTRY: return "RECOVERY - Coasting to Entry";
+      case REENTRY_GUIDANCE: return "RECOVERY - Reentry";
+      case GLIDE_PHASE: return "RECOVERY - Gliding";
+      case TURNAROUND_MANEUVER: return "RECOVERY - Turning Around";
+      case HOVER_SLIDE: return "RECOVERY - Approaching";
+      case FINAL_DESCENT: return "RECOVERY - Final Descent";
+      case LANDING_BURN: return "RECOVERY - Landing Burn";
+      case LANDED: return "RECOVERY COMPLETE";
+      case ABORT: return "RECOVERY ABORTED";
+      default: return "RECOVERY";
+    }
+  }
+
+  // ========== 回收任务阶段颜色 ==========
+  color getRecoveryStageColor(RecoveryStage stage) {
+    switch (stage) {
+      case IDLE: return color(200, 200, 200);
+      case PREPARING: return color(255, 220, 100);
+      case DEORBIT_BURN: return color(255, 100, 100);
+      case COAST_TO_ENTRY: return color(100, 200, 255);
+      case REENTRY_GUIDANCE: return color(255, 150, 50);
+      case GLIDE_PHASE: return color(100, 200, 200);
+      case TURNAROUND_MANEUVER: return color(150, 150, 255);
+      case HOVER_SLIDE: return color(100, 200, 150);
+      case FINAL_DESCENT: return color(200, 150, 100);
+      case LANDING_BURN: return color(255, 100, 150);
+      case LANDED: return color(100, 255, 100);
+      case ABORT: return color(255, 50, 50);
       default: return color(200, 200, 200);
     }
   }

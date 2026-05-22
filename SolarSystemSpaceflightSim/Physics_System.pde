@@ -139,11 +139,13 @@ class PhysicsSystem {
 
   // ========== 固定在表面的更新 ==========
   void updateFixedToSurface(Spacecraft ship, double simDt, double simTime) {
-    // 飞船固定在发射场，随地球自转而移动
-    // 这里假设发射场位置已经由 LaunchSite 管理
-    // 我们只需要确保飞船速度为0，保持位置固定
-
+    // 飞船固定在表面（发射场或着陆后）
     ship.stateVector.velocity = new Vector2(0, 0);
+
+    // 确保位置始终在表面以上
+    if (ship.referenceBody != null) {
+      ensureOnSurface(ship);
+    }
 
     // 更新世界坐标（基于参考天体位置）
     if (ship.referenceBody != null) {
@@ -153,6 +155,18 @@ class PhysicsSystem {
 
     // 清空轨道
     ship.orbit = null;
+  }
+
+  // ========== 确保飞船在表面以上 ==========
+  void ensureOnSurface(Spacecraft ship) {
+    CelestialBody body = ship.referenceBody;
+    Vector2 pos = ship.stateVector.position;
+    double currentRadius = pos.magnitude();
+    double targetRadius = body.radius + Spacecraft.SHIP_LENGTH_KM * 0.5;
+
+    if (currentRadius < targetRadius - 1e-3) { // 有轻微穿透
+      ship.stateVector.position = pos.normalized().mul(targetRadius);
+    }
   }
 
   // ============================================================

@@ -81,7 +81,62 @@ class CollisionDetector {
 
   void handleCollision(Spacecraft ship, CollisionResult result) {
     if (result.hasCollision && result.body != null) {
-      ship.state = SpacecraftState.DESTROYED;
+      // 检查是否是软着陆场景
+      if (isLandingScenario(ship, result)) {
+        // 软着陆：约束在表面，不销毁
+        handleSoftLanding(ship, result);
+      } else {
+        // 硬碰撞：销毁
+        ship.state = SpacecraftState.DESTROYED;
+      }
+    }
+  }
+
+  // ============================================================
+  //  判断是否是着陆场景
+  // ============================================================
+
+  boolean isLandingScenario(Spacecraft ship, CollisionResult result) {
+    // 如果飞船已经是 LANDED 状态
+    if (ship.state == SpacecraftState.LANDED) {
+      return true;
+    }
+    // 如果飞船正对着径向向外（着陆姿态）且高度很低
+    if (ship.referenceBody != null && result.body == ship.referenceBody) {
+      double alt = ship.getAltitude();
+      double shipHeight = Spacecraft.SHIP_LENGTH_KM;
+      if (alt < shipHeight * 2.0) { // 2倍箭体高度内认为是着陆阶段
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ============================================================
+  //  处理软着陆：约束飞船在表面
+  // ============================================================
+
+  void handleSoftLanding(Spacecraft ship, CollisionResult result) {
+    // 确保状态是 LANDED
+    ship.state = SpacecraftState.LANDED;
+    // 固定在表面
+    ship.isFixedToSurface = true;
+    // 校正位置到表面以上
+    snapToSurface(ship, result.body);
+  }
+
+  // ============================================================
+  //  将飞船位置校正到表面以上
+  // ============================================================
+
+  void snapToSurface(Spacecraft ship, CelestialBody body) {
+    Vector2 pos = ship.stateVector.position;
+    double currentRadius = pos.magnitude();
+    double targetRadius = body.radius + Spacecraft.SHIP_LENGTH_KM * 0.5;
+
+    if (currentRadius < targetRadius) {
+      ship.stateVector.position = pos.normalized().mul(targetRadius);
+      ship.stateVector.velocity = new Vector2(0, 0);
     }
   }
 }

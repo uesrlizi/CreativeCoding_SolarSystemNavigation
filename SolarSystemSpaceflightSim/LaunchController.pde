@@ -24,6 +24,7 @@ class LaunchController {
   double circBurnDuration;     // 圆化燃烧时长
   boolean apoapsisReached;      // 是否到达远地点
   double lastPeriAlt;           // 上次记录的近地点高度
+  double lastSimTime;           // 记录最近的simTime
 
   LaunchController() {
     this.ship = null;
@@ -38,6 +39,7 @@ class LaunchController {
     this.circBurnDuration = 0;
     this.apoapsisReached = false;
     this.umbilicalDeployProgress = 0.0f;
+    this.lastSimTime = 0;
   }
 
   // ========== 初始化 ==========
@@ -77,6 +79,7 @@ class LaunchController {
   // ========== 更新发射状态 ==========
 
   void update(double simTime, double simDt) {
+    lastSimTime = simTime;
     if (!isActive || ship == null) return;
 
     switch (ship.launchState) {
@@ -403,6 +406,71 @@ class LaunchController {
         return "In Orbit - Launch Complete";
     }
     return "";
+  }
+
+  // ========== 兼容接口方法 ==========
+
+  String getStatusText() {
+    // 简单返回默认状态文本
+    return "Launch Mission Active";
+  }
+
+  double getProgress() {
+    double simTime = lastSimTime;
+
+    switch (ship.launchState) {
+      case ON_PAD:
+        return 0.0;
+
+      case COUNTDOWN:
+        double countdownElapsed = (simTime > 0) ? (simTime - ship.countdownStartTime) : 0;
+        double countdownProgress = constrainDouble(countdownElapsed / Spacecraft.COUNTDOWN_DURATION, 0.0, 1.0);
+        return 0.05 * countdownProgress;
+
+      case IGNITION:
+        double ignElapsed = (simTime > 0) ? (simTime - ship.ignitionStartTime) : 0;
+        double ignProgress = constrainDouble(ignElapsed / Spacecraft.IGNITION_DURATION, 0.0, 1.0);
+        return 0.05 + 0.02 * ignProgress;
+
+      case LAUNCHING: {
+        double alt = getCurrentAltitude();
+        // 基于高度从 0 到目标轨道高度映射
+        double launchProgress = constrainDouble(alt / targetOrbitAltitude, 0.0, 1.0);
+        // 使用平方根映射，让初始高度增加时进度更快
+        launchProgress = Math.sqrt(launchProgress);
+        return 0.07 + 0.63 * launchProgress;
+      }
+
+      case COAST: {
+        double tta = flightComputer.timeToApoapsis(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          GM_EARTH
+        );
+        // 估算滑行总时间约为轨道周期的1/4
+        double orbitPeriod = TWO_PI * Math.sqrt(Math.pow(LEO_RADIUS_KM, 3) / GM_EARTH);
+        double estimatedCoastTime = orbitPeriod / 4.0;
+        double coastProgress = 1.0 - constrainDouble(tta / estimatedCoastTime, 0.0, 1.0);
+        return 0.70 + 0.10 * coastProgress;
+      }
+
+      case CIRCULARIZING: {
+        double elapsedBurnTime = (simTime > 0 && circBurnStartTime > 0) ? (simTime - circBurnStartTime) : 0;
+        double circProgress = (circBurnDuration > 0) ?
+          constrainDouble(elapsedBurnTime / (circBurnDuration * 1.5), 0.0, 1.0) : 0.5;
+        return 0.80 + 0.20 * circProgress;
+      }
+
+      case IN_ORBIT:
+        return 1.0;
+
+      default:
+        return 0.0;
+    }
+  }
+
+  boolean isActive() {
+    return isActive;
   }
 
   // 获取脐带臂展开进度 (0.0 = 未展开, 1.0 = 完全展开)

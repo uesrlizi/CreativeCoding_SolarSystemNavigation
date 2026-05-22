@@ -200,7 +200,20 @@ void draw() {
     needsTickMode = true;
   }
 
-  // 2. 检查每个飞船
+  // 2. 检查RecoveryController状态（如果是返回任务）
+  if (!needsTickMode && missionExecutor.isRecoveryMission && missionExecutor.recoveryController != null) {
+    RecoveryStage stage = missionExecutor.recoveryController.stage;
+    if (stage == RecoveryStage.DEORBIT_BURN ||
+        stage == RecoveryStage.REENTRY_GUIDANCE ||
+        stage == RecoveryStage.TURNAROUND_MANEUVER ||
+        stage == RecoveryStage.HOVER_SLIDE ||
+        stage == RecoveryStage.FINAL_DESCENT ||
+        stage == RecoveryStage.LANDING_BURN) {
+      needsTickMode = true;
+    }
+  }
+
+  // 3. 检查每个飞船
   if (!needsTickMode) {
     for (Spacecraft ship : solarSystem.ships) {
       if (physicsSystem.needsPhysicsTick(ship)) {
@@ -352,6 +365,17 @@ void draw() {
         }
       }
     }
+  }
+
+  // Collect launch site marker if in map view
+  if (camera.getMode() == ViewMode.MAP_VIEW && launchSite != null) {
+    float scale = uiScale;
+    float markerSize = 8 * scale;
+    double[] sp = camera.worldToScreen(launchSite.px, launchSite.py);
+    color markerColor = color(200, 200, 80);
+    String label = "Launch Site";
+    // Priority 8 - very low priority, hidden first if overlapping
+    labelManager.addMarker(label, (float)sp[0], (float)sp[1], markerSize, markerColor, 8);
   }
   // Sort and resolve collisions
   labelManager.processLabels();
