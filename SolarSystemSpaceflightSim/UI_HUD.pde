@@ -87,6 +87,7 @@ class HUD {
   TimeControlPanel timePanel;
   DrawerPanel navDrawer;
   DrawerPanel taskDrawer;
+  DrawerPanel educationDrawer;
   DrawerPanel orbitDrawer;
   OrbitDrawerContent orbitContent;
   MissionStatus missionStatus;
@@ -126,6 +127,18 @@ class HUD {
       "MISSIONS"
     );
     taskDrawer.expanded = true;
+
+    // 科普提示面板
+    EducationPanel educationPanel = new EducationPanel();
+    educationDrawer = new DrawerPanel(
+      DRAWER_RIGHT,
+      290,  // 与任务面板宽度一致
+      40,
+      educationPanel,
+      "GUIDE",
+      380  // 垂直偏移，在任务面板下方
+    );
+    educationDrawer.expanded = false;  // 默认折叠
 
     orbitContent = new OrbitDrawerContent();
     orbitDrawer = new DrawerPanel(
@@ -192,6 +205,7 @@ class HUD {
     timePanel.update();
     navDrawer.update();
     taskDrawer.update();
+    educationDrawer.update();
     orbitDrawer.update();
     missionStatus.update();
     headingIndicator.update();
@@ -281,6 +295,31 @@ class HUD {
     }
 
     if (activeTooltipText == null) {
+      String eduToggleTip = educationDrawer.getToggleButtonTooltip();
+      if (eduToggleTip != null) {
+        activeTooltipText = eduToggleTip;
+        tooltipSourceX = educationDrawer.toggleBtnX;
+        tooltipSourceY = educationDrawer.toggleBtnY;
+        tooltipSourceW = educationDrawer.toggleBtnWidth;
+        tooltipSourceH = educationDrawer.toggleBtnHeight;
+      }
+    }
+
+    if (activeTooltipText == null && educationDrawer.expanded) {
+      String eduTip = educationDrawer.getContentTooltip();
+      if (eduTip != null) {
+        activeTooltipText = eduTip;
+        float[] source = educationDrawer.getContentTooltipSource();
+        if (source != null && source.length == 4) {
+          tooltipSourceX = source[0];
+          tooltipSourceY = source[1];
+          tooltipSourceW = source[2];
+          tooltipSourceH = source[3];
+        }
+      }
+    }
+
+    if (activeTooltipText == null) {
       String orbitToggleTip = orbitDrawer.getToggleButtonTooltip();
       if (orbitToggleTip != null) {
         activeTooltipText = orbitToggleTip;
@@ -347,6 +386,7 @@ class HUD {
     timePanel.draw(timeManager);
     navDrawer.draw();
     taskDrawer.draw();
+    educationDrawer.draw();
     missionStatus.draw();
     viewToggleButton.draw();
 
@@ -394,6 +434,9 @@ class HUD {
       return true;
     }
     if (taskDrawer.handleClick(mx, my)) {
+      return true;
+    }
+    if (educationDrawer.handleClick(mx, my)) {
       return true;
     }
     if (orbitDrawer.handleClick(mx, my)) {

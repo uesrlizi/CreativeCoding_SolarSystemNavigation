@@ -59,7 +59,7 @@ void settings() {
 void setup() {
   uiScale = height / 1080.0f;
   lastFrameMillis = millis();
-  textFont(createFont("Segoe UI Semibold", 48));
+  textFont(createFont("arialbd.ttf", 48));
   labelManager = new LabelManager();
 
   // Initialize random seed for stars
