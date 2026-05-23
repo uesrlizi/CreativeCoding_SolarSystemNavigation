@@ -399,11 +399,59 @@ class LaunchController {
         return "Ignition!";
       case LAUNCHING:
         double alt = getCurrentAltitude();
-        return String.format("Launching - Altitude: %.1f km", alt);
+        double apo = flightComputer.apoapsisAltitude(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          EARTH_RADIUS_KM,
+          GM_EARTH
+        );
+        return String.format("Ascending - Alt: %.1f km, Target Apo: %.1f km", alt, apo);
+      case COAST:
+        double tta = flightComputer.timeToApoapsis(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          GM_EARTH
+        );
+        double currentApo = flightComputer.apoapsisAltitude(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          EARTH_RADIUS_KM,
+          GM_EARTH
+        );
+        if (tta > 0) {
+          return String.format("Coasting to Apogee - %.1f km, TTA: %.1f s", currentApo, tta);
+        } else {
+          return String.format("Coasting to Apogee - %.1f km", currentApo);
+        }
       case CIRCULARIZING:
-        return "Circularizing Orbit";
+        double peri = flightComputer.perigeeAltitude(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          EARTH_RADIUS_KM,
+          GM_EARTH
+        );
+        double currentApo2 = flightComputer.apoapsisAltitude(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          EARTH_RADIUS_KM,
+          GM_EARTH
+        );
+        double elapsedBurnTime = (simTime > 0 && circBurnStartTime > 0) ? (simTime - circBurnStartTime) : 0;
+        return String.format("Circularizing - Peri: %.1f km, Apo: %.1f km, Elapsed: %.1f s", peri, currentApo2, elapsedBurnTime);
       case IN_ORBIT:
-        return "In Orbit - Launch Complete";
+        double finalPeri = flightComputer.perigeeAltitude(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          EARTH_RADIUS_KM,
+          GM_EARTH
+        );
+        double finalApo = flightComputer.apoapsisAltitude(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          EARTH_RADIUS_KM,
+          GM_EARTH
+        );
+        return String.format("In Orbit - Peri: %.1f km, Apo: %.1f km", finalPeri, finalApo);
     }
     return "";
   }
@@ -411,8 +459,8 @@ class LaunchController {
   // ========== 兼容接口方法 ==========
 
   String getStatusText() {
-    // 简单返回默认状态文本
-    return "Launch Mission Active";
+    // 使用 lastSimTime 调用带参数的方法
+    return getStatusText(lastSimTime);
   }
 
   double getProgress() {

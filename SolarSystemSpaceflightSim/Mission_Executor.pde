@@ -236,6 +236,7 @@ class MissionExecutor {
 
     // 完成任务
     this.state = MissionExecutorState.COMPLETED;
+    this.isLaunchMission = false; // 清除发射任务标志
     this.statusText = "Launch mission complete!";
     this.progress = 1.0;
 
@@ -294,6 +295,7 @@ class MissionExecutor {
 
     // 完成任务
     this.state = MissionExecutorState.COMPLETED;
+    this.isRecoveryMission = false; // 清除回收任务标志
     this.statusText = "Recovery mission complete - landed at launch site!";
     this.progress = 1.0;
 
@@ -326,10 +328,12 @@ class MissionExecutor {
       // 点火前3秒，开始定向旋转
       startOrientingEarly(currentNode, simTime);
     } else {
-      statusText = String.format("T-%s to maneuver %d/%d (burn %.1fs)",
+      // 使用机动的description（如果有的话）
+      String desc = (currentNode.description != null && currentNode.description.length() > 0) ?
+                     currentNode.description : ("maneuver " + (currentManeuverIndex + 1) + "/" + maneuverSequence.size());
+      statusText = String.format("T-%s to %s (burn %.1fs)",
                                 formatTime(timeToMidpoint),
-                                currentManeuverIndex + 1,
-                                maneuverSequence.size(),
+                                desc,
                                 currentNode.burnDuration);
     }
   }
@@ -344,9 +348,10 @@ class MissionExecutor {
     }
 
     this.state = MissionExecutorState.ORIENTING;
-    this.statusText = String.format("Orienting early for maneuver %d/%d",
-                                   currentManeuverIndex + 1,
-                                   maneuverSequence.size());
+    // 使用机动的description（如果有的话）
+    String desc = (node.description != null && node.description.length() > 0) ?
+                   node.description : ("maneuver " + (currentManeuverIndex + 1) + "/" + maneuverSequence.size());
+    this.statusText = String.format("Orienting early for %s", desc);
 
     assignedCraft.enterOffRails();
   }
@@ -381,7 +386,11 @@ class MissionExecutor {
       // 到达点火时间，立即开始燃烧，不管定向是否完成
       startBurning();
     } else {
-      statusText = String.format("Orienting (%.1f° error, T-ignition %.1fs)",
+      // 使用机动的description（如果有的话）
+      String desc = (currentNode.description != null && currentNode.description.length() > 0) ?
+                     currentNode.description : ("maneuver " + (currentManeuverIndex + 1) + "/" + maneuverSequence.size());
+      statusText = String.format("Orienting for %s (%.1f° error, T-ignition %.1fs)",
+                                desc,
                                 Math.toDegrees(Math.abs(assignedCraft.autoControl.orientationError)),
                                 timeToIgnition);
     }
@@ -399,9 +408,10 @@ class MissionExecutor {
     }
 
     this.state = MissionExecutorState.BURNING;
-    this.statusText = String.format("Burning maneuver %d/%d",
-                                   currentManeuverIndex + 1,
-                                   maneuverSequence.size());
+    // 使用机动的description（如果有的话）
+    String desc = (node.description != null && node.description.length() > 0) ?
+                   node.description : ("maneuver " + (currentManeuverIndex + 1) + "/" + maneuverSequence.size());
+    this.statusText = String.format("Burning: %s", desc);
   }
 
   // ========== 原有 Burning 更新 (保持兼容) ==========
@@ -425,7 +435,10 @@ class MissionExecutor {
       if (assignedCraft.autoControl != null) {
         remaining = assignedCraft.autoControl.burnTimeRemaining;
       }
-      statusText = String.format("Burning... %s remaining", formatTime(remaining));
+      // 使用机动的description（如果有的话），node已经在函数开头声明了
+      String desc = (node.description != null && node.description.length() > 0) ?
+                     node.description : ("maneuver " + (currentManeuverIndex + 1) + "/" + maneuverSequence.size());
+      statusText = String.format("Burning: %s - %s remaining", desc, formatTime(remaining));
     }
   }
 
@@ -451,7 +464,10 @@ class MissionExecutor {
       if (assignedCraft.autoControl != null) {
         remaining = assignedCraft.autoControl.burnTimeRemaining;
       }
-      statusText = String.format("Burning... %s remaining", formatTime(remaining));
+      // 使用机动的description（如果有的话），node已经在函数开头声明了
+      String desc = (node.description != null && node.description.length() > 0) ?
+                     node.description : ("maneuver " + (currentManeuverIndex + 1) + "/" + maneuverSequence.size());
+      statusText = String.format("Burning: %s - %s remaining", desc, formatTime(remaining));
     }
   }
 

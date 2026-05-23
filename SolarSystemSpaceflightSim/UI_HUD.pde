@@ -89,8 +89,9 @@ class HUD {
   DrawerPanel taskDrawer;
   DrawerPanel educationDrawer;
   DrawerPanel orbitDrawer;
+  DrawerPanel missionStatusDrawer;
   OrbitDrawerContent orbitContent;
-  MissionStatus missionStatus;
+  MissionStatusContent missionStatusContent;
   HeadingIndicator headingIndicator;
   OrbitalMinimap orbitalMinimap;
   Tooltip tooltip;
@@ -124,7 +125,8 @@ class HUD {
       290,  // 与任务面板宽度一致
       40,
       taskMenu,
-      "MISSIONS"
+      "MISSIONS",
+      -65  // 垂直偏移，上移到视图按钮下方
     );
     taskDrawer.expanded = true;
 
@@ -136,9 +138,9 @@ class HUD {
       40,
       educationPanel,
       "GUIDE",
-      380  // 垂直偏移，在任务面板下方
+      350  // 垂直偏移，按4个任务的任务面板长度排布
     );
-    educationDrawer.expanded = false;  // 默认折叠
+    educationDrawer.expanded = true;  // 默认展开
 
     orbitContent = new OrbitDrawerContent();
     orbitDrawer = new DrawerPanel(
@@ -151,7 +153,19 @@ class HUD {
     );
     orbitDrawer.expanded = false;  // 默认折叠
 
-    missionStatus = new MissionStatus();
+    // 任务状态抽屉
+    missionStatusContent = new MissionStatusContent();
+    missionStatusDrawer = new DrawerPanel(
+      DRAWER_BOTTOM,
+      500,  // 基础宽度，updateTargetPositions 中会重新计算为屏幕一半
+      0,
+      missionStatusContent,
+      "MISSION",
+      0,
+      false  // 不显示标签栏按钮
+    );
+    missionStatusDrawer.expanded = false;  // 默认折叠，会根据任务状态自动展开
+
     headingIndicator = new HeadingIndicator();
     orbitalMinimap = new OrbitalMinimap();
     tooltip = new Tooltip();
@@ -207,7 +221,7 @@ class HUD {
     taskDrawer.update();
     educationDrawer.update();
     orbitDrawer.update();
-    missionStatus.update();
+    missionStatusDrawer.update();
     headingIndicator.update();
     orbitalMinimap.update();
 
@@ -387,7 +401,7 @@ class HUD {
     navDrawer.draw();
     taskDrawer.draw();
     educationDrawer.draw();
-    missionStatus.draw();
+    missionStatusDrawer.draw();
     viewToggleButton.draw();
 
     if (cam.getMode() == ViewMode.MAP_VIEW) {
@@ -440,6 +454,9 @@ class HUD {
       return true;
     }
     if (orbitDrawer.handleClick(mx, my)) {
+      return true;
+    }
+    if (missionStatusDrawer.handleClick(mx, my)) {
       return true;
     }
 

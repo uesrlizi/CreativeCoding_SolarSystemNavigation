@@ -14,6 +14,7 @@ interface DrawerContent {
 // DrawerSide enum - 抽屉方向
 static final int DRAWER_LEFT = 0;
 static final int DRAWER_RIGHT = 1;
+static final int DRAWER_BOTTOM = 2;
 
 // DrawerPanel 类 - 可复用的抽屉面板包装器
 class DrawerPanel {
@@ -35,47 +36,56 @@ class DrawerPanel {
   float visibleWidthWhenCollapsed;
   String collapsedLabel;
   float verticalOffset;  // 垂直偏移
+  boolean showToggleButton;  // 是否显示切换按钮
 
   DrawerContent content;
 
   DrawerPanel(int side, float panelWidth, float visibleWidthWhenCollapsed, DrawerContent content, String collapsedLabel) {
-    this(side, panelWidth, visibleWidthWhenCollapsed, content, collapsedLabel, 0);
+    this(side, panelWidth, visibleWidthWhenCollapsed, content, collapsedLabel, 0, true);
   }
 
   DrawerPanel(int side, float panelWidth, float visibleWidthWhenCollapsed, DrawerContent content, String collapsedLabel, float verticalOffset) {
+    this(side, panelWidth, visibleWidthWhenCollapsed, content, collapsedLabel, verticalOffset, true);
+  }
+
+  DrawerPanel(int side, float panelWidth, float visibleWidthWhenCollapsed, DrawerContent content, String collapsedLabel, float verticalOffset, boolean showToggleButton) {
     this.side = side;
     this.panelWidth = panelWidth;
     this.visibleWidthWhenCollapsed = visibleWidthWhenCollapsed;
     this.content = content;
     this.collapsedLabel = collapsedLabel;
     this.verticalOffset = verticalOffset;
+    this.showToggleButton = showToggleButton;
 
     float scale = uiScale;
-    this.toggleBtnWidth = 36 * scale;   // 窄宽度
-    this.toggleBtnHeight = 120 * scale;  // 高高度，纵向长条
+    if (side == DRAWER_BOTTOM) {
+      this.toggleBtnWidth = 120 * scale;  // 宽按钮
+      this.toggleBtnHeight = 36 * scale;   // 矮高度
+    } else {
+      this.toggleBtnWidth = 36 * scale;    // 窄宽度
+      this.toggleBtnHeight = 120 * scale;  // 高高度，纵向长条
+    }
     this.animationSpeed = 0.15f;
     this.expanded = true;
     this.toggleBtnHover = false;
     this.toggleBtnHoverFrames = 0;
 
     updateTargetPositions();
-    this.currentPosition = expandedPosition;
+    this.currentPosition = collapsedPosition;  // 从折叠位置开始
   }
 
   void updateTargetPositions() {
     float scale = uiScale;
     if (side == DRAWER_LEFT) {
       expandedPosition = 10 * scale;
-      // 对称逻辑：面板右边缘 = 0（屏幕左边缘），按钮从 4px 开始
-      // 面板右边缘 = currentPosition + panelWidth = 0 → currentPosition = -panelWidth
-      // 按钮左边缘 = currentPosition + panelWidth + 4 = 4
       collapsedPosition = -panelWidth;
-    } else {
+    } else if (side == DRAWER_RIGHT) {
       expandedPosition = width - panelWidth - 10 * scale;
-      // 对称逻辑：面板左边缘 = width（屏幕右边缘），按钮在 width - toggleBtnWidth - 4
-      // 面板左边缘 = currentPosition = width
-      // 按钮左边缘 = currentPosition - toggleBtnWidth - 4 = width - toggleBtnWidth - 4
       collapsedPosition = width;
+    } else if (side == DRAWER_BOTTOM) {
+      float contentHeight = (content != null) ? content.getContentHeight() : 100 * scale;
+      expandedPosition = height - contentHeight - 10 * scale;
+      collapsedPosition = height;
     }
   }
 
@@ -95,24 +105,40 @@ class DrawerPanel {
       return;
     }
 
+    // 对于底部抽屉，根据内容是否应该可见自动控制展开状态
+    if (side == DRAWER_BOTTOM && content != null) {
+      expanded = content.shouldBeVisible();
+    }
+
     float target = expanded ? expandedPosition : collapsedPosition;
     currentPosition = lerp(currentPosition, target, animationSpeed);
 
     if (content != null) {
       float scale = uiScale;
-      float contentY = 120 * scale + verticalOffset;
-      float contentHeight = content.getContentHeight();
-      content.updateContent(currentPosition, contentY, panelWidth);
+      float contentX, contentY, contentW;
+      if (side == DRAWER_BOTTOM) {
+        contentW = width * 0.5f;
+        contentX = (width - contentW) / 2;
+        contentY = currentPosition;
+      } else {
+        contentW = panelWidth;
+        contentX = currentPosition;
+        contentY = 120 * scale + verticalOffset;
+      }
+      content.updateContent(contentX, contentY, contentW);
     }
 
-    updateToggleButtonPosition();
+    // 只有在 showToggleButton 为 true 时才处理按钮相关逻辑
+    if (showToggleButton) {
+      updateToggleButtonPosition();
 
-    toggleBtnHover = (mouseX >= toggleBtnX && mouseX <= toggleBtnX + toggleBtnWidth &&
-                     mouseY >= toggleBtnY && mouseY <= toggleBtnY + toggleBtnHeight);
-    if (toggleBtnHover) {
-      toggleBtnHoverFrames++;
-    } else {
-      toggleBtnHoverFrames = 0;
+      toggleBtnHover = (mouseX >= toggleBtnX && mouseX <= toggleBtnX + toggleBtnWidth &&
+                       mouseY >= toggleBtnY && mouseY <= toggleBtnY + toggleBtnHeight);
+      if (toggleBtnHover) {
+        toggleBtnHoverFrames++;
+      } else {
+        toggleBtnHoverFrames = 0;
+      }
     }
   }
 
@@ -122,12 +148,19 @@ class DrawerPanel {
 
     if (side == DRAWER_LEFT) {
       toggleBtnX = currentPosition + panelWidth + 4 * scale;
-    } else {
+      float panelTop = 120 * scale + verticalOffset;
+      toggleBtnY = panelTop + contentHeight / 2 - toggleBtnHeight / 2;
+    } else if (side == DRAWER_RIGHT) {
       toggleBtnX = currentPosition - toggleBtnWidth - 4 * scale;
+      float panelTop = 120 * scale + verticalOffset;
+      toggleBtnY = panelTop + contentHeight / 2 - toggleBtnHeight / 2;
+    } else if (side == DRAWER_BOTTOM) {
+      // 对于底部抽屉，按钮横向显示在面板上方
+      toggleBtnWidth = 120 * scale;  // 宽按钮
+      toggleBtnHeight = 36 * scale;  // 矮高度
+      toggleBtnX = (width - toggleBtnWidth) / 2;
+      toggleBtnY = currentPosition - toggleBtnHeight - 4 * scale;
     }
-
-    float panelTop = 120 * scale + verticalOffset;
-    toggleBtnY = panelTop + contentHeight / 2 - toggleBtnHeight / 2;
   }
 
   void draw() {
@@ -140,33 +173,49 @@ class DrawerPanel {
     pushStyle();
 
     if (content != null) {
-      float contentY = 120 * scale + verticalOffset;
-      float contentHeight = content.getContentHeight();
+      float contentX, contentY, contentHeight, contentW;
 
       // 始终绘制面板，根据 currentPosition 平滑滑动
       // 通过判断面板位置决定是否绘制内容（完全折叠时不绘制）
       float visibleRatio;
-      if (side == DRAWER_LEFT) {
-        visibleRatio = (currentPosition - collapsedPosition) / (expandedPosition - collapsedPosition);
-      } else {
+
+      if (side == DRAWER_BOTTOM) {
+        contentW = width * 0.5f;
+        contentX = (width - contentW) / 2;
+        contentY = currentPosition;
+        contentHeight = content.getContentHeight();
         visibleRatio = (collapsedPosition - currentPosition) / (collapsedPosition - expandedPosition);
+      } else {
+        contentW = panelWidth;
+        contentX = currentPosition;
+        contentY = 120 * scale + verticalOffset;
+        contentHeight = content.getContentHeight();
+        if (side == DRAWER_LEFT) {
+          visibleRatio = (currentPosition - collapsedPosition) / (expandedPosition - collapsedPosition);
+        } else {
+          visibleRatio = (collapsedPosition - currentPosition) / (collapsedPosition - expandedPosition);
+        }
       }
+
       visibleRatio = constrain(visibleRatio, 0, 1);
 
       // 只要面板稍微展开就绘制背景和内容
       if (visibleRatio > 0.01) {
         noStroke();
         fill(0, 0, 0, 150);
-        rect(currentPosition, contentY, panelWidth, contentHeight, 8 * scale);
+        rect(contentX, contentY, contentW, contentHeight, 8 * scale);
 
         // 同时绘制内容
-        content.drawContent(currentPosition, contentY, panelWidth, contentHeight);
+        content.drawContent(contentX, contentY, contentW, contentHeight);
       }
     }
 
-    // 确保按钮位置与面板同步更新
-    updateToggleButtonPosition();
-    drawToggleButton();
+    // 只有在 showToggleButton 为 true 时才绘制按钮
+    if (showToggleButton) {
+      // 确保按钮位置与面板同步更新
+      updateToggleButtonPosition();
+      drawToggleButton();
+    }
 
     popStyle();
   }
@@ -178,24 +227,36 @@ class DrawerPanel {
     fill(toggleBtnHover ? color(80, 100, 140, 200) : color(40, 50, 70, 180));
     rect(toggleBtnX, toggleBtnY, toggleBtnWidth, toggleBtnHeight, 6 * scale);
 
-    // 绘制纵向标签栏文本（旋转90度）
+    // 绘制标签栏文本
     if (collapsedLabel != null && collapsedLabel.length() > 0) {
       fill(255, 200, 100);
       textSize(14 * scale);
       textAlign(CENTER, CENTER);
 
-      // 旋转文字纵向排列
-      pushMatrix();
-      translate(toggleBtnX + toggleBtnWidth / 2, toggleBtnY + toggleBtnHeight / 2);
-      rotate(HALF_PI); // 旋转90度
-      text(collapsedLabel, 0, 0);
-      popMatrix();
+      if (side == DRAWER_BOTTOM) {
+        // 底部抽屉，横向显示文本
+        text(collapsedLabel, toggleBtnX + toggleBtnWidth / 2, toggleBtnY + toggleBtnHeight / 2);
+      } else {
+        // 左右抽屉，纵向显示文本（旋转90度）
+        pushMatrix();
+        translate(toggleBtnX + toggleBtnWidth / 2, toggleBtnY + toggleBtnHeight / 2);
+        rotate(HALF_PI); // 旋转90度
+        text(collapsedLabel, 0, 0);
+        popMatrix();
+      }
     } else {
       // 如果没有标签，显示简单的箭头
       fill(220, 230, 255);
       textSize(14 * scale);
       textAlign(CENTER, CENTER);
-      String arrow = (side == DRAWER_LEFT) ? (expanded ? "<" : ">") : (expanded ? ">" : "<");
+      String arrow;
+      if (side == DRAWER_LEFT) {
+        arrow = expanded ? "<" : ">";
+      } else if (side == DRAWER_RIGHT) {
+        arrow = expanded ? ">" : "<";
+      } else { // DRAWER_BOTTOM
+        arrow = expanded ? "v" : "^";
+      }
       text(arrow, toggleBtnX + toggleBtnWidth / 2, toggleBtnY + toggleBtnHeight / 2);
     }
     popStyle();
@@ -210,6 +271,11 @@ class DrawerPanel {
 
     // 如果内容不可见，不处理任何点击
     if (!shouldBeVisible()) {
+      return false;
+    }
+
+    // 如果不显示按钮，或者是底部抽屉，不响应按钮点击
+    if (!showToggleButton || side == DRAWER_BOTTOM) {
       return false;
     }
 
@@ -241,6 +307,11 @@ class DrawerPanel {
   }
 
   String getToggleButtonTooltip() {
+    // 如果不显示按钮，或者是底部抽屉，不显示工具提示
+    if (!showToggleButton || side == DRAWER_BOTTOM) {
+      return null;
+    }
+
     // 如果内容不可见，不显示提示
     if (!shouldBeVisible()) {
       return null;

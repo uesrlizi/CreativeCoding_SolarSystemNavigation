@@ -267,9 +267,7 @@ class TaskMenu implements DrawerContent {
     float btnW = 80 * scale;
     float btnH = 32 * scale;
 
-    boolean missionInProgress = (missionExecutor.state != MissionExecutorState.IDLE &&
-                                 missionExecutor.state != MissionExecutorState.COMPLETED &&
-                                 missionExecutor.state != MissionExecutorState.FAILED);
+    boolean missionInProgress = missionExecutor.hasActiveMission();
 
     if (mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + btnH) {
       if (selectedPreset != null && !missionInProgress) {
