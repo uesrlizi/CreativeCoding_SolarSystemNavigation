@@ -6,6 +6,9 @@ class TimeControlPanel {
   Button pauseButton;
   Button warpDownButton;
   Button warpUpButton;
+  Button restartButton;
+  Button quitButton;
+  Button helpButton;
 
   TimeControlPanel() {
     float scale = uiScale;
@@ -24,7 +27,7 @@ class TimeControlPanel {
     float warpH = 28 * scale;
 
     pauseButton = new Button(bx, by, pauseW, pauseH, "||",
-                             "Pause/resume simulation", "Space");
+                             "Pause/resume simulation", "Space/ESC");
 
     bx += pauseW + 6 * scale;
     warpDownButton = new Button(bx, by, warpW, warpH, "<",
@@ -33,12 +36,35 @@ class TimeControlPanel {
     bx += warpW + 6 * scale;
     warpUpButton = new Button(bx, by, warpW, warpH, ">",
                               "Faster time warp", "E");
+
+    // 暂停时显示的按钮 - 放在时间控制面板右侧
+    float restartW = 120 * scale;
+    float buttonH = 36 * scale;  // 和视图按钮一样高
+    float quitW = 100 * scale;
+    float helpW = 90 * scale;
+    float gap = 10 * scale;
+    float rightButtonsX = panelX + panelW + gap;
+
+    // 计算 Y 位置使按钮顶部对齐面板顶部
+    float rightButtonsY = panelY;
+
+    helpButton = new Button(rightButtonsX, rightButtonsY, helpW, buttonH, "HELP",
+                            "Show controls help", "", Button.ICON_HELP);
+    rightButtonsX += helpW + 6 * scale;
+    restartButton = new Button(rightButtonsX, rightButtonsY, restartW, buttonH, "RESTART",
+                               "Restart the simulation", "", Button.ICON_RESTART);
+    rightButtonsX += restartW + 6 * scale;
+    quitButton = new Button(rightButtonsX, rightButtonsY, quitW, buttonH, "QUIT",
+                            "Exit the game", "", Button.ICON_QUIT);
   }
 
   void update() {
     pauseButton.update();
     warpDownButton.update();
     warpUpButton.update();
+    restartButton.update();
+    quitButton.update();
+    helpButton.update();
 
     if (timeManager.timeWarp == 0) {
       pauseButton.label = ">";
@@ -64,6 +90,14 @@ class TimeControlPanel {
     pauseButton.draw();
     warpDownButton.draw();
     warpUpButton.draw();
+
+    helpButton.draw();
+
+    // 只在暂停时显示重新开始和退出按钮
+    if (tm.timeWarp == 0) {
+      restartButton.draw();
+      quitButton.draw();
+    }
 
     float titleHeight = 22 * scale;
     float barX = panelX + panelMargin;
@@ -107,6 +141,20 @@ class TimeControlPanel {
       timeManager.increaseWarp();
       return true;
     }
+    if (helpButton.consumeClick()) {
+      showControlsHelp = true;
+      return true;
+    }
+    if (timeManager.timeWarp == 0) {
+      if (restartButton.consumeClick()) {
+        restartGame();
+        return true;
+      }
+      if (quitButton.consumeClick()) {
+        exit();
+        return true;
+      }
+    }
     return false;
   }
 
@@ -115,8 +163,20 @@ class TimeControlPanel {
     buttons.add(pauseButton);
     buttons.add(warpDownButton);
     buttons.add(warpUpButton);
+    buttons.add(helpButton);
+    if (timeManager.timeWarp == 0) {
+      buttons.add(restartButton);
+      buttons.add(quitButton);
+    }
     return buttons;
   }
+
+  float getPauseCenterX() { return pauseButton.x + pauseButton.w / 2; }
+  float getPauseCenterY() { return pauseButton.y + pauseButton.h / 2; }
+  float getWarpDownCenterX() { return warpDownButton.x + warpDownButton.w / 2; }
+  float getWarpDownCenterY() { return warpDownButton.y + warpDownButton.h / 2; }
+  float getWarpUpCenterX() { return warpUpButton.x + warpUpButton.w / 2; }
+  float getWarpUpCenterY() { return warpUpButton.y + warpUpButton.h / 2; }
 
   String getHoveredTooltipText() {
     if (pauseButton.shouldShowTooltip()) {
@@ -127,6 +187,17 @@ class TimeControlPanel {
     }
     if (warpUpButton.shouldShowTooltip()) {
       return warpUpButton.getTooltipText();
+    }
+    if (helpButton.shouldShowTooltip()) {
+      return helpButton.getTooltipText();
+    }
+    if (timeManager.timeWarp == 0) {
+      if (restartButton.shouldShowTooltip()) {
+        return restartButton.getTooltipText();
+      }
+      if (quitButton.shouldShowTooltip()) {
+        return quitButton.getTooltipText();
+      }
     }
     return null;
   }

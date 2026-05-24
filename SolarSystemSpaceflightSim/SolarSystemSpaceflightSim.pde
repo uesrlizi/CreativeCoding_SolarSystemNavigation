@@ -11,6 +11,7 @@ boolean showSOI = false;
 boolean showTrajectory = true;
 boolean showApoapsis = true;
 boolean showPeriapsis = true;
+boolean showControlsHelp = false;
 
 // ========== LABEL MANAGEMENT ==========
 LabelManager labelManager;
@@ -114,6 +115,61 @@ void setup() {
   createInitialSpacecraft();
 
   // Focus camera on spacecraft and set as follow target
+  if (solarSystem.ships.size() > 0) {
+    camera.focusOn(solarSystem.ships.get(0));
+    camera.followShip(solarSystem.ships.get(0));
+  }
+
+  hud = new HUD();
+}
+
+void restartGame() {
+  // 重置显示选项
+  showOrbits = true;
+  showLabels = true;
+  showSOI = false;
+  showTrajectory = true;
+  showApoapsis = true;
+  showPeriapsis = true;
+  showControlsHelp = false;
+
+  // 重新初始化系统
+  timeManager = new TimeManager();
+  camera = new CameraController();
+  camera.initialize((width * 0.15) / (1.0 * AU_KM));
+
+  solarSystem = new CelestialSystem();
+  solarSystem.initialize();
+
+  physicsSystem = new PhysicsSystem(solarSystem);
+
+  spacecraftRenderer = new SpacecraftRenderer();
+  trajectoryPredictor = new TrajectoryPredictor();
+  trajectoryPredictor.setPatchedConics(physicsSystem.patchedConics);
+
+  missionPlanner = new MissionPlanner();
+  missionValidator = new MissionValidator();
+  missionExecutor = new MissionExecutor();
+
+  debugPanel = new DebugPanel();
+
+  if (spacecraftPresets == null) initSpacecraftPresets();
+
+  // 重新初始化发射场
+  CelestialBody earth = solarSystem.getEarth();
+  if (earth != null) {
+    launchSite = new LaunchSite(earth, 0);
+    launchSiteRenderer = new LaunchSiteRenderer();
+    steamManager = new WaterSteamManager();
+    launchSiteRenderer.setSteamManager(steamManager);
+    missionExecutor.setLaunchSite(launchSite, earth);
+  }
+
+  // 创建初始航天器
+  solarSystem.ships.clear();
+  createInitialSpacecraft();
+
+  // 聚焦摄像机
   if (solarSystem.ships.size() > 0) {
     camera.focusOn(solarSystem.ships.get(0));
     camera.followShip(solarSystem.ships.get(0));
@@ -606,6 +662,11 @@ void drawSingleSOI(CelestialBody body) {
 }
 
 void mousePressed() {
+  if (showControlsHelp) {
+    showControlsHelp = false;
+    return;
+  }
+
   if (hud.handleMousePressed(mouseX, mouseY, camera, solarSystem.sun, solarSystem.planets, solarSystem.ships)) {
     return;
   }
@@ -664,18 +725,33 @@ void handleDoubleClick() {
 }
 
 void mouseDragged() {
+  if (showControlsHelp) return;
   camera.handleMouseDragged();
 }
 
 void mouseReleased() {
+  if (showControlsHelp) return;
   camera.handleMouseReleased();
 }
 
 void mouseWheel(MouseEvent event) {
+  if (showControlsHelp) return;
   camera.handleMouseWheel(event);
 }
 
 void keyPressed() {
+  if (showControlsHelp) {
+    if (keyCode == ESC) {
+      key = 0;
+      showControlsHelp = false;
+    }
+    return;
+  }
+  if (keyCode == ESC) {
+    timeManager.togglePause();
+    key = 0;  // 把 key 置 0 来阻止默认行为
+    return;
+  }
   if (key == ' ' || key == 'p' || key == 'P') {
     timeManager.togglePause();
   }

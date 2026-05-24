@@ -415,8 +415,8 @@ class HUD {
       pushStyle();
       fill(255, 80, 80);
       textSize(30 * uiScale);
-      textAlign(CENTER, CENTER);
-      text("PAUSED", width / 2, height - 60);
+      textAlign(CENTER, TOP);
+      text("PAUSED", width / 2, 120 * uiScale);
       popStyle();
     }
 
@@ -437,10 +437,141 @@ class HUD {
     }
 
     tooltip.draw();
+
+    if (showControlsHelp) {
+      drawControlsHelpOverlay();
+    }
+  }
+
+  void drawControlsHelpOverlay() {
+    float scale = uiScale;
+    pushStyle();
+
+    noStroke();
+    fill(0, 0, 0, 185);
+    rect(0, 0, width, height);
+
+    fill(255);
+    textAlign(CENTER, TOP);
+    textSize(28 * scale);
+    text("CONTROLS", width / 2, 20 * scale);
+
+    fill(170, 190, 220);
+    textSize(14 * scale);
+    text("Press ESC or click anywhere to close", width / 2, 56 * scale);
+
+    float centerLeft = 300 * scale;
+    float centerRight = width - 300 * scale;
+    float centerW = centerRight - centerLeft;
+    float leftMidX = centerLeft + 24 * scale;
+    float rightMidX = centerRight - 374 * scale;
+
+    float timeX = centerLeft + 40 * scale;
+    float timeY = 130 * scale;
+    drawHelpCard(timeX, timeY, 320 * scale, "TIME CONTROL", new String[]{
+      "ESC / SPACE / P  Pause or resume",
+      "Q / E  Change time warp",
+      "RESTART / QUIT / HELP in pause menu"
+    });
+    drawHelpLine(timeX + 80 * scale, timeY, timePanel.getPauseCenterX(), timePanel.getPauseCenterY());
+    drawHelpLine(timeX + 115 * scale, timeY, timePanel.getWarpDownCenterX(), timePanel.getWarpDownCenterY());
+    drawHelpLine(timeX + 135 * scale, timeY, timePanel.getWarpUpCenterX(), timePanel.getWarpUpCenterY());
+
+    float navX = leftMidX;
+    float navY = min(height - 260 * scale, 610 * scale);
+    drawHelpCard(navX, navY, 340 * scale, "MAP NAVIGATION", new String[]{
+      "Mouse drag / wheel  Pan and zoom",
+      "Double-click object  Focus target",
+      "F  Snap camera focus"
+    });
+
+    float viewX = rightMidX;
+    float viewY = 130 * scale;
+    drawHelpCard(viewX, viewY, 360 * scale, "VIEW & MAP LAYERS", new String[]{
+      "V  Switch map / ship view",
+      "T  Toggle trajectory line",
+      "AP/PE button  Toggle apsis markers",
+      "O  Toggle orbital lines",
+      "K  Toggle SOI boundaries"
+    });
+    drawHelpLine(viewX + 260 * scale, viewY, viewToggleButton.getX() + viewToggleButton.getW() / 2, viewToggleButton.getY() + viewToggleButton.getH() / 2);
+    drawHelpLine(viewX + 240 * scale, viewY, trajIcon.getTooltipSourceX() + trajIcon.getTooltipSourceW() / 2, trajIcon.getTooltipSourceY() + trajIcon.getTooltipSourceH() / 2);
+    drawHelpLine(viewX + 230 * scale, viewY, apsisIcon.getTooltipSourceX() + apsisIcon.getTooltipSourceW() / 2, apsisIcon.getTooltipSourceY() + apsisIcon.getTooltipSourceH() / 2);
+    drawHelpLine(viewX + 220 * scale, viewY, orbitIcon.getTooltipSourceX() + orbitIcon.getTooltipSourceW() / 2, orbitIcon.getTooltipSourceY() + orbitIcon.getTooltipSourceH() / 2);
+    drawHelpLine(viewX + 200 * scale, viewY, soiIcon.getTooltipSourceX() + soiIcon.getTooltipSourceW() / 2, soiIcon.getTooltipSourceY() + soiIcon.getTooltipSourceH() / 2);
+
+    float leftDrawerX = leftMidX;
+    float leftDrawerY = 350 * scale;
+    drawHelpCard(leftDrawerX, leftDrawerY, 350 * scale, "LEFT DRAWERS", new String[]{
+      "NAVIGATION  Focus planets or spacecraft",
+      "ORBIT  Read orbit and spacecraft details",
+      "Click side tabs to expand or collapse"
+    });
+    drawHelpLine(leftDrawerX, leftDrawerY + 45 * scale, navDrawer.toggleBtnX + navDrawer.toggleBtnWidth / 2, navDrawer.toggleBtnY + navDrawer.toggleBtnHeight / 2);
+    drawHelpLine(leftDrawerX, leftDrawerY + 88 * scale, orbitDrawer.toggleBtnX + orbitDrawer.toggleBtnWidth / 2, orbitDrawer.toggleBtnY + orbitDrawer.toggleBtnHeight / 2);
+
+    float rightDrawerX = rightMidX;
+    float rightDrawerY = 350 * scale;
+    drawHelpCard(rightDrawerX, rightDrawerY, 350 * scale, "RIGHT DRAWERS", new String[]{
+      "MISSIONS  Select and start missions",
+      "GUIDE  Read science and flight tips",
+      "Use tabs to hide panels when needed"
+    });
+    drawHelpLine(rightDrawerX + 350 * scale, rightDrawerY + 45 * scale, taskDrawer.toggleBtnX + taskDrawer.toggleBtnWidth / 2, taskDrawer.toggleBtnY + taskDrawer.toggleBtnHeight / 2);
+    drawHelpLine(rightDrawerX + 350 * scale, rightDrawerY + 88 * scale, educationDrawer.toggleBtnX + educationDrawer.toggleBtnWidth / 2, educationDrawer.toggleBtnY + educationDrawer.toggleBtnHeight / 2);
+
+    float missionX = width / 2 - 220 * scale;
+    float missionY = height - 170 * scale;
+    drawHelpCard(missionX, missionY, 440 * scale, "MISSION STATUS", new String[]{
+      "Bottom panel appears during mission execution",
+      "Shows progress, phase, and important events"
+    });
+    drawHelpLine(missionX + 220 * scale, missionY + 96 * scale, width / 2, height - 36 * scale);
+
+    popStyle();
+  }
+
+  void drawHelpCard(float x, float y, float w, String title, String[] lines) {
+    float scale = uiScale;
+    float lineH = 23 * scale;
+    float h = 52 * scale + lines.length * lineH;
+
+    pushStyle();
+    fill(8, 10, 20, 225);
+    stroke(120, 150, 190, 175);
+    strokeWeight(1.5f * scale);
+    rect(x, y, w, h, 10 * scale);
+
+    fill(255);
+    textAlign(LEFT, TOP);
+    textSize(15 * scale);
+    text(title, x + 18 * scale, y + 14 * scale);
+
+    fill(220);
+    textSize(13 * scale);
+    for (int i = 0; i < lines.length; i++) {
+      text(lines[i], x + 18 * scale, y + 42 * scale + i * lineH);
+    }
+    popStyle();
+  }
+
+  void drawHelpLine(float fromX, float fromY, float toX, float toY) {
+    pushStyle();
+    stroke(150, 180, 220, 145);
+    strokeWeight(1.5f * uiScale);
+    line(fromX, fromY, toX, toY);
+    noStroke();
+    fill(150, 180, 220, 180);
+    ellipse(toX, toY, 6 * uiScale, 6 * uiScale);
+    popStyle();
   }
 
   boolean handleMousePressed(float mx, float my, CameraController cam,
                              CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
+    if (showControlsHelp) {
+      return true;
+    }
+
     if (viewToggleButton.handleClick(cam, ships)) {
       return true;
     }
