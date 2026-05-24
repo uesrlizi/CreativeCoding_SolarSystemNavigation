@@ -68,47 +68,22 @@ class PhysicsSystem {
   // ============================================================
 
   void updateShipInTick(Spacecraft ship, double simDt, double simTime) {
-    double remainingDt = simDt;
-    double currentSimTime = simTime;
-
-    while (remainingDt > 0) {
-      // 先预测SOI穿越
-      SOITraversal traversal = patchedConics.predictSOITraversal(ship, remainingDt, currentSimTime);
-
-      double stepDt = remainingDt;
-      boolean hasTraversal = false;
-
-      if (traversal.willTraverse && traversal.timeToTraversal <= remainingDt) {
-        // 会在本步内发生SOI穿越，先推进到穿越前一点点
-        stepDt = Math.max(traversal.timeToTraversal - 0.1, 0.001);
-        hasTraversal = true;
-      }
-
-      // 执行一步更新
-      updateShipSingleStep(ship, stepDt, currentSimTime);
-
-      if (hasTraversal) {
-        // 处理SOI穿越
-        double timeToTraversalActual = traversal.timeToTraversal - stepDt;
-        if (timeToTraversalActual <= 0) {
-          // 已经到了穿越时间
-          patchedConics.checkAndProcessSOICrossing(ship, currentSimTime + stepDt);
-        }
-      }
-
-      remainingDt -= stepDt;
-      currentSimTime += stepDt;
-    }
+    updateShipSingleStep(ship, simDt, simTime);
   }
 
   void updateShipSingleStep(Spacecraft ship, double simDt, double simTime) {
+    PhysicsMode currentMode = determineMode(ship);
+
     // 检查是否固定在表面
     if (ship.isFixedToSurface) {
+      if (previousMode != currentMode) {
+        handleModeSwitch(ship, previousMode, currentMode, simTime);
+      }
       updateFixedToSurface(ship, simDt, simTime);
+      updateDebugInfo(ship, currentMode);
+      previousMode = currentMode;
       return;
     }
-
-    PhysicsMode currentMode = determineMode(ship);
 
     // 处理模式切换
     if (previousMode != currentMode) {
@@ -122,8 +97,7 @@ class PhysicsSystem {
       updateOffRailsSingleStep(ship, simDt, simTime);
     }
 
-    // 检查SOI穿越（在任何模式下都需要检查）
-    patchedConics.checkAndProcessSOICrossing(ship, simTime);
+    refreshPatchedOrbitIfNeeded(ship, simTime);
 
     // 检查碰撞
     CollisionResult collision = collisionDetector.checkCollision(ship);
@@ -155,6 +129,7 @@ class PhysicsSystem {
 
     // 清空轨道
     ship.orbit = null;
+    ship.patchedOrbit = null;
   }
 
   // ========== 确保飞船在表面以上 ==========
@@ -186,7 +161,51 @@ class PhysicsSystem {
   // ============================================================
 
   void updateOnRails(Spacecraft ship, double simTime) {
-    ship.updateOnRails(simTime);
+    if (shouldRefreshPatchedOrbit(ship, simTime)) {
+      refreshPatchedOrbit(ship, simTime);
+    }
+    if (ship.patchedOrbit != null) {
+      patchedConics.applyActiveSegment(ship, simTime);
+    } else {
+      ship.updateOnRails(simTime);
+    }
+  }
+
+  boolean shouldRefreshPatchedOrbit(Spacecraft ship, double simTime) {
+    if (ship.isFixedToSurface) return false;
+    if (ship.patchedOrbit == null || ship.patchedOrbit.segments.size() == 0) return true;
+    OrbitSegment active = ship.patchedOrbit.getSegmentAt(simTime);
+    if (active == null) return true;
+    if (simTime < active.startTime || simTime > active.endTime) return true;
+    if (ship.orbit != null && patchedConics.isUsablePeriod(ship.orbit.period)) {
+      return simTime - ship.lastOrbitUpdateTime >= ship.orbit.period;
+    }
+    return false;
+  }
+
+  void refreshPatchedOrbitIfNeeded(Spacecraft ship, double simTime) {
+    if (ship.physicsMode == PhysicsMode.OFF_RAILS && !ship.isFixedToSurface) {
+      refreshPatchedOrbit(ship, simTime, false);
+    } else if (shouldRefreshPatchedOrbit(ship, simTime)) {
+      refreshPatchedOrbit(ship, simTime, true);
+    }
+  }
+
+  void refreshPatchedOrbit(Spacecraft ship, double simTime) {
+    refreshPatchedOrbit(ship, simTime, true);
+  }
+
+  void refreshPatchedOrbit(Spacecraft ship, double simTime, boolean applyActiveSegment) {
+    Trajectory trajectory = patchedConics.buildPatchedOrbit(ship, simTime, TrajectoryPredictor.DEFAULT_DURATION);
+    if (trajectory != null && trajectory.segments.size() > 0) {
+      ship.patchedOrbit = trajectory;
+      ship.lastOrbitUpdateTime = simTime;
+      if (applyActiveSegment) {
+        patchedConics.applyActiveSegment(ship, simTime);
+      }
+    } else {
+      ship.patchedOrbit = null;
+    }
   }
 
   // ============================================================
@@ -349,6 +368,12 @@ class PhysicsSystem {
   // ============================================================
 
   void handleModeSwitch(Spacecraft ship, PhysicsMode oldMode, PhysicsMode newMode, double simTime) {
+    if (oldMode == null) {
+      ship.physicsMode = newMode;
+      ship.patchedOrbit = null;
+      return;
+    }
+
     if (oldMode == PhysicsMode.OFF_RAILS && newMode == PhysicsMode.ON_RAILS) {
       // Off-rails -> On-rails：从状态向量计算轨道根数
       if (ship.referenceBody != null) {
@@ -358,9 +383,13 @@ class PhysicsSystem {
         }
       }
       ship.physicsMode = PhysicsMode.ON_RAILS;
+      ship.patchedOrbit = null;
     } else if (oldMode == PhysicsMode.ON_RAILS && newMode == PhysicsMode.OFF_RAILS) {
       // On-rails -> Off-rails：确保状态向量是最新的
       ship.physicsMode = PhysicsMode.OFF_RAILS;
+      ship.patchedOrbit = null;
+    } else {
+      ship.physicsMode = newMode;
     }
   }
 

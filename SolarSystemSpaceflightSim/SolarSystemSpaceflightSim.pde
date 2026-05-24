@@ -230,7 +230,7 @@ void draw() {
       for (Spacecraft ship : solarSystem.ships) {
         ship.lastUpdateTime = timeManager.simTime;
         if (ship.orbit != null && ship.physicsMode == PhysicsMode.ON_RAILS) {
-          ship.updateOnRails(timeManager.simTime);
+          physicsSystem.updateOnRails(ship, timeManager.simTime);
         }
       }
 
@@ -314,7 +314,7 @@ void draw() {
           ship.lastUpdateTime = timeManager.simTime;
 
           if (ship.physicsMode == PhysicsMode.ON_RAILS && ship.orbit != null) {
-            ship.updateOnRails(timeManager.simTime);
+            physicsSystem.updateOnRails(ship, timeManager.simTime);
           } else {
             physicsSystem.updateShipInTick(ship, shipSimDt, timeManager.simTime);
           }
@@ -333,7 +333,7 @@ void draw() {
       if (shipSimDt > 0) {
         ship.lastUpdateTime = timeManager.simTime;
         if (ship.physicsMode == PhysicsMode.ON_RAILS && ship.orbit != null) {
-          ship.updateOnRails(timeManager.simTime);
+          physicsSystem.updateOnRails(ship, timeManager.simTime);
         } else {
           physicsSystem.updateShipInTick(ship, shipSimDt, timeManager.simTime);
         }
@@ -401,22 +401,20 @@ void draw() {
     float scale = uiScale;
     float markerSize = 6 * scale;
     for (Spacecraft ship : solarSystem.ships) {
-      if (ship.referenceBody != null) {
-        Trajectory trajectory = trajectoryPredictor.predict(ship, timeManager.simTime);
-        if (trajectory != null) {
-          CelestialBody body = ship.referenceBody;
-          for (TrajectoryEvent event : trajectory.events) {
-            if ((event.type.equals("apoapsis") && showApoapsis) ||
-                (event.type.equals("periapsis") && showPeriapsis)) {
-              double worldX = body.px + event.position.x;
-              double worldY = body.py + event.position.y;
-              double[] sp = camera.worldToScreen(worldX, worldY);
-              color markerColor = event.type.equals("apoapsis") ?
-                  color(255, 150, 100) : color(100, 200, 255);
-              String label = event.type.equals("apoapsis") ? "AP" : "PE";
-              // Priority 10 - low priority, will be hidden first if overlapping
-              labelManager.addMarker(label, (float)sp[0], (float)sp[1], markerSize, markerColor, 10);
-            }
+      Trajectory trajectory = trajectoryPredictor.predict(ship, timeManager.simTime);
+      if (trajectory != null) {
+        for (TrajectoryEvent event : trajectory.events) {
+          if ((event.type.equals("apoapsis") && showApoapsis) ||
+              (event.type.equals("periapsis") && showPeriapsis)) {
+            Vector2 bodyPos = getEventBodyPosition(event.referenceBody);
+            double worldX = bodyPos.x + event.position.x;
+            double worldY = bodyPos.y + event.position.y;
+            double[] sp = camera.worldToScreen(worldX, worldY);
+            color markerColor = event.type.equals("apoapsis") ?
+                color(255, 150, 100) : color(100, 200, 255);
+            String label = event.type.equals("apoapsis") ? "AP" : "PE";
+            // Priority 10 - low priority, will be hidden first if overlapping
+            labelManager.addMarker(label, (float)sp[0], (float)sp[1], markerSize, markerColor, 10);
           }
         }
       }
@@ -485,7 +483,7 @@ void draw() {
   if (camera.getMode() == ViewMode.MAP_VIEW) {
     for (Spacecraft ship : solarSystem.ships) {
       Trajectory trajectory = trajectoryPredictor.predict(ship, timeManager.simTime);
-      spacecraftRenderer.drawTrajectory(ship, trajectory, camera);
+      spacecraftRenderer.drawTrajectory(ship, trajectory, camera, timeManager.simTime);
     }
   }
 
@@ -827,6 +825,11 @@ void keyPressed() {
   if (key == 'z' || key == 'Z') {
     pointInDirection(OrbitDirection.RADIAL_IN); // 径向向内
   }
+}
+
+Vector2 getEventBodyPosition(CelestialBody body) {
+  if (body == null) return new Vector2(0, 0);
+  return new Vector2(body.px, body.py);
 }
 
 // === 辅助函数：设置油门 ===

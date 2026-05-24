@@ -6,12 +6,14 @@ class TrajectoryEvent {
   Vector2 position;
   String type; // "apoapsis", "periapsis", "soi_enter", "soi_exit", "maneuver"
   CelestialBody relatedBody; // 对于SOI事件
+  CelestialBody referenceBody;
 
   TrajectoryEvent(double t, Vector2 pos, String type) {
     this.time = t;
     this.position = pos.clone();
     this.type = type;
     this.relatedBody = null;
+    this.referenceBody = null;
   }
 }
 
@@ -47,6 +49,18 @@ class Trajectory {
     this.startTime = 0;
     this.endTime = 0;
     this.primaryBody = null;
+  }
+
+  OrbitSegment getSegmentAt(double simTime) {
+    for (OrbitSegment seg : segments) {
+      if (simTime >= seg.startTime && simTime <= seg.endTime) {
+        return seg;
+      }
+    }
+    if (segments.size() > 0 && simTime > segments.get(segments.size() - 1).endTime) {
+      return segments.get(segments.size() - 1);
+    }
+    return null;
   }
 }
 
@@ -88,28 +102,32 @@ class TrajectoryPredictor {
   }
 
   Trajectory predict(Spacecraft ship, double simTime, double duration) {
+    if (ship.patchedOrbit != null && ship.patchedOrbit.segments.size() > 0 &&
+        simTime >= ship.patchedOrbit.startTime && simTime <= ship.patchedOrbit.endTime) {
+      return ship.patchedOrbit;
+    }
     if (!needsRefresh(ship, simTime)) {
       return this.cachedTrajectory;
     }
 
-    Trajectory trajectory = new Trajectory();
-    trajectory.startTime = simTime;
-    trajectory.endTime = simTime + duration;
-    trajectory.primaryBody = ship.referenceBody;
-
-    if (patchedConics != null && ship.referenceBody != null) {
-      // 支持SOI预测的多段轨迹
-      predictWithSOICheck(ship, simTime, duration, trajectory);
-    } else if (ship.referenceBody != null) {
-      // 无SOI预测，简单单段轨迹
-      Orbit currentOrbit = Orbit_fromStateVector(
-        ship.stateVector.position,
-        ship.stateVector.velocity,
-        ship.referenceBody,
-        simTime
-      );
-      if (currentOrbit != null) {
-        predictOnRailsWithOrbit(currentOrbit, ship.referenceBody, simTime, duration, trajectory);
+    Trajectory trajectory;
+    if (patchedConics != null) {
+      trajectory = patchedConics.buildPatchedOrbit(ship, simTime, duration);
+    } else {
+      trajectory = new Trajectory();
+      trajectory.startTime = simTime;
+      trajectory.endTime = simTime + duration;
+      trajectory.primaryBody = ship.referenceBody;
+      if (ship.referenceBody != null) {
+        Orbit currentOrbit = Orbit_fromStateVector(
+          ship.stateVector.position,
+          ship.stateVector.velocity,
+          ship.referenceBody,
+          simTime
+        );
+        if (currentOrbit != null) {
+          predictOnRailsWithOrbit(currentOrbit, ship.referenceBody, simTime, duration, trajectory);
+        }
       }
     }
 
@@ -161,6 +179,7 @@ class TrajectoryPredictor {
         String eventType = (traversal.enterBody != null) ? "soi_enter" : "soi_exit";
         TrajectoryEvent event = new TrajectoryEvent(traversal.traversalTime, traversal.traversalPosition, eventType);
         event.relatedBody = (traversal.enterBody != null) ? traversal.enterBody : traversal.exitBody;
+        event.referenceBody = tempShip.referenceBody;
         trajectory.events.add(event);
 
         // 切换参考系（模拟SOI穿越后的状态）
@@ -273,7 +292,9 @@ class TrajectoryPredictor {
     if (timeToNextPE > 0 && timeToNextPE <= duration) {
       double peTime = simTime + timeToNextPE;
       Vector2 pePos = orbit.getPositionAtTime(peTime);
-      trajectory.events.add(new TrajectoryEvent(peTime, pePos, "periapsis"));
+      TrajectoryEvent event = new TrajectoryEvent(peTime, pePos, "periapsis");
+      event.referenceBody = body;
+      trajectory.events.add(event);
     }
 
     // 找下一个远地点（nu从当前增加到PI）
@@ -281,7 +302,9 @@ class TrajectoryPredictor {
     if (timeToNextAP > 0 && timeToNextAP <= duration) {
       double apTime = simTime + timeToNextAP;
       Vector2 apPos = orbit.getPositionAtTime(apTime);
-      trajectory.events.add(new TrajectoryEvent(apTime, apPos, "apoapsis"));
+      TrajectoryEvent event = new TrajectoryEvent(apTime, apPos, "apoapsis");
+      event.referenceBody = body;
+      trajectory.events.add(event);
     }
   }
 

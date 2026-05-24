@@ -510,16 +510,12 @@ class SpacecraftRenderer {
     ellipse(originX, originY, plumeW * 0.8f, plumeW * 0.5f);
   }
 
-  void drawTrajectory(Spacecraft ship, Trajectory trajectory, CameraController cam) {
+  void drawTrajectory(Spacecraft ship, Trajectory trajectory, CameraController cam, double simTime) {
     if (trajectory == null || trajectory.segments.size() == 0) return;
-    if (ship.referenceBody == null) return;
 
     float scale = uiScale;
     pushStyle();
 
-    CelestialBody body = ship.referenceBody;
-
-    // 1. 画轨道段（椭圆）- 使用偏近点角(E)均匀采样使点分布更均匀
     if (showTrajectory) {
       noFill();
       stroke(red(ship.col), green(ship.col), blue(ship.col), 100);
@@ -527,25 +523,28 @@ class SpacecraftRenderer {
 
       for (OrbitSegment seg : trajectory.segments) {
         if (seg.mode == PhysicsMode.ON_RAILS && seg.orbit != null) {
-          // 直接画椭圆
+          Vector2 bodyPos = getSegmentBodyPosition(seg.referenceBody, simTime);
           beginShape();
-          int steps = 200;
+          int steps = 160;
           for (int j = 0; j <= steps; j++) {
-            double E = 2.0 * PI * j / steps;  // 偏近点角均匀步进
-            double nu = trueAnomaly(E, seg.orbit.e);  // 转换为真近点角
-            double[] pos = orbitalToCartesian2D(seg.orbit.a, seg.orbit.e, seg.orbit.w, nu);
-            double worldX = body.px + pos[0];
-            double worldY = body.py + pos[1];
+            double alpha = (double)j / steps;
+            double t = seg.startTime + (seg.endTime - seg.startTime) * alpha;
+            Vector2 localPos = seg.orbit.getPositionAtTime(t);
+            double worldX = bodyPos.x + localPos.x;
+            double worldY = bodyPos.y + localPos.y;
             double[] sp = cam.worldToScreen(worldX, worldY);
             vertex((float)sp[0], (float)sp[1]);
           }
-          endShape(CLOSE);
+          endShape();
         }
       }
     }
 
-    // 2. 画事件（AP/PE）- 现在由LabelManager处理，支持防重叠
-
     popStyle();
+  }
+
+  Vector2 getSegmentBodyPosition(CelestialBody body, double simTime) {
+    if (body == null) return new Vector2(0, 0);
+    return new Vector2(body.px, body.py);
   }
 }

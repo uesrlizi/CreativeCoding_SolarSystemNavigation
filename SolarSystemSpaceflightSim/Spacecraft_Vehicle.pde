@@ -10,6 +10,8 @@ class Spacecraft {
   PhysicsMode physicsMode;
   SpacecraftState state;
   Orbit orbit;                    // On-rails用
+  Trajectory patchedOrbit;
+  double lastOrbitUpdateTime;
   StateVector2D stateVector;      // Off-rails用
 
   // === 发射状态 ===
@@ -74,6 +76,8 @@ class Spacecraft {
     this.physicsMode = PhysicsMode.ON_RAILS;
     this.state = SpacecraftState.ACTIVE;
     this.orbit = null;
+    this.patchedOrbit = null;
+    this.lastOrbitUpdateTime = -Double.MAX_VALUE;
     this.stateVector = new StateVector2D();
 
     // 发射相关初始化
@@ -137,6 +141,7 @@ class Spacecraft {
 
     // 清空轨道
     this.orbit = null;
+    this.patchedOrbit = null;
   }
 
   // === 初始化LEO轨道 ===
@@ -150,6 +155,12 @@ class Spacecraft {
     double period = 2 * PI * Math.sqrt(a * a * a / GM_EARTH);
 
     this.orbit = new Orbit(a, e, w, M0, 0.0, period, earth);
+    this.patchedOrbit = new Trajectory();
+    this.patchedOrbit.startTime = 0;
+    this.patchedOrbit.endTime = period;
+    this.patchedOrbit.primaryBody = earth;
+    this.patchedOrbit.segments.add(new OrbitSegment(this.orbit, 0, period, earth));
+    this.lastOrbitUpdateTime = 0;
 
     // 初始化stateVector
     updateOnRails(0);

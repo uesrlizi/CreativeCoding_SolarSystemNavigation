@@ -23,6 +23,7 @@ class SOITraversal {
 
 class PatchedConicsSystem {
   CelestialSystem solarSystem;
+  static final int MAX_PATCHED_SEGMENTS = 8;
 
   PatchedConicsSystem(CelestialSystem ss) {
     this.solarSystem = ss;
@@ -94,76 +95,143 @@ class PatchedConicsSystem {
     return Math.sqrt(dx*dx + dy*dy);
   }
 
-  // ============================================================
-  //  检查并处理SOI穿越
-  //  返回：是否发生了SOI变化
-  // ============================================================
+  Trajectory buildPatchedOrbit(Spacecraft ship, double simTime, double duration) {
+    Trajectory trajectory = new Trajectory();
+    trajectory.startTime = simTime;
+    trajectory.endTime = simTime + duration;
 
-  boolean checkAndProcessSOICrossing(Spacecraft ship, double simTime) {
-    CelestialBody oldDominant = ship.referenceBody;
-    CelestialBody newDominant = findDominantBody(ship);
+    CelestialBody currentBody = findDominantBody(ship);
+    trajectory.primaryBody = currentBody;
+    Vector2 worldPos = new Vector2(ship.worldX, ship.worldY);
+    Vector2 worldVel = new Vector2(ship.worldVelX, ship.worldVelY);
+    double currentTime = simTime;
+    double remainingDuration = duration;
+    int segmentCount = 0;
 
-    // 没有变化
-    if (oldDominant == newDominant) return false;
+    while (remainingDuration > 0 && segmentCount < MAX_PATCHED_SEGMENTS) {
+      Vector2 localPos = worldToLocalPosition(worldPos, currentBody, currentTime);
+      Vector2 localVel = worldToLocalVelocity(worldVel, currentBody, currentTime);
+      Orbit orbit = Orbit_fromStateVector(localPos, localVel, currentBody, currentTime);
+      if (orbit == null || !isUsablePeriod(orbit.period)) break;
 
-    if (oldDominant == null && newDominant != null) {
-      // 从日心进入天体SOI
-      switchToBodyCentric(ship, newDominant, simTime);
-      return true;
-    } else if (oldDominant != null && newDominant == null) {
-      // 离开天体SOI回到日心
-      switchToHeliocentric(ship, simTime);
-      return true;
-    } else if (oldDominant != null && newDominant != null) {
-      // 从一个天体SOI切换到另一个
-      switchToHeliocentric(ship, simTime);
-      switchToBodyCentric(ship, newDominant, simTime);
-      return true;
+      Spacecraft tempShip = new Spacecraft(ship.name, ship.col);
+      tempShip.referenceBody = currentBody;
+      tempShip.orbit = orbit;
+      tempShip.stateVector.position = localPos;
+      tempShip.stateVector.velocity = localVel;
+      tempShip.worldX = worldPos.x;
+      tempShip.worldY = worldPos.y;
+      tempShip.worldVelX = worldVel.x;
+      tempShip.worldVelY = worldVel.y;
+
+      double segmentLimit = Math.min(remainingDuration, orbit.period);
+      SOITraversal traversal = predictSOITraversal(tempShip, segmentLimit, currentTime);
+      double segmentDuration = segmentLimit;
+      if (traversal.willTraverse && traversal.timeToTraversal > 0 && traversal.timeToTraversal < segmentLimit) {
+        segmentDuration = traversal.timeToTraversal;
+      }
+      if (segmentDuration <= 0) break;
+
+      trajectory.segments.add(new OrbitSegment(orbit, currentTime, currentTime + segmentDuration, currentBody));
+      addApsideEvents(trajectory, orbit, currentBody, currentTime, segmentDuration);
+
+      if (!traversal.willTraverse || traversal.timeToTraversal > segmentLimit) break;
+
+      double eventTime = currentTime + segmentDuration;
+      Vector2 eventLocalPos = orbit.getPositionAtTime(eventTime);
+      Vector2 eventWorldPos = localToWorldPosition(eventLocalPos, currentBody, eventTime);
+      Vector2 eventWorldVel = localToWorldVelocity(orbit.getVelocityAtTime(eventTime), currentBody, eventTime);
+      String eventType = (traversal.enterBody != null) ? "soi_enter" : "soi_exit";
+      TrajectoryEvent event = new TrajectoryEvent(eventTime, eventLocalPos, eventType);
+      event.relatedBody = (traversal.enterBody != null) ? traversal.enterBody : traversal.exitBody;
+      event.referenceBody = currentBody;
+      trajectory.events.add(event);
+
+      worldPos = eventWorldPos;
+      worldVel = eventWorldVel;
+      currentBody = getNextReferenceBodyAfterTraversal(currentBody, traversal);
+      currentTime = eventTime;
+      remainingDuration -= segmentDuration;
+      segmentCount++;
     }
 
-    return false;
+    trajectory.endTime = currentTime;
+    if (trajectory.segments.size() > 0) {
+      trajectory.endTime = trajectory.segments.get(trajectory.segments.size() - 1).endTime;
+    }
+    return trajectory;
   }
 
-  // ============================================================
-  //  切换到天体中心参考系
-  // ============================================================
+  void applyActiveSegment(Spacecraft ship, double simTime) {
+    if (ship.patchedOrbit == null) return;
+    OrbitSegment seg = ship.patchedOrbit.getSegmentAt(simTime);
+    if (seg == null || seg.orbit == null) return;
 
-  void switchToBodyCentric(Spacecraft ship, CelestialBody body, double simTime) {
-    Vector2 bodyVel = getBodyVelocity(body, simTime);
-
-    ship.stateVector.position.x = ship.worldX - body.px;
-    ship.stateVector.position.y = ship.worldY - body.py;
-    ship.stateVector.velocity.x = ship.worldVelX - bodyVel.x;
-    ship.stateVector.velocity.y = ship.worldVelY - bodyVel.y;
-
-    ship.referenceBody = body;
-
-    // 从状态向量计算轨道根数
-    if (ship.orbit == null) {
-      ship.orbit = new Orbit(0, 0, 0, 0, 0.0, 0, null);
-    }
-    Orbit newOrbit = Orbit_fromStateVector(ship.stateVector.position, ship.stateVector.velocity, body, simTime);
-    if (newOrbit != null) {
-      ship.orbit = newOrbit;
-    }
+    ship.orbit = seg.orbit;
+    ship.referenceBody = seg.referenceBody;
+    Vector2 localPos = seg.orbit.getPositionAtTime(simTime);
+    Vector2 localVel = seg.orbit.getVelocityAtTime(simTime);
+    ship.stateVector.position = localPos;
+    ship.stateVector.velocity = localVel;
+    Vector2 worldPos = localToWorldPosition(localPos, seg.referenceBody, simTime);
+    Vector2 worldVel = localToWorldVelocity(localVel, seg.referenceBody, simTime);
+    ship.worldX = worldPos.x;
+    ship.worldY = worldPos.y;
+    ship.worldVelX = worldVel.x;
+    ship.worldVelY = worldVel.y;
   }
 
-  // ============================================================
-  //  切换到日心参考系
-  // ============================================================
+  Vector2 worldToLocalPosition(Vector2 worldPos, CelestialBody body, double simTime) {
+    if (body == null) return worldPos.clone();
+    Vector2 bodyPos = getBodyPositionAtTime(body, simTime);
+    return worldPos.sub(bodyPos);
+  }
 
-  void switchToHeliocentric(Spacecraft ship, double simTime) {
-    CelestialBody oldBody = ship.referenceBody;
-    if (oldBody == null) return;
+  Vector2 worldToLocalVelocity(Vector2 worldVel, CelestialBody body, double simTime) {
+    if (body == null) return worldVel.clone();
+    return worldVel.sub(getBodyVelocity(body, simTime));
+  }
 
-    Vector2 bodyVel = getBodyVelocity(oldBody, simTime);
+  Vector2 localToWorldPosition(Vector2 localPos, CelestialBody body, double simTime) {
+    if (body == null) return localPos.clone();
+    return getBodyPositionAtTime(body, simTime).add(localPos);
+  }
 
-    ship.worldX = oldBody.px + ship.stateVector.position.x;
-    ship.worldY = oldBody.py + ship.stateVector.position.y;
-    ship.worldVelX = ship.stateVector.velocity.x + bodyVel.x;
-    ship.worldVelY = ship.stateVector.velocity.y + bodyVel.y;
+  Vector2 localToWorldVelocity(Vector2 localVel, CelestialBody body, double simTime) {
+    if (body == null) return localVel.clone();
+    return getBodyVelocity(body, simTime).add(localVel);
+  }
 
-    ship.referenceBody = null;
+  boolean isUsablePeriod(double period) {
+    return !Double.isNaN(period) && !Double.isInfinite(period) && period > 0;
+  }
+
+  CelestialBody getNextReferenceBodyAfterTraversal(CelestialBody currentBody, SOITraversal traversal) {
+    if (traversal.enterBody != null) return traversal.enterBody;
+    if (currentBody != null && currentBody.parentBody != null && currentBody.parentBody != solarSystem.sun) {
+      return currentBody.parentBody;
+    }
+    return null;
+  }
+
+  private void addApsideEvents(Trajectory trajectory, Orbit orbit, CelestialBody body, double simTime, double duration) {
+    if (orbit.e < 0.0001) return;
+
+    double timeToPe = orbit.getTimeToPeriapsis(simTime);
+    if (timeToPe > 0 && timeToPe <= duration) {
+      double peTime = simTime + timeToPe;
+      TrajectoryEvent event = new TrajectoryEvent(peTime, orbit.getPositionAtTime(peTime), "periapsis");
+      event.referenceBody = body;
+      trajectory.events.add(event);
+    }
+
+    double timeToAp = orbit.getTimeToApoapsis(simTime);
+    if (timeToAp > 0 && timeToAp <= duration) {
+      double apTime = simTime + timeToAp;
+      TrajectoryEvent event = new TrajectoryEvent(apTime, orbit.getPositionAtTime(apTime), "apoapsis");
+      event.referenceBody = body;
+      trajectory.events.add(event);
+    }
   }
 
   // ============================================================
@@ -379,29 +447,19 @@ class PatchedConicsSystem {
   }
 
   private Vector2 calculatePositionAtTime(Spacecraft ship, double dt, double simTime) {
-    if (ship.orbit != null && ship.referenceBody != null) {
-      // 使用轨道预测
-      return ship.orbit.getPositionAtTime(simTime + dt);
-    } else {
-      // 简单线性外推（仅用于Off-rails模式的粗略预测）
-      return new Vector2(
-        ship.worldX + ship.worldVelX * dt,
-        ship.worldY + ship.worldVelY * dt
-      );
+    double t = simTime + dt;
+    if (ship.orbit != null) {
+      Vector2 localPos = ship.orbit.getPositionAtTime(t);
+      return localToWorldPosition(localPos, ship.referenceBody, t);
     }
+
+    return new Vector2(
+      ship.worldX + ship.worldVelX * dt,
+      ship.worldY + ship.worldVelY * dt
+    );
   }
 
   private Vector2 getBodyPositionAtTime(CelestialBody body, double simTime) {
-    // 获取天体在指定时间的位置
-    if (body.orbit != null && body.parentBody != null) {
-      Vector2 pos = body.orbit.getPositionAtTime(simTime);
-      return new Vector2(
-        body.parentBody.px + pos.x,
-        body.parentBody.py + pos.y
-      );
-    } else {
-      // 使用当前位置作为近似（对于太阳或无轨道的天体）
-      return new Vector2(body.px, body.py);
-    }
+    return new Vector2(body.px, body.py);
   }
 }
