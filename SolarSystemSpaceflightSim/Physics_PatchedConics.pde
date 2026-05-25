@@ -100,7 +100,7 @@ class PatchedConicsSystem {
     trajectory.startTime = simTime;
     trajectory.endTime = simTime + duration;
 
-    CelestialBody currentBody = findDominantBody(ship);
+    CelestialBody currentBody = ship.referenceBody;  // 直接使用飞船当前的主导天体
     trajectory.primaryBody = currentBody;
     Vector2 worldPos = new Vector2(ship.worldX, ship.worldY);
     Vector2 worldVel = new Vector2(ship.worldVelX, ship.worldVelY);
@@ -168,7 +168,7 @@ class PatchedConicsSystem {
     if (seg == null || seg.orbit == null) return;
 
     ship.orbit = seg.orbit;
-    ship.referenceBody = seg.referenceBody;
+    ship.referenceBody = seg.referenceBody;  // 根据当前段轨道更新飞船的主导天体
     Vector2 localPos = seg.orbit.getPositionAtTime(simTime);
     Vector2 localVel = seg.orbit.getVelocityAtTime(simTime);
     ship.stateVector.position = localPos;

@@ -185,7 +185,7 @@ class PhysicsSystem {
 
   void refreshPatchedOrbitIfNeeded(Spacecraft ship, double simTime) {
     if (ship.physicsMode == PhysicsMode.OFF_RAILS && !ship.isFixedToSurface) {
-      refreshPatchedOrbit(ship, simTime, false);
+      refreshPatchedOrbit(ship, simTime, false);  // Off-Rails 模式下持续更新补丁轨道
     } else if (shouldRefreshPatchedOrbit(ship, simTime)) {
       refreshPatchedOrbit(ship, simTime, true);
     }

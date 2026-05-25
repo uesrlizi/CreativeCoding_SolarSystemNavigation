@@ -124,7 +124,14 @@ void setup() {
 }
 
 void restartGame() {
-  // 重置显示选项
+  // ========================================
+  // 1. 重置所有全局静态状态
+  // ========================================
+  currentGameProgress = GameProgressState.GROUNDED;
+
+  // ========================================
+  // 2. 重置显示选项
+  // ========================================
   showOrbits = true;
   showLabels = true;
   showSOI = false;
@@ -133,8 +140,11 @@ void restartGame() {
   showPeriapsis = true;
   showControlsHelp = false;
 
-  // 重新初始化系统
+  // ========================================
+  // 3. 重新初始化核心系统（按正确顺序）
+  // ========================================
   timeManager = new TimeManager();
+
   camera = new CameraController();
   camera.initialize((width * 0.15) / (1.0 * AU_KM));
 
@@ -155,7 +165,14 @@ void restartGame() {
 
   if (spacecraftPresets == null) initSpacecraftPresets();
 
-  // 重新初始化发射场
+  // ========================================
+  // 3.5 重新初始化任务预设（关键！因为 preset.initialBody 需要指向新 solarSystem 中的天体）
+  // ========================================
+  initMissionPresets(solarSystem);
+
+  // ========================================
+  // 4. 重新初始化发射场相关
+  // ========================================
   CelestialBody earth = solarSystem.getEarth();
   if (earth != null) {
     launchSite = new LaunchSite(earth, 0);
@@ -165,16 +182,23 @@ void restartGame() {
     missionExecutor.setLaunchSite(launchSite, earth);
   }
 
-  // 创建初始航天器
+  // ========================================
+  // 5. 创建初始航天器（必须在发射场初始化之后）
+  // ========================================
   solarSystem.ships.clear();
   createInitialSpacecraft();
 
-  // 聚焦摄像机
+  // ========================================
+  // 6. 聚焦摄像机
+  // ========================================
   if (solarSystem.ships.size() > 0) {
     camera.focusOn(solarSystem.ships.get(0));
     camera.followShip(solarSystem.ships.get(0));
   }
 
+  // ========================================
+  // 7. 重新初始化 HUD（必须在最后，因为它依赖于其他系统）
+  // ========================================
   hud = new HUD();
 }
 
