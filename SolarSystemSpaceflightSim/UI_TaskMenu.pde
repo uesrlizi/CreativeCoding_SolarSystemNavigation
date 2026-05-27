@@ -154,16 +154,6 @@ class TaskMenu implements DrawerContent {
     int presetCount = (availablePresets != null) ? availablePresets.size() : 0;
     panelH = headerH + presetCount * rowH + detailH + footerH + 8 * scale;
 
-    fill(180, 200, 220);
-    textSize(11 * scale);
-    String statusText;
-    if (missionExecutor.hasActiveMission()) {
-      statusText = missionExecutor.getDetailedStatus();
-    } else {
-      statusText = getProgressStatusText();
-    }
-    text(statusText, panelX + panelMargin, panelY + panelMargin + 4);
-
     float rowY = panelY + headerH;
     if (availablePresets != null) {
       for (int i = 0; i < availablePresets.size(); i++) {

@@ -138,7 +138,7 @@ class HUD {
       40,
       educationPanel,
       "GUIDE",
-      350  // 垂直偏移，按4个任务的任务面板长度排布
+      520  // 垂直偏移，按4个任务的任务面板长度排布
     );
     educationDrawer.expanded = true;  // 默认展开
 
@@ -214,9 +214,32 @@ class HUD {
     soiIcon.updatePosition(currentX, y);
   }
 
+  MissionExecutorState lastTaskState = MissionExecutorState.IDLE;
+
   void update() {
     viewToggleButton.update();
     timePanel.update();
+
+    // 任务面板自动折叠/展开逻辑
+    MissionExecutorState currentTaskState = missionExecutor.state;
+    if (lastTaskState != currentTaskState) {
+      boolean wasIdle = (lastTaskState == MissionExecutorState.IDLE ||
+                        lastTaskState == MissionExecutorState.COMPLETED ||
+                        lastTaskState == MissionExecutorState.FAILED);
+      boolean isIdle = (currentTaskState == MissionExecutorState.IDLE ||
+                       currentTaskState == MissionExecutorState.COMPLETED ||
+                       currentTaskState == MissionExecutorState.FAILED);
+
+      if (wasIdle && !isIdle) {
+        // 任务开始，自动折叠
+        taskDrawer.setExpanded(false);
+      } else if (!wasIdle && isIdle) {
+        // 任务结束，自动展开
+        taskDrawer.setExpanded(true);
+      }
+      lastTaskState = currentTaskState;
+    }
+
     navDrawer.update();
     taskDrawer.update();
     educationDrawer.update();
@@ -568,6 +591,7 @@ class HUD {
 
   boolean handleMousePressed(float mx, float my, CameraController cam,
                              CelestialBody sun, List<CelestialBody> planets, List<Spacecraft> ships) {
+    // Tutorial has highest priority - check in main mousePressed first
     if (showControlsHelp) {
       return true;
     }

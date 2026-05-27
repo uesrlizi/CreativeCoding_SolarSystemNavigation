@@ -15,6 +15,9 @@ boolean showApoapsis = true;
 boolean showPeriapsis = true;
 boolean showControlsHelp = false;
 
+// ========== TUTORIAL SYSTEM ==========
+TutorialSystem tutorial;
+
 // ========== LABEL MANAGEMENT ==========
 LabelManager labelManager;
 
@@ -125,6 +128,10 @@ void setup() {
 
   hud = new HUD();
 
+  // 初始化新手教程
+  tutorial = new TutorialSystem();
+  tutorial.setHUD(hud);
+
   // 初始化音频管理器
   audioManager = new AudioManager();
   audioManager.setup();
@@ -184,6 +191,10 @@ void restartGame() {
   }
 
   hud = new HUD();
+
+  // 重置新手教程
+  tutorial = new TutorialSystem();
+  tutorial.setHUD(hud);
 
   // 重启音频管理器
   if (audioManager != null) {
@@ -389,6 +400,7 @@ void draw() {
 
   camera.update(deltaTime);
   hud.update();
+  tutorial.update();
 
   // Render order: background -> orbits -> SOI -> sun -> planets -> spacecraft -> UI
   drawStars();
@@ -506,6 +518,9 @@ void draw() {
   }
 
   hud.draw(camera, timeManager.simTime, timeManager.timeWarp, timeManager.WARP_LEVELS, timeManager.WARP_LABELS, timeManager.warpIndex, solarSystem.planets, solarSystem.moons, solarSystem.sun, solarSystem.ships);
+
+  // Draw tutorial overlay (highest priority)
+  tutorial.draw();
 
   // Draw debug panel
   debugPanel.draw(physicsSystem, camera, uiScale);
@@ -686,6 +701,15 @@ void drawSingleSOI(CelestialBody body) {
 }
 
 void mousePressed() {
+  // Tutorial has highest priority
+  if (tutorial.isActive()) {
+    boolean handled = tutorial.handleClick(mouseX, mouseY);
+    if (handled) {
+      return;
+    }
+    // If not handled, let input pass through (for camera interaction)
+  }
+
   if (showControlsHelp) {
     showControlsHelp = false;
     return;
@@ -749,21 +773,30 @@ void handleDoubleClick() {
 }
 
 void mouseDragged() {
+  if (tutorial.isActive() && tutorial.shouldBlockCameraInput()) return;
   if (showControlsHelp) return;
   camera.handleMouseDragged();
 }
 
 void mouseReleased() {
+  if (tutorial.isActive() && tutorial.shouldBlockCameraInput()) return;
   if (showControlsHelp) return;
   camera.handleMouseReleased();
 }
 
 void mouseWheel(MouseEvent event) {
+  if (tutorial.isActive() && tutorial.shouldBlockCameraInput()) return;
   if (showControlsHelp) return;
   camera.handleMouseWheel(event);
 }
 
 void keyPressed() {
+  // Tutorial handles ESC to exit, blocks other input
+  if (tutorial.isActive()) {
+    tutorial.handleKeyPressed();
+    return;
+  }
+
   if (showControlsHelp) {
     if (keyCode == ESC) {
       key = 0;

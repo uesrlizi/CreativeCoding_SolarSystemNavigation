@@ -27,9 +27,9 @@ class DebugPanel {
     this.panelWidth = 300 * uiScale;
     this.panelHeight = 320 * uiScale;
 
-    // 面板位置（右上角）
-    this.panelX = width - panelWidth - 20 * uiScale;
-    this.panelY = 140 * uiScale;
+    // 面板位置（左下角）
+    this.panelX = 20 * uiScale;
+    this.panelY = height - panelHeight - 20 * uiScale;
 
     // 绘制背景
     noStroke();

@@ -352,4 +352,9 @@ class DrawerPanel {
     }
     return null;
   }
+
+  // 设置展开状态（用于自动控制）
+  void setExpanded(boolean expanded) {
+    this.expanded = expanded;
+  }
 }
