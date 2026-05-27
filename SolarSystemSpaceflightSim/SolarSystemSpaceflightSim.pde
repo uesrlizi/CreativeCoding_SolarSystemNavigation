@@ -4,6 +4,8 @@
 import java.util.ArrayList;
 import java.util.List;
 
+import processing.sound.*;
+
 // ========== DISPLAY OPTIONS ==========
 boolean showOrbits = true;
 boolean showLabels = true;
@@ -30,6 +32,7 @@ TimeManager timeManager;
 HUD hud;
 PhysicsSystem physicsSystem;  // 新增：物理系统
 DebugPanel debugPanel;         // 新增：调试面板
+AudioManager audioManager;     // 新增：音频管理器
 float uiScale;
 
 // ========== MISSION SYSTEMS (Stage 5) ==========
@@ -121,6 +124,11 @@ void setup() {
   }
 
   hud = new HUD();
+
+  // 初始化音频管理器
+  audioManager = new AudioManager();
+  audioManager.setup();
+  audioManager.playBGM();
 }
 
 void restartGame() {
@@ -176,6 +184,14 @@ void restartGame() {
   }
 
   hud = new HUD();
+
+  // 重启音频管理器
+  if (audioManager != null) {
+    audioManager.dispose();
+  }
+  audioManager = new AudioManager();
+  audioManager.setup();
+  audioManager.playBGM();
 }
 
 void createInitialSpacecraft() {
@@ -493,6 +509,14 @@ void draw() {
 
   // Draw debug panel
   debugPanel.draw(physicsSystem, camera, uiScale);
+
+  // 更新音频 - 检查飞船引擎油门
+  if (audioManager != null && solarSystem.ships.size() > 0) {
+    Spacecraft ship = solarSystem.ships.get(0);
+    if (ship.mainEngine != null) {
+      audioManager.updateBurnSound(ship.mainEngine.currentThrottle);
+    }
+  }
 }
 
 float getSmartLabelDir(float x, float y) {
