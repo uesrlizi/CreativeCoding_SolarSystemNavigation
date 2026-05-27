@@ -46,8 +46,25 @@ class CameraController {
   }
 
   void update(float dt) {
-    if (Double.isNaN(scale) || Double.isInfinite(scale)) scale = 1.0;
-    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale)) targetScale = 1.0;
+    // 计算缩放限制
+    double neptuneOrbitMajorAxis = 30.11039 * 2.0 * AU_KM;
+    double minScale = height / neptuneOrbitMajorAxis;
+    double maxScale = 1e6;
+    double safeDefaultScale = (width * 0.15) / AU_KM;
+
+    // 保护 scale
+    if (Double.isNaN(scale) || Double.isInfinite(scale) || scale <= 0) {
+      scale = safeDefaultScale;
+    }
+    // 保护 targetScale
+    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale) || targetScale <= 0) {
+      targetScale = safeDefaultScale;
+    }
+
+    // 确保 scale 和 targetScale 在合理范围内
+    scale = constrainDouble(scale, minScale, maxScale);
+    targetScale = constrainDouble(targetScale, minScale, maxScale);
+
     float scaleSpeed = 6.0f;
     float offsetSpeed = 10.0f;
     double scaleT = 1.0 - Math.exp(-scaleSpeed * dt);
@@ -55,6 +72,9 @@ class CameraController {
 
     if (mode == ViewMode.MAP_VIEW) {
       scale += (targetScale - scale) * scaleT;
+      // 再次约束 scale，防止累积误差
+      scale = constrainDouble(scale, minScale, maxScale);
+
       offsetX += (targetOffsetX - offsetX) * offsetT;
       offsetY += (targetOffsetY - offsetY) * offsetT;
       double tx = 0, ty = 0;
@@ -92,6 +112,12 @@ class CameraController {
   void setViewMode(ViewMode m) {
     if (m == mode) return;
 
+    // 计算缩放限制
+    double neptuneOrbitMajorAxis = 30.11039 * 2.0 * AU_KM;
+    double minScale = height / neptuneOrbitMajorAxis;
+    double maxScale = 1e6;
+    double safeDefaultScale = (width * 0.15) / AU_KM;
+
     if (mode == ViewMode.MAP_VIEW) {
       mapScale = scale;
       mapTargetScale = targetScale;
@@ -111,11 +137,21 @@ class CameraController {
         camX = followTarget.worldX;
         camY = followTarget.worldY;
       }
-      if (shipTargetScale <= 0.0) {
+      if (shipTargetScale <= 0.0 || Double.isNaN(shipTargetScale) || Double.isInfinite(shipTargetScale)) {
         shipTargetScale = 0.22 * height / Spacecraft.SHIP_LENGTH_KM;
         targetScale = shipTargetScale;
       }
     }
+
+    // 确保最终值在合理范围内
+    if (Double.isNaN(scale) || Double.isInfinite(scale) || scale <= 0) {
+      scale = safeDefaultScale;
+    }
+    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale) || targetScale <= 0) {
+      targetScale = safeDefaultScale;
+    }
+    scale = constrainDouble(scale, minScale, maxScale);
+    targetScale = constrainDouble(targetScale, minScale, maxScale);
   }
 
   void followShip(Spacecraft ship) {
@@ -155,10 +191,21 @@ class CameraController {
   }
 
   void handleMouseWheel(MouseEvent event) {
-    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale)) targetScale = 1.0;
+    if (Double.isNaN(targetScale) || Double.isInfinite(targetScale) || targetScale <= 0) {
+      // 重置到安全值
+      targetScale = (width * 0.15) / AU_KM;
+    }
     double factor = event.getCount() > 0 ? 0.85 : 1.18;
-    targetScale *= factor;
-    targetScale = constrainDouble(targetScale, 1e-18, 1e6);
+    double newScale = targetScale * factor;
+
+    // 计算最大缩放限制：高度等于海王星轨道长轴（2 * 30.11039 AU）
+    double neptuneOrbitMajorAxis = 30.11039 * 2.0 * AU_KM;
+    double minScale = height / neptuneOrbitMajorAxis;
+
+    // 最小缩放限制：足够大的放大倍数
+    double maxScale = 1e6;
+
+    targetScale = constrainDouble(newScale, minScale, maxScale);
   }
 
   void reset() {

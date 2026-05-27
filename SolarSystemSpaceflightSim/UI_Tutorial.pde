@@ -441,7 +441,7 @@ class TutorialSystem {
     fill(255, 220, 100);
     textAlign(LEFT, TOP);
     textSize(18 * scale);
-    text("Welcome to Solar System Navigation", cardX + 18 * scale, cardY + 14 * scale);
+    text("Welcome to Solar System Spaceflight Simulation", cardX + 18 * scale, cardY + 14 * scale);
 
     fill(220, 230, 255);
     textSize(14 * scale);

@@ -169,17 +169,17 @@ class CelestialSystem {
 
     if (renderer != null) {
       if (farCornerSq <= sR * sR) {
-        renderer.drawLOD4(sun, sx, sy, sR);
+        renderer.drawLOD4(sun, sx, sy, sR, cam);
       } else if (drawR > width * 0.5 || drawR > height * 0.5) {
-        renderer.drawScanlineLOD(sun, sx, sy, sR);
+        renderer.drawScanlineLOD(sun, sx, sy, sR, cam);
       } else if (drawR < 20) {
-        renderer.drawLOD0(sun, sx, sy, drawR);
+        renderer.drawLOD0(sun, sx, sy, drawR, cam);
       } else if (drawR < 80) {
-        renderer.drawLOD1(sun, sx, sy, drawR);
+        renderer.drawLOD1(sun, sx, sy, drawR, cam);
       } else if (drawR < 250) {
-        renderer.drawLOD2(sun, sx, sy, drawR);
+        renderer.drawLOD2(sun, sx, sy, drawR, cam);
       } else {
-        renderer.drawLOD3(sun, sx, sy, drawR);
+        renderer.drawLOD3(sun, sx, sy, drawR, cam);
       }
     } else {
       if (farCornerSq <= sR * sR) {

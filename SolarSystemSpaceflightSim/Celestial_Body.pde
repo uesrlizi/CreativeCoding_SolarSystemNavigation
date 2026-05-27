@@ -195,17 +195,17 @@ class CelestialBody {
 
     if (renderer != null) {
       if (coversScreen) {
-        renderer.drawLOD4(this, cx, cy, screenR);
+        renderer.drawLOD4(this, cx, cy, screenR, cam);
       } else if (drawR > width * 0.5 || drawR > height * 0.5) {
-        renderer.drawScanlineLOD(this, cx, cy, screenR);
+        renderer.drawScanlineLOD(this, cx, cy, screenR, cam);
       } else if (drawR < 20) {
-        renderer.drawLOD0(this, cx, cy, drawR);
+        renderer.drawLOD0(this, cx, cy, drawR, cam);
       } else if (drawR < 80) {
-        renderer.drawLOD1(this, cx, cy, drawR);
+        renderer.drawLOD1(this, cx, cy, drawR, cam);
       } else if (drawR < 250) {
-        renderer.drawLOD2(this, cx, cy, drawR);
+        renderer.drawLOD2(this, cx, cy, drawR, cam);
       } else {
-        renderer.drawLOD3(this, cx, cy, drawR);
+        renderer.drawLOD3(this, cx, cy, drawR, cam);
       }
     } else {
       if (coversScreen) {

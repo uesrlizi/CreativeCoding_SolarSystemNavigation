@@ -55,7 +55,7 @@ class CelestialBodyRenderer {
     time += dt;
   }
 
-  void drawScanlineLOD(CelestialBody body, double cx, double cy, double r) {
+  void drawScanlineLOD(CelestialBody body, double cx, double cy, double r, CameraController cam) {
     noStroke();
     float rSq = (float)(r * r);
     float startY = max(0, (float)(cy - r));
@@ -89,11 +89,11 @@ class CelestialBodyRenderer {
     }
 
     if (body.hasAtmosphere) {
-      drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+      drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r, cam);
     }
   }
 
-  void drawEarthSVG(CelestialBody body, double cx, double cy, double r, boolean withAtmosphere) {
+  void drawEarthSVG(CelestialBody body, double cx, double cy, double r, boolean withAtmosphere, CameraController cam) {
     pushMatrix();
     translate((float)cx, (float)cy);
     rotate(body.axialTilt);
@@ -111,27 +111,27 @@ class CelestialBodyRenderer {
     popMatrix();
 
     if (withAtmosphere && body.hasAtmosphere) {
-      drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+      drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r, cam);
     }
   }
 
-  void drawEarthSVG(CelestialBody body, double cx, double cy, double r) {
-    drawEarthSVG(body, cx, cy, r, false);
+  void drawEarthSVG(CelestialBody body, double cx, double cy, double r, CameraController cam) {
+    drawEarthSVG(body, cx, cy, r, false, cam);
   }
 
-  void drawLOD0(CelestialBody body, double cx, double cy, double r) {
+  void drawLOD0(CelestialBody body, double cx, double cy, double r, CameraController cam) {
     noStroke();
     if (body.type == BodyType.SUN) drawSunGlowSimple((float)cx, (float)cy, (float)r);
     fill(body.col);
     ellipse((float)cx, (float)cy, (float)(r * 2), (float)(r * 2));
     if (body.hasRing && r > 40) drawRingSimple(body, (float)cx, (float)cy, (float)r);
-    if (body.hasAtmosphere && r > 30) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+    if (body.hasAtmosphere && r > 30) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r, cam);
   }
 
-  void drawLOD1(CelestialBody body, double cx, double cy, double r) {
+  void drawLOD1(CelestialBody body, double cx, double cy, double r, CameraController cam) {
     // 地球使用 SVG（无大气）
     if (useEarthSVG && body.name.equals("Earth")) {
-      drawEarthSVG(body, cx, cy, r, false);
+      drawEarthSVG(body, cx, cy, r, false, cam);
       return;
     }
 
@@ -145,13 +145,13 @@ class CelestialBodyRenderer {
     }
 
     if (body.hasRing) drawRingMedium(body, (float)cx, (float)cy, (float)r);
-    if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+    if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r, cam);
   }
 
-  void drawLOD2(CelestialBody body, double cx, double cy, double r) {
+  void drawLOD2(CelestialBody body, double cx, double cy, double r, CameraController cam) {
     // 地球使用 SVG（带大气）
     if (useEarthSVG && body.name.equals("Earth")) {
-      drawEarthSVG(body, cx, cy, r, true);
+      drawEarthSVG(body, cx, cy, r, true, cam);
       return;
     }
 
@@ -166,13 +166,13 @@ class CelestialBodyRenderer {
     }
 
     if (body.hasRing) drawRingMedium(body, (float)cx, (float)cy, (float)r);
-    if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+    if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r, cam);
   }
 
-  void drawLOD3(CelestialBody body, double cx, double cy, double r) {
+  void drawLOD3(CelestialBody body, double cx, double cy, double r, CameraController cam) {
     // 地球使用 SVG（带大气）
     if (useEarthSVG && body.name.equals("Earth")) {
-      drawEarthSVG(body, cx, cy, r, true);
+      drawEarthSVG(body, cx, cy, r, true, cam);
       return;
     }
 
@@ -188,12 +188,12 @@ class CelestialBodyRenderer {
     }
 
     if (body.hasRing) drawRingDetailed(body, (float)cx, (float)cy, (float)r);
-    if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r);
+    if (body.hasAtmosphere) drawAtmosphereEdgeOnly(body, (float)cx, (float)cy, (float)r, cam);
   }
 
-  void drawLOD4(CelestialBody body, double cx, double cy, double r) {
+  void drawLOD4(CelestialBody body, double cx, double cy, double r, CameraController cam) {
     if (body.type == BodyType.SUN) drawSunFullScreen();
-    else drawScanlineLOD(body, cx, cy, r);
+    else drawScanlineLOD(body, cx, cy, r, cam);
   }
 
   void drawSunGlowSimple(float cx, float cy, float r) {
@@ -557,7 +557,12 @@ class CelestialBodyRenderer {
     popMatrix();
   }
 
-  void drawAtmosphereEdgeOnly(CelestialBody body, float cx, float cy, float r) {
+  void drawAtmosphereEdgeOnly(CelestialBody body, float cx, float cy, float r, CameraController cam) {
+    // 在飞船视图下不绘制地球的大气
+    if (body.name.equals("Earth") && cam != null && cam.getMode() == ViewMode.SHIP_VIEW) {
+      return;
+    }
+
     color atmos = body.hasAtmosphere ? body.atmosphereColor : (body.atmosphere != null ? body.atmosphere.atmosphereColor : color(100, 180, 255, 100));
     int layers = 4;
     for (int i = layers; i > 0; i--) {
