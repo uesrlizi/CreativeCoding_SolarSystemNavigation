@@ -1,5 +1,5 @@
 // ============================================================
-//  Spacecraft Launch Simulator
+//  Spacecraft Launch Simulation
 //  Processing (Java Mode) · Kepler Orbital Mechanics
 //  Launch from Earth to orbit · Hohmann Transfer · Multi-view
 // ============================================================

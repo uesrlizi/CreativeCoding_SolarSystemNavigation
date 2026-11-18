@@ -1,6 +1,6 @@
-# Spacecraft Launch Simulator
+# Spacecraft Launch Simulation
 
-基于 Processing (Java Mode) 的航天器发射入轨模拟器，使用开普勒轨道力学进行物理计算。支持从地球表面发射航天器至近地轨道（LEO），以及后续的霍曼转移至其他行星。
+基于 Processing (Java Mode) 的航天器发射入轨模拟，使用开普勒轨道力学进行物理计算。支持从地球表面发射航天器至近地轨道（LEO），以及后续的霍曼转移至其他行星。
 
 ## 项目结构
 
